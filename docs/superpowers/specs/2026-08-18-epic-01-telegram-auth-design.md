@@ -72,17 +72,17 @@ type TelegramAuthRequest = {
 The server applies these checks in order:
 
 1. Require a non-empty string within a configured byte limit.
-2. Parse the query string strictly and reject duplicate security-relevant keys.
+2. Parse the query string strictly and reject every duplicate key. Each component contributes its percent-decoded value exactly once; invalid percent encoding is rejected.
 3. Require exactly one `hash`, `auth_date`, and `user` value.
-4. Build the data-check-string from all original received key/value pairs except `hash`, sorted alphabetically and separated by `\n`.
+4. Build the data-check-string from every percent-decoded key/value pair except `hash`, sorted alphabetically and separated by `\n`. A Telegram `signature` field, when present, remains part of the bot-token HMAC data-check-string.
 5. Derive the secret with HMAC-SHA-256 using `WebAppData` as key and the bot token as message.
-6. Compute the HMAC-SHA-256 of the data-check-string using that secret and compare the hexadecimal digest with `hash` using a constant-time comparison.
+6. Require `hash` to be exactly 64 lowercase hexadecimal characters. Compute the HMAC-SHA-256 of the data-check-string using that secret and compare equal-length digest bytes using a constant-time comparison.
 7. Reject an `auth_date` older than the configured maximum age or more than the allowed clock skew in the future.
 8. Only after signature and freshness checks, parse and validate the signed `user` JSON with Zod.
 
 The default maximum age is five minutes and default future skew is thirty seconds. Both are server configuration validated at startup.
 
-Telegram user IDs are parsed without lossy numeric conversion. PostgreSQL stores them as `BigInt`; JSON contracts represent them as decimal strings where exposure is necessary. Application authorization uses only internal `User.id`.
+Telegram user JSON is parsed only after signature verification. Its numeric `id` must be a positive JavaScript safe integer (Telegram documents at most 52 significant bits) before conversion to Prisma `BigInt`; unsafe, fractional, negative, or out-of-range values are rejected rather than rounded. PostgreSQL stores Telegram IDs as `BigInt`; JSON contracts represent them as decimal strings where exposure is necessary. Application authorization uses only internal `User.id`.
 
 Invalid signature, stale data, malformed signed identity, and other verification failures return the same public `TELEGRAM_AUTH_INVALID` error and never log raw init data, calculated signatures, or the bot token.
 
@@ -125,16 +125,17 @@ AuthSession
 
 The API generates at least 256 bits of randomness for the raw token. Only the hash is persisted. The raw token is returned once in an `HttpOnly` cookie with:
 
+- a `__Host-` cookie name in production and no `Domain` attribute, making it host-only;
 - `Path=/`;
 - `SameSite=Lax`;
 - `Secure=true` in production;
 - a bounded `Max-Age` matching the server expiry.
 
-The default session lifetime is thirty days and is configurable. A new login creates an independent session. `POST /api/auth/logout` revokes only the current session and clears the cookie. Unknown, expired, or revoked tokens all produce `401 AUTH_REQUIRED`.
+The default session lifetime is thirty days and is configurable. A new login creates an independent session. `POST /api/auth/logout` revokes only the current session and clears the cookie with the same name, Path, SameSite, Secure, and host-only attributes used when setting it. Unknown, expired, or revoked tokens all produce `401 AUTH_REQUIRED`.
 
 `GET /api/me` accepts no user identifier. It resolves identity exclusively from the session cookie and returns the public auth-user projection.
 
-State-changing authentication endpoints require JSON content type and validate `Origin` against a configured same-site allowlist when the header is present. Production configuration must define the public web origin. Credentialed wildcard CORS is not allowed.
+State-changing authentication endpoints require JSON content type. In production they require a syntactically valid, non-`null` `Origin` that exactly matches the configured HTTPS web-origin allowlist; a missing, malformed, `null`, or disallowed Origin is rejected. Development accepts only explicitly configured local origins and may not use a credentialed wildcard. `SameSite=Lax` and Fetch Metadata checks are defense in depth, not replacements for Origin validation. Production configuration must define at least one public web origin.
 
 ## Development authentication
 
@@ -145,7 +146,7 @@ NODE_ENV != production
 DEV_AUTH_ENABLED = true
 ```
 
-If production configuration attempts to enable it, configuration parsing fails and the API does not start. When disabled, the dev-auth route is not registered and capability discovery reports it unavailable.
+If production configuration attempts to enable it, configuration parsing fails and the API does not start. `GET /api/auth/dev` is always registered as safe capability discovery: when disabled it returns `{ enabled: false, users: [] }`. The state-changing `POST /api/auth/dev` route is registered only when development authentication is enabled.
 
 `POST /api/auth/dev` accepts only:
 
@@ -157,7 +158,7 @@ type DevAuthRequest = {
 
 The key must resolve to a profile in a server-side validated allowlist containing at least two distinct users for multiplayer development. Arbitrary Telegram IDs, usernames, or profile fields are rejected by strict request schemas. Separate browser cookie jars selecting different keys receive distinct internal users and sessions.
 
-Development users are visibly marked through `authProvider: "DEVELOPMENT"` in the public auth projection. The bot token is not required when the API runs exclusively with explicitly enabled development authentication, but production requires it.
+Development users are visibly marked through `authProvider: "DEVELOPMENT"` in the public auth projection. The bot token is not required when the API runs exclusively with explicitly enabled development authentication; in that case `POST /api/auth/telegram` is not registered. Production requires the bot token and registers Telegram authentication.
 
 ## Shared contracts
 
@@ -171,7 +172,7 @@ Development users are visibly marked through `authProvider: "DEVELOPMENT"` in th
 - development capability response;
 - the stable public error envelope.
 
-Representative public projection:
+Exact public response projections use omitted optional fields rather than `null`:
 
 ```ts
 type AuthUser = {
@@ -181,6 +182,33 @@ type AuthUser = {
   photoUrl?: string;
   languageCode?: string;
   authProvider: "TELEGRAM" | "DEVELOPMENT";
+};
+
+type AuthSessionView = {
+  expiresAt: string; // RFC 3339 timestamp
+};
+
+type AuthSuccess = {
+  user: AuthUser;
+  session: AuthSessionView;
+};
+
+type MeResponse = {
+  user: AuthUser;
+};
+
+type DevAuthCapability =
+  | { enabled: false; users: [] }
+  | {
+      enabled: true;
+      users: Array<{ devUserKey: string; displayName: string }>;
+    };
+
+type PublicError = {
+  error: {
+    code: PublicErrorCode;
+    message: string;
+  };
 };
 ```
 
@@ -237,6 +265,7 @@ Public errors use a stable envelope and minimum disclosure:
 
 - successful Telegram user creation and stable upserted internal ID;
 - cookie security attributes and authenticated `/api/me`;
+- absent cookie `Domain` and logout clearing attributes exactly matching set-cookie scope;
 - two concurrent independent sessions;
 - logout revokes only the current session;
 - expired/revoked/unknown sessions share the non-leaky unauthorized response;
@@ -244,7 +273,7 @@ Public errors use a stable envelope and minimum disclosure:
 - unknown development key is rejected;
 - development route is absent when disabled;
 - production plus development bypass fails configuration validation;
-- origin and JSON content-type guards;
+- missing, `null`, malformed, and disallowed Origin rejection plus allowed-origin and JSON content-type guards;
 - database contains only session-token hashes;
 - auth failures do not expose Telegram, cryptographic, Prisma, or configuration details;
 - existing `/health` and dependency-aware `/ready` behavior remains intact.
@@ -265,6 +294,7 @@ EPIC-01 completion requires:
 - `/api/me` and logout smoke tests;
 - negative production dev-bypass configuration smoke test;
 - web browser smoke test for Telegram bootstrap fallback and development chooser.
+- Playwright screenshots at 390x844, 430x932, 1440x900, and 1920x1080, stored under the EPIC-01 evidence directory and compared with the relevant canonical references for hierarchy, spacing, and responsive integrity. Because EPIC-01 intentionally contains only a minimal auth shell, this gate checks foundation quality without introducing EPIC-02 visual-system work.
 
 ## Scope-leakage review
 
