@@ -45,6 +45,8 @@ BOOTSTRAPPING
 
 In Telegram, the web client submits `{ initData }` to `POST /api/auth/telegram`. In an ordinary browser, it queries the server-visible development-auth capability. When development authentication is explicitly enabled, a minimal functional chooser permits selecting one of at least two server-configured development users. There is no silent browser bypass and no arbitrary identity editor.
 
+Bootstrap first calls `GET /api/me` with the existing cookie. A `200` result enters `AUTHENTICATED` without Telegram re-authentication. After `401`, a Telegram environment with usable init data calls `POST /api/auth/telegram`; an ordinary browser proceeds to development-auth discovery. If an authentication POST arrives with a valid current session cookie, successful replacement revokes that current session while creating the new one in the same database transaction. Sessions on other devices and in other cookie jars remain independent.
+
 The web shell renders only enough authenticated state to prove the bootstrap and `/api/me` flow. It is not a profile page or a final design-system implementation.
 
 ### API authentication modules
@@ -83,6 +85,10 @@ The server applies these checks in order:
 The default maximum age is five minutes and default future skew is thirty seconds. Both are server configuration validated at startup.
 
 Telegram user JSON is parsed only after signature verification. Its numeric `id` must be a positive JavaScript safe integer (Telegram documents at most 52 significant bits) before conversion to Prisma `BigInt`; unsafe, fractional, negative, or out-of-range values are rejected rather than rounded. PostgreSQL stores Telegram IDs as `BigInt`; JSON contracts represent them as decimal strings where exposure is necessary. Application authorization uses only internal `User.id`.
+
+`TelegramSignedUserSchema` is forward-compatible. It validates every identity field consumed by the application, accepts Telegram's currently documented additional signed properties, and strips unknown future Telegram-provided properties rather than failing authentication. The application extracts only `id`, `first_name`, `last_name`, `username`, `language_code`, and `photo_url`. This forward-compatible rule applies only to the already signature-verified nested Telegram object; HTTP identity-bearing request schemas remain strict and reject unknown client-supplied fields.
+
+EPIC-01 supports Telegram launch surfaces that provide non-empty signed `initData` containing `user`. Production is configured as a Main Mini App or another supported launch surface with signed user init data. Keyboard-button and other launch contexts without signed user init data are not authentication entry points for the MVP and receive the generic invalid-Telegram-auth outcome rather than a fallback identity path.
 
 Invalid signature, stale data, malformed signed identity, and other verification failures return the same public `TELEGRAM_AUTH_INVALID` error and never log raw init data, calculated signatures, or the bot token.
 
@@ -123,7 +129,7 @@ AuthSession
 - createdAt
 ```
 
-The API generates at least 256 bits of randomness for the raw token. Only the hash is persisted. The raw token is returned once in an `HttpOnly` cookie with:
+The API generates at least 256 bits of randomness for the raw token and encodes it as unpadded cookie-safe base64url. Only the hash is persisted. The raw token is returned once in an `HttpOnly` cookie with:
 
 - a `__Host-` cookie name in production and no `Domain` attribute, making it host-only;
 - `Path=/`;
@@ -131,7 +137,7 @@ The API generates at least 256 bits of randomness for the raw token. Only the ha
 - `Secure=true` in production;
 - a bounded `Max-Age` matching the server expiry.
 
-The default session lifetime is thirty days and is configurable. A new login creates an independent session. `POST /api/auth/logout` revokes only the current session and clears the cookie with the same name, Path, SameSite, Secure, and host-only attributes used when setting it. Unknown, expired, or revoked tokens all produce `401 AUTH_REQUIRED`.
+The default session lifetime is thirty days and is configurable. A login without a valid current cookie creates an independent session. A login with a valid current cookie atomically replaces and revokes that cookie jar's current session so repeated bootstrap cannot accumulate inaccessible sessions. `POST /api/auth/logout` revokes only the current session and clears the cookie with the same name, Path, SameSite, Secure, and host-only attributes used when setting it. Unknown, expired, or revoked tokens all produce `401 AUTH_REQUIRED`.
 
 `GET /api/me` accepts no user identifier. It resolves identity exclusively from the session cookie and returns the public auth-user projection.
 
@@ -158,7 +164,22 @@ type DevAuthRequest = {
 
 The key must resolve to a profile in a server-side validated allowlist containing at least two distinct users for multiplayer development. Arbitrary Telegram IDs, usernames, or profile fields are rejected by strict request schemas. Separate browser cookie jars selecting different keys receive distinct internal users and sessions.
 
-Development users are visibly marked through `authProvider: "DEVELOPMENT"` in the public auth projection. The bot token is not required when the API runs exclusively with explicitly enabled development authentication; in that case `POST /api/auth/telegram` is not registered. Production requires the bot token and registers Telegram authentication.
+Development users are visibly marked through `authProvider: "DEVELOPMENT"` in the public auth projection. Configuration has exactly three supported modes:
+
+```text
+production
+  -> TELEGRAM_BOT_TOKEN required
+  -> development authentication forbidden
+  -> Telegram authentication registered
+
+development + DEV_AUTH_ENABLED=true
+  -> development-only mode with at least two allowlisted users
+  -> Telegram bot token not required and Telegram authentication not registered
+
+development + DEV_AUTH_ENABLED=false
+  -> TELEGRAM_BOT_TOKEN required
+  -> Telegram authentication registered and development POST not registered
+```
 
 ## Shared contracts
 
@@ -226,6 +247,8 @@ GET  /api/me             return authenticated public user
 
 The existing `GET /health` remains a dependency-free liveness endpoint. `GET /ready` remains dependency-aware and is not weakened by auth work.
 
+All authentication responses, capability discovery responses, and `GET /api/me` responses set `Cache-Control: no-store`.
+
 Public errors use a stable envelope and minimum disclosure:
 
 ```text
@@ -259,7 +282,9 @@ Public errors use a stable envelope and minimum disclosure:
 - Telegram ID conversion without precision loss;
 - session token hashing, expiry, revocation, and raw-token non-persistence;
 - Telegram adapter detection, one-time `ready()`, lifecycle subscription cleanup, safe-area fallback, and raw init-data forwarding;
+- bootstrap checks `/api/me` first and does not re-authenticate an already authenticated cookie jar;
 - strict shared schemas rejecting client identity additions.
+- forward-compatible signed-user parsing accepts additional Telegram fields while extracting only the supported subset.
 
 ### API and database integration tests
 
@@ -267,6 +292,7 @@ Public errors use a stable envelope and minimum disclosure:
 - cookie security attributes and authenticated `/api/me`;
 - absent cookie `Domain` and logout clearing attributes exactly matching set-cookie scope;
 - two concurrent independent sessions;
+- same-cookie re-authentication atomically revokes the replaced session without affecting another device;
 - logout revokes only the current session;
 - expired/revoked/unknown sessions share the non-leaky unauthorized response;
 - two allowlisted development users remain distinct;
@@ -276,6 +302,8 @@ Public errors use a stable envelope and minimum disclosure:
 - missing, `null`, malformed, and disallowed Origin rejection plus allowed-origin and JSON content-type guards;
 - database contains only session-token hashes;
 - auth failures do not expose Telegram, cryptographic, Prisma, or configuration details;
+- authentication and `/api/me` responses use `Cache-Control: no-store`, and raw session tokens are unpadded base64url;
+- all three supported production/development configuration modes;
 - existing `/health` and dependency-aware `/ready` behavior remains intact.
 
 ## Verification and smoke tests
