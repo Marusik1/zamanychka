@@ -24,6 +24,7 @@
 ### Task 1: Approval metadata and repository hygiene
 
 **Files:**
+
 - Create: `.gitignore`, `.dockerignore`, `.editorconfig`, `.env.example`
 
 - [ ] Verify `docs/SPEC_REVIEW.md` already contains `APPROVED_FOR_EPIC_00` and all three notes; preserve it unchanged.
@@ -35,6 +36,7 @@
 ### Task 2: Root workspace and strict tooling
 
 **Files:**
+
 - Create: `package.json`, `pnpm-workspace.yaml`, `tsconfig.json`, `eslint.config.mjs`, `prettier.config.mjs`, `vitest.workspace.ts`
 - Create: `packages/config/package.json`, `packages/config/tsconfig/base.json`, `packages/config/tsconfig/node.json`, `packages/config/tsconfig/react.json`
 
@@ -50,6 +52,7 @@
 ### Task 3: Package boundaries
 
 **Files:**
+
 - Create: `packages/shared/package.json`, `packages/shared/tsconfig.json`, `packages/shared/src/index.ts`, `packages/shared/src/health.ts`, `packages/shared/src/health.test.ts`
 - Create: `packages/game-engine/package.json`, `packages/game-engine/tsconfig.json`, `packages/game-engine/src/index.ts`
 - Create: `packages/ui/package.json`, `packages/ui/tsconfig.json`, `packages/ui/src/index.ts`, `packages/ui/src/foundation.css`, `packages/ui/src/app-frame.tsx`, `packages/ui/src/app-frame.test.tsx`
@@ -66,6 +69,7 @@
 ### Task 4: Fastify operational API
 
 **Files:**
+
 - Create: `apps/api/package.json`, `apps/api/tsconfig.json`, `apps/api/src/app.ts`, `apps/api/src/server.ts`
 - Create: `apps/api/src/config/env.ts`, `apps/api/src/config/env.test.ts`
 - Create: `apps/api/src/health/dependency-probes.ts`, `apps/api/src/health/routes.ts`, `apps/api/src/health/routes.test.ts`
@@ -84,6 +88,7 @@
 ### Task 5: Prisma 7 and real readiness adapters
 
 **Files:**
+
 - Create: `apps/api/prisma/schema.prisma`, `apps/api/prisma.config.ts`, `apps/api/src/generated/.gitkeep`
 - Create: `apps/api/src/infrastructure/prisma.ts`, `apps/api/src/infrastructure/redis.ts`, `apps/api/src/health/live-dependencies.ts`
 - Create: `apps/api/src/health/live-dependencies.test.ts`
@@ -104,6 +109,7 @@
 ### Task 6: React/Vite app shell
 
 **Files:**
+
 - Create: `apps/web/package.json`, `apps/web/tsconfig.json`, `apps/web/tsconfig.node.json`, `apps/web/vite.config.ts`, `apps/web/index.html`
 - Create: `apps/web/src/main.tsx`, `apps/web/src/app.tsx`, `apps/web/src/app.test.tsx`, `apps/web/src/styles.css`, `apps/web/src/vite-env.d.ts`
 
@@ -116,6 +122,7 @@
 ### Task 7: Local infrastructure and operator documentation
 
 **Files:**
+
 - Create: `infra/docker-compose.yml`, `README.md`, `docs/REFERENCES.md`
 - Modify: `.env.example`
 
@@ -128,6 +135,7 @@
 ### Task 8: Full verification and smoke tests
 
 **Files:**
+
 - Modify only files required to fix failures, always with a failing regression test before production-code changes.
 
 - [ ] Run `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm build`; every command must exit 0.

@@ -50,7 +50,7 @@ type GameEventEnvelope = {
     type: K;
     payload: GameEventPayloadByType[K];
     createdAt: string;
-  }
+  };
 }[GameEventType];
 
 type GameSnapshot = GameState & { lastSequence: number };
@@ -76,19 +76,38 @@ type GameEventPayloadByType = {
   participantLeft: { playerId: string; seatIndex: number };
   participantReadyChanged: { playerId: string; ready: boolean };
   matchReady: { playerIds: string[] };
-  matchWaiting: { playerIds: string[]; reason: "PLAYER_LEFT" | "PLAYER_UNREADY" };
+  matchWaiting: { playerIds: string[]; reason: 'PLAYER_LEFT' | 'PLAYER_UNREADY' };
   matchStarted: { startingPlayerId: string; turnNumber: 1 };
-  matchAbandoned: { reason: "LOBBY_CANCELLED" };
+  matchAbandoned: { reason: 'LOBBY_CANCELLED' };
   diceRolled: { playerId: string; value: DiceValue };
   pawnEntered: { playerId: string; pawnId: string; to: PawnPosition; toCoord: BoardCoord };
-  pawnMoved: { playerId: string; pawnId: string; from: PawnPosition; to: PawnPosition; fromCoord: BoardCoord; toCoord: BoardCoord; physicalPath: BoardCoord[] };
-  pawnCaptured: { attackerPawnId: string; capturedPawnId: string; capturedPlayerId: string; atCoord: BoardCoord; capturedTo: { zone: "OFF_BOARD" } };
+  pawnMoved: {
+    playerId: string;
+    pawnId: string;
+    from: PawnPosition;
+    to: PawnPosition;
+    fromCoord: BoardCoord;
+    toCoord: BoardCoord;
+    physicalPath: BoardCoord[];
+  };
+  pawnCaptured: {
+    attackerPawnId: string;
+    capturedPawnId: string;
+    capturedPlayerId: string;
+    atCoord: BoardCoord;
+    capturedTo: { zone: 'OFF_BOARD' };
+  };
   pawnEnteredHome: { playerId: string; pawnId: string; homeIndex: 0 | 1 | 2 | 3 };
   playerSurrendered: { playerId: string };
-  pawnRemoved: { playerId: string; pawnId: string; from: PawnPosition; fromCoord: BoardCoord | null };
-  extraRollGranted: { playerId: string; reason: "ROLLED_SIX" | "NO_LEGAL_ACTION_ON_SIX" };
+  pawnRemoved: {
+    playerId: string;
+    pawnId: string;
+    from: PawnPosition;
+    fromCoord: BoardCoord | null;
+  };
+  extraRollGranted: { playerId: string; reason: 'ROLLED_SIX' | 'NO_LEGAL_ACTION_ON_SIX' };
   turnChanged: { fromPlayerId: string; toPlayerId: string; turnNumber: number };
-  gameWon: { winnerPlayerId: string; reason: "HOME_DIAGONAL_COMPLETED" | "LAST_ACTIVE_PLAYER" };
+  gameWon: { winnerPlayerId: string; reason: 'HOME_DIAGONAL_COMPLETED' | 'LAST_ACTIVE_PLAYER' };
 };
 ```
 

@@ -1,0 +1,18 @@
+{
+  "name": "@zamanushka/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -b --pretty false",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@zamanushka/ui": "workspace:*",
+    "react": "latest",
+    "react-dom": "latest"
+  }
+}

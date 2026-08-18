@@ -1,14 +1,9 @@
 # Match State Machine
 
 ```ts
-type MatchStatus =
-  | "WAITING_FOR_PLAYERS"
-  | "READY"
-  | "ACTIVE"
-  | "FINISHED"
-  | "ABANDONED";
+type MatchStatus = 'WAITING_FOR_PLAYERS' | 'READY' | 'ACTIVE' | 'FINISHED' | 'ABANDONED';
 
-type TurnPhase = "WAITING_FOR_ROLL" | "WAITING_FOR_ACTION";
+type TurnPhase = 'WAITING_FOR_ROLL' | 'WAITING_FOR_ACTION';
 ```
 
 `turnPhase` is null unless the match is `ACTIVE`. `ANIMATING` is never a server state.
