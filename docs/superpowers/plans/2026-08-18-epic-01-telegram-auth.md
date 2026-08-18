@@ -35,6 +35,10 @@
 - Modify `apps/api/package.json`: add `@fastify/cookie`; add integration-test/migration scripts if needed.
 - Modify `apps/api/prisma/schema.prisma`: `User`, `AuthSession`, and `AuthMethod` only.
 - Create `apps/api/prisma/migrations/<timestamp>_epic_01_auth/migration.sql`: durable auth schema and constraints.
+- Create `apps/api/prisma.test.config.ts`: test migrations sourced only from `TEST_DATABASE_URL`.
+- Create `apps/api/vitest.integration.config.ts`: serialized PostgreSQL integration suite.
+- Create `apps/api/src/test/test-database.ts`: `_test` URL guard, cleanup, and lifecycle helpers.
+- Modify `infra/docker-compose.yml`: isolated `postgres_test` service on port 5433.
 - Modify `apps/api/src/config/env.ts`: explicit production/development/test auth matrix and normalized dev-user config.
 - Modify `apps/api/src/config/env.test.ts`: matrix, origins, secrets, two-user allowlist, cookie policy.
 - Modify `.env.example`: safe placeholders and local two-user dev configuration.
@@ -58,6 +62,7 @@
 
 ### Web bootstrap
 
+- Modify `apps/web/package.json`: add the `@zamanushka/shared` workspace dependency.
 - Modify `apps/web/index.html`: load the official Telegram bridge before the module entry.
 - Create `apps/web/src/telegram/types.ts`: minimal local Telegram bridge declarations used by the adapter.
 - Create `apps/web/src/telegram/adapter.ts`: detection, one-shot ready, raw init data, lifecycle subscriptions, CSS variables.
@@ -80,6 +85,28 @@
 - Create `scripts/epic-01-auth-smoke.mjs`: deterministic Telegram signature, cookie jars, `/api/me`, logout, two dev identities.
 - Create `scripts/epic-01-production-guard-smoke.mjs`: production dev-bypass negative configuration check.
 - Create `artifacts/visual-qa/epic-01/README.md` and four PNG screenshots: commands, viewport metadata, comparison notes.
+
+## Task 0: Record authorization and execution boundary
+
+**Files:**
+- Modify: `AGENTS.md`
+- Modify: `docs/epics/EPIC-01-TELEGRAM-AUTH.md`
+
+- [ ] **Step 1: Record the approved EPIC-01 boundary before application code**
+
+Replace the stale EPIC-00 execution boundary with the user's explicit authorization for EPIC-01 only. Add Telegram identity/session invariants and the mandatory stop before EPIC-02. Preserve all existing product/UI/engineering rules and the future engine/room notes.
+
+- [ ] **Step 2: Record the implementation base**
+
+After this boundary commit, record `git rev-parse HEAD` as `EPIC_01_IMPLEMENTATION_BASE` in local execution notes. Final scope review compares all implementation changes against this commit, not `HEAD~1`.
+
+- [ ] **Step 3: Verify and commit**
+
+Run: `pnpm exec prettier --check AGENTS.md docs/epics/EPIC-01-TELEGRAM-AUTH.md`
+
+Expected: PASS; only EPIC-01 is authorized.
+
+Commit: `git commit -m "docs: authorize EPIC-01 implementation"`
 
 ## Task 1: Freeze shared authentication contracts
 
@@ -137,7 +164,7 @@ git commit -m "feat(shared): add EPIC-01 auth contracts"
 
 - [ ] **Step 1: Add failing table-driven configuration tests**
 
-Test all five matrix rows: production Telegram; development dev-only; development Telegram; test dev-only; test Telegram. Also test production dev flag rejection, missing bot token where required, fewer than two dev users, duplicate dev keys, non-HTTPS production origins, wildcard origin, and missing explicit test origins.
+Test all five matrix rows: production Telegram; development dev-only; development Telegram; test dev-only; test Telegram. Also test production dev flag rejection, missing bot token where required, fewer than two dev users, duplicate dev keys, numeric bounds for max bytes/age/skew/session TTL, non-HTTPS production origins, wildcard/opaque origins, credentials, non-root path, query, fragment, and missing explicit test origins.
 
 - [ ] **Step 2: Run config tests and confirm RED**
 
@@ -147,15 +174,30 @@ Expected: FAIL for missing auth configuration fields.
 
 - [ ] **Step 3: Implement normalized `AuthRuntimeConfig`**
 
-Parse environment strings once and return a discriminated `auth` configuration:
+Parse environment strings once and return a discriminated `auth` configuration with every runtime bound needed by the verifier and session service:
 
 ```ts
 type AuthRuntimeConfig =
-  | { mode: 'telegram'; botToken: string; allowedOrigins: string[]; cookie: CookiePolicy }
-  | { mode: 'development'; users: DevUserConfig[]; allowedOrigins: string[]; cookie: CookiePolicy };
+  | {
+      mode: 'telegram';
+      botToken: string;
+      allowedOrigins: string[];
+      cookie: CookiePolicy;
+      sessionTtlSeconds: number;
+      initDataMaxBytes: number;
+      initDataMaxAgeSeconds: number;
+      initDataFutureSkewSeconds: number;
+    }
+  | {
+      mode: 'development';
+      users: DevUserConfig[];
+      allowedOrigins: string[];
+      cookie: CookiePolicy;
+      sessionTtlSeconds: number;
+    };
 ```
 
-Production always selects Telegram and `__Host-zamanushka-session` with `Secure=true`. Development/test select mode only from `DEV_AUTH_ENABLED`; local/test cookie stays host-only with `Secure=false`. Parse `DEV_AUTH_USERS_JSON` as a bounded strict JSON array.
+Production always selects Telegram and `__Host-zamanushka-session` with `Secure=true`. Development/test select mode only from `DEV_AUTH_ENABLED`; local/test cookie stays host-only with `Secure=false`. Parse `DEV_AUTH_USERS_JSON` as a bounded strict JSON array. Normalize each `APP_ORIGINS` entry with `new URL` and require it to equal its canonical `.origin`: reject credentials, non-root paths, query, fragment, opaque/`null` origins, and wildcards. Require HTTPS in production and explicit loopback HTTP origins only for local/test use.
 
 - [ ] **Step 4: Update `.env.example` without secrets**
 
@@ -209,6 +251,12 @@ Commit: `git commit -m "feat(api): verify Telegram Mini App init data"`
 **Files:**
 - Modify: `apps/api/prisma/schema.prisma`
 - Create: `apps/api/prisma/migrations/<generated_timestamp>_epic_01_auth/migration.sql`
+- Create: `apps/api/prisma.test.config.ts`
+- Create: `apps/api/vitest.integration.config.ts`
+- Create: `apps/api/src/test/test-database.ts`
+- Modify: `apps/api/package.json`
+- Modify: `infra/docker-compose.yml`
+- Modify: `.env.example`
 - Create: `apps/api/src/auth/session-token.ts`
 - Create: `apps/api/src/auth/session-token.test.ts`
 - Create: `apps/api/src/auth/auth-repository.ts`
@@ -216,7 +264,7 @@ Commit: `git commit -m "feat(api): verify Telegram Mini App init data"`
 
 - [ ] **Step 1: Write failing token tests**
 
-Assert an injected 32-byte source encodes to unpadded URL-safe base64, hashing is deterministic 64-hex SHA-256, generated values differ, and no raw token is returned by persistence DTOs.
+Assert an injected 32-byte source encodes to unpadded URL-safe base64, hashing is deterministic 64-hex SHA-256, and generated values differ. Repository tests assert that persistence DTOs and rows never contain the raw token.
 
 - [ ] **Step 2: Implement the token utility and turn tests GREEN**
 
@@ -224,37 +272,55 @@ Run: `pnpm --filter @zamanushka/api test -- src/auth/session-token.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 3: Define the minimal Prisma schema**
+- [ ] **Step 3: Provision and guard the isolated test database**
+
+Add `postgres_test` to Compose with database `zamanushka_test`, port 5433, and its own volume. Add `TEST_DATABASE_URL` to `.env.example`. Create `prisma.test.config.ts` that reads only `TEST_DATABASE_URL` and fails unless the parsed database name ends in `_test`. Add a serialized integration Vitest config (`fileParallelism: false`, `maxWorkers: 1`) and a helper that repeats the guard before any cleanup.
+
+Run:
+
+```powershell
+docker compose --env-file .env -f infra/docker-compose.yml up -d postgres_test
+docker compose --env-file .env -f infra/docker-compose.yml ps postgres_test
+```
+
+Expected: isolated PostgreSQL is healthy before migration/tests.
+
+- [ ] **Step 4: Write failing repository integration tests before persistence implementation**
+
+Cover Telegram upsert stable internal ID, distinct dev users, hash-only persistence, expiry/revocation, two device sessions, sequential same-cookie replacement, and two concurrent replacements. Test setup refuses any URL whose database name does not end in `_test`; cleanup touches only the guarded database. Run the integration script and confirm RED because Prisma auth models/repository methods are absent.
+
+- [ ] **Step 5: Define the minimal Prisma schema**
 
 Add `AuthMethod { TELEGRAM DEVELOPMENT }`, nullable unique `telegramId BigInt`, nullable unique `devUserKey String`, supported profile fields, timestamps, and `AuthSession` with unique `tokenHash`, indexed `userId`, expiry/revocation, and cascade cleanup relation. Do not add profiles, stats, rooms, or game tables.
 
-- [ ] **Step 4: Generate and inspect a migration**
+- [ ] **Step 6: Generate and inspect a migration against test configuration**
 
 Run:
 
 ```powershell
 pnpm prisma:generate
 pnpm prisma:validate
-pnpm --filter @zamanushka/api exec prisma migrate dev --name epic_01_auth --config prisma.config.ts
+pnpm --filter @zamanushka/api exec prisma migrate dev --name epic_01_auth --config prisma.test.config.ts
 ```
 
 Expected: one migration containing only auth enum/tables/indexes/foreign key; generated client compiles.
 
-- [ ] **Step 5: Write failing PostgreSQL integration tests**
+- [ ] **Step 7: Implement focused repository methods**
 
-Against a dedicated test database/schema, cover Telegram upsert stable internal ID, distinct dev users, hash-only persistence, expiry/revocation, two device sessions, sequential same-cookie replacement, and two concurrent replacements of one locked session yielding exactly one successor plus one `AUTH_SESSION_REPLACED` outcome.
+Use Prisma transactions for ordinary writes. For replacement, use parameterized raw SQL with Prisma's quoted `"AuthSession"` and `"tokenHash"` identifiers to acquire `SELECT ... FOR UPDATE`, then recheck active state, revoke, and insert the successor in the same `READ COMMITTED` transaction. Unknown tokens follow the ordinary no-current-session path; expired/revoked tokens are not replaceable; a request that loses the lock race returns a focused replacement-conflict result and creates nothing.
 
-- [ ] **Step 6: Implement focused repository methods**
+- [ ] **Step 8: Deploy migration, run serialized integration tests, and inspect rows**
 
-Use Prisma transactions for ordinary writes. For replacement, acquire `SELECT ... FOR UPDATE` on the session row by hash, re-read/recheck active state, revoke it, and insert the successor in the same transaction. A contender observing revocation returns the typed replacement conflict and creates nothing.
+Run:
 
-- [ ] **Step 7: Run database tests and inspect rows**
-
-Run: `pnpm --filter @zamanushka/api test -- src/auth/auth.integration.test.ts`
+```powershell
+pnpm --filter @zamanushka/api exec prisma migrate deploy --config prisma.test.config.ts
+pnpm --filter @zamanushka/api test:integration -- src/auth/auth.integration.test.ts
+```
 
 Expected: PASS with Docker PostgreSQL running; raw tokens are absent from queried records.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 Commit: `git commit -m "feat(api): persist users and revocable sessions"`
 
@@ -263,10 +329,12 @@ Commit: `git commit -m "feat(api): persist users and revocable sessions"`
 **Files:**
 - Modify: `apps/api/package.json`
 - Create: `apps/api/src/auth/auth-service.ts`
+- Create: `apps/api/src/auth/auth-service.test.ts`
 - Create: `apps/api/src/auth/cookies.ts`
 - Create: `apps/api/src/auth/origin-guard.ts`
 - Create: `apps/api/src/auth/routes.ts`
 - Create: `apps/api/src/auth/routes.test.ts`
+- Create: `apps/api/src/auth/auth-http.integration.test.ts`
 - Modify: `apps/api/src/app.ts`
 - Modify: `apps/api/src/server.ts`
 - Modify: `apps/api/src/health/dependency-probes.ts`
@@ -277,34 +345,44 @@ Run: `pnpm --filter @zamanushka/api add @fastify/cookie`
 
 Expected: lockfile and API manifest change only.
 
-- [ ] **Step 2: Write failing injected route tests**
+- [ ] **Step 2: Write failing auth-service orchestration tests**
 
-Use an in-memory fake auth service and Fastify `inject`. Cover capability response always registered; dev POST conditional; Telegram POST conditional; strict bodies; JSON content type; missing/`null`/malformed/disallowed/allowed origins; cookie flags; `Cache-Control: no-store`; `/me`; logout; public error mapping; no sensitive details.
+With a typed fake repository, drive Telegram verification/upsert, allowlisted dev resolution, session issue, expiry, sequential replacement, replacement conflict, `/me`, and logout. Confirm RED before creating `auth-service.ts`.
 
-- [ ] **Step 3: Run route tests and confirm RED**
+- [ ] **Step 3: Write failing injected route tests**
 
-Run: `pnpm --filter @zamanushka/api test -- src/auth/routes.test.ts`
+Use an in-memory fake auth service and Fastify `inject`. Assert all five configuration rows: production Telegram, development dev-only, development Telegram, test dev-only, and test Telegram. Cover capability response always registered; exact POST route presence/absence; strict bodies; JSON content type; missing/`null`/malformed/disallowed/allowed origins; `Cache-Control: no-store`; `/me`; logout; public error mapping; no sensitive details. Assert cookies exactly: no `Domain`; bounded `Max-Age` matches persisted expiry; production uses `__Host-`, Path `/`, HttpOnly, SameSite Lax, Secure; local/test is host-only and non-Secure; logout clearing repeats name, Path, SameSite, Secure, host-only scope and expiry semantics.
+
+- [ ] **Step 4: Write failing real HTTP/PostgreSQL integration tests**
+
+Using the guarded serialized test database, specify a deterministically signed Telegram flow, stable user upsert, cookie-to-`/api/me`, sequential and concurrent replacement, logout, both dev users, all route matrices, and unchanged health/readiness. Confirm RED before service/routes exist.
+
+- [ ] **Step 5: Run new tests and confirm RED**
+
+Run:
+
+```powershell
+pnpm --filter @zamanushka/api test -- src/auth/auth-service.test.ts src/auth/routes.test.ts
+pnpm --filter @zamanushka/api test:integration -- src/auth/auth-http.integration.test.ts
+```
 
 Expected: FAIL because routes are absent.
 
-- [ ] **Step 4: Implement cookie, origin, service, and route units**
+- [ ] **Step 6: Implement cookie, origin, service, and route units**
 
 Keep HTTP handlers thin. Parse all bodies with shared schemas. Never include raw auth bodies in log fields. Map unknown server errors to `INTERNAL_ERROR`; validation, auth, origin, Telegram, and session-replacement failures receive only stable messages.
 
-- [ ] **Step 5: Integrate into `buildApp` with dependency injection**
+- [ ] **Step 7: Integrate into `buildApp` with dependency injection**
 
 Extend `BuildAppOptions` with auth config/service while retaining injected readiness probes. Server construction shares one Prisma client between probes and repository, configures Fastify redaction for `req.headers.cookie`, `req.headers.authorization`, and auth request bodies, and closes clients once.
 
-- [ ] **Step 6: Add full HTTP/PostgreSQL integration cases**
-
-Exercise a deterministically signed Telegram request, user upsert, session cookie to `/api/me`, replacement, logout, both dev users, disabled routes, production guard, and unchanged health/readiness.
-
-- [ ] **Step 7: Run API suite and commit**
+- [ ] **Step 8: Turn service, route, and integration suites GREEN**
 
 Run:
 
 ```powershell
 pnpm --filter @zamanushka/api test
+pnpm --filter @zamanushka/api test:integration
 pnpm --filter @zamanushka/api typecheck
 ```
 
@@ -355,6 +433,7 @@ Commit: `git commit -m "feat(web): add Telegram Mini App adapter"`
 ## Task 7: Implement `/api/me`-first web authentication
 
 **Files:**
+- Modify: `apps/web/package.json`
 - Create: `apps/web/src/auth/api.ts`
 - Create: `apps/web/src/auth/bootstrap.ts`
 - Create: `apps/web/src/auth/bootstrap.test.ts`
@@ -365,33 +444,39 @@ Commit: `git commit -m "feat(web): add Telegram Mini App adapter"`
 - Modify: `apps/web/src/styles.css`
 - Modify: `apps/web/vite.config.ts`
 
-- [ ] **Step 1: Write failing bootstrap state-machine tests**
+- [ ] **Step 1: Add the shared workspace dependency**
+
+Run: `pnpm --filter @zamanushka/web add "@zamanushka/shared@workspace:*"`
+
+Expected: web manifest and lockfile resolve the existing shared package before auth tests import its schemas.
+
+- [ ] **Step 2: Write failing bootstrap state-machine tests**
 
 Assert `/api/me` is always first; 200 skips login; 401 + Telegram sends only `{ initData }`; 401 + browser discovers dev capability; disabled capability becomes a clear unavailable error; enabled capability yields chooser; unexpected responses enter non-leaky error state.
 
-- [ ] **Step 2: Write failing component tests**
+- [ ] **Step 3: Write failing component tests**
 
 Cover loading, authenticated internal ID/display name/provider, exactly two configured dev choices, selecting a key, retry, logout, and absence of free-form Telegram/user identity inputs or future product navigation.
 
-- [ ] **Step 3: Run focused tests and confirm RED**
+- [ ] **Step 4: Run focused tests and confirm RED**
 
 Run: `pnpm --filter @zamanushka/web test -- src/auth`
 
 Expected: FAIL for missing modules.
 
-- [ ] **Step 4: Implement schema-validated credentials client and bootstrap**
+- [ ] **Step 5: Implement schema-validated credentials client and bootstrap**
 
 Use relative `/api` URLs, `credentials: 'include'`, JSON bodies only for POST, and shared response parsing. Never parse `initDataUnsafe`.
 
-- [ ] **Step 5: Implement minimal auth shell and lifecycle integration**
+- [ ] **Step 6: Implement minimal auth shell and lifecycle integration**
 
 Initialize the Telegram adapter, start bootstrap, call `ready()` when the shell can render, and dispose listeners on unmount. Preserve restrained EPIC-00 styling while adding safe-area padding and responsive states only.
 
-- [ ] **Step 6: Add Vite development proxy**
+- [ ] **Step 7: Add Vite development proxy**
 
 Proxy `/api`, `/health`, and `/ready` to the configured local API target without enabling wildcard credentialed CORS.
 
-- [ ] **Step 7: Run web tests and commit**
+- [ ] **Step 8: Run web tests and commit**
 
 Run:
 
@@ -404,27 +489,22 @@ Expected: all web tests pass.
 
 Commit: `git commit -m "feat(web): bootstrap Telegram and development auth"`
 
-## Task 8: Update execution boundary and operator documentation
+## Task 8: Complete operator documentation
 
 **Files:**
-- Modify: `AGENTS.md`
 - Modify: `docs/epics/EPIC-01-TELEGRAM-AUTH.md`
 - Modify: `docs/TELEGRAM.md`
 - Modify: `README.md`
 
-- [ ] **Step 1: Update `AGENTS.md` boundary**
-
-State that only EPIC-01 is authorized in this run, list auth invariants, preserve the three engine/room notes, and require stopping before EPIC-02.
-
-- [ ] **Step 2: Expand EPIC and Telegram docs**
+- [ ] **Step 1: Expand EPIC and Telegram docs**
 
 Document supported launch surfaces, `/api/me`-first flow, HMAC/freshness rules, forward-compatible signed user parsing, cookie/session replacement, dev/test/production matrix, and endpoint table.
 
-- [ ] **Step 3: Update README operations**
+- [ ] **Step 2: Update README operations**
 
 Add migration commands, auth environment examples, two-browser dev-user instructions, Telegram bot-token handling, and exact verification commands. Explicitly retain `/health` versus `/ready` semantics and reference preservation.
 
-- [ ] **Step 4: Run formatting check and commit**
+- [ ] **Step 3: Run formatting check and commit**
 
 Run: `pnpm exec prettier --check AGENTS.md README.md docs/TELEGRAM.md docs/epics/EPIC-01-TELEGRAM-AUTH.md`
 
@@ -441,7 +521,7 @@ Commit: `git commit -m "docs: document EPIC-01 auth operation"`
 
 - [ ] **Step 1: Write the auth smoke script against a running API**
 
-Generate valid raw init data locally from the configured smoke bot token without printing either value. Maintain explicit cookie jars. Verify Telegram login, `/api/me`, same-cookie replacement, logout, two distinct dev logins when running dev-only mode, no-store headers, and non-leaky negative responses.
+Accept an explicit `--mode=telegram|development`. Telegram mode requires only the smoke bot token and verifies signed login, `/api/me`, replacement, logout, no-store, and non-leaky failures. Development mode requires no bot token and verifies two allowlisted users in separate cookie jars. Never exercise mutually exclusive routes against one server mode.
 
 - [ ] **Step 2: Write production guard smoke**
 
@@ -451,7 +531,13 @@ Spawn config parsing in a child process with `NODE_ENV=production` and `DEV_AUTH
 
 Add `smoke:auth` and `smoke:production-guard` package scripts. Run against isolated API ports/configurations so the dev-only and Telegram-mode route matrices are both exercised.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 4: Format implementation files**
+
+Run: `pnpm format`
+
+Expected: only EPIC-01 files receive mechanical formatting; inspect the diff before staging.
+
+- [ ] **Step 5: Commit**
 
 Commit: `git commit -m "test: add EPIC-01 auth smoke coverage"`
 
@@ -483,7 +569,6 @@ Expected: PostgreSQL and Redis healthy; migration deployed; Prisma validates/gen
 Run in this order:
 
 ```powershell
-pnpm format
 pnpm format:check
 pnpm lint
 pnpm typecheck
@@ -514,7 +599,7 @@ Run:
 ```powershell
 git status --short
 git diff --check
-git diff --stat HEAD~1
+git diff --stat <EPIC_01_IMPLEMENTATION_BASE>
 git grep -n -E "TELEGRAM_BOT_TOKEN=.+|initData=.+|__Host-zamanushka-session=." -- ':!pnpm-lock.yaml'
 ```
 
