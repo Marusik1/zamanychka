@@ -1,6 +1,10 @@
+import { config as loadEnv } from 'dotenv';
+
 import { buildApp } from './app.js';
 import { parseEnv } from './config/env.js';
 import { createLiveDependencies } from './health/dependency-probes.js';
+
+loadEnv({ path: new URL('../../../.env', import.meta.url), quiet: true });
 
 const env = parseEnv(process.env);
 const dependencies = createLiveDependencies(env);
