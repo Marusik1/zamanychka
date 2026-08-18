@@ -276,7 +276,7 @@ Expected: PASS.
 
 - [ ] **Step 3: Provision and guard the isolated test database**
 
-Add `postgres_test` to Compose with database `zamanushka_test`, port 5433, and its own volume. Add `TEST_DATABASE_URL` to `.env.example`. Create `prisma.test.config.ts` that reads only `TEST_DATABASE_URL` and fails unless the parsed database name ends in `_test`. Add a serialized integration Vitest config (`include: ['src/**/*.integration.test.ts']`, `fileParallelism: false`, `maxWorkers: 1`) and a helper that repeats the guard before any cleanup. Modify the ordinary API Vitest config with `exclude: ['src/**/*.integration.test.ts']`, and add a `test:integration` script that selects the integration config.
+Add `postgres_test` to Compose with database `zamanushka_test`, port 5433, and its own volume. Add `TEST_DATABASE_URL` to `.env.example`. Create `prisma.test.config.ts` that reads only `TEST_DATABASE_URL` and fails unless the parsed database name ends in `_test`. Add a serialized integration Vitest config (`include: ['src/**/*.integration.test.ts']`, `fileParallelism: false`, `maxWorkers: 1`) and a helper that repeats the guard before any cleanup. Modify the ordinary API Vitest config by importing `configDefaults` from `vitest/config` and setting `exclude: [...configDefaults.exclude, 'src/**/*.integration.test.ts']`, preserving Vitest's `node_modules`, `dist`, and other default exclusions. Add a `test:integration` script that selects the integration config.
 
 Run:
 
