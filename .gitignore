@@ -10,5 +10,6 @@ coverage/
 .idea/
 .vscode/
 .superpowers/
+.worktrees/
 apps/api/src/generated/prisma/
 artifacts/tmp/
