@@ -7,7 +7,7 @@ Create a locally runnable, strictly typed monorepo foundation. No real gameplay 
 ## Scope
 
 - pnpm workspace with `apps/web`, `apps/api`, `packages/game-engine`, `packages/shared`, `packages/ui`, and `packages/config`.
-- React/Vite app shell sufficient to validate startup, responsive foundation, tokens, and future routing.
+- React/Vite app shell sufficient to validate startup, responsive foundation, placeholder foundation tokens, and future routing. The real design token system remains EPIC-02 scope.
 - Fastify API with `GET /health` and dependency-aware `GET /ready`.
 - PostgreSQL and Redis through local Docker Compose.
 - Prisma configured without product schema work beyond foundation needs.

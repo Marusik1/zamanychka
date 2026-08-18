@@ -1,3 +1,3 @@
 # EPIC-08 — Profile, History, Statistics, and Rating
 
-Implement Telegram profile presentation, match history/details, durable statistics, achievements, ranking, and result cards.
+Implement Telegram profile presentation, match history/details, durable statistics, ranking, and result cards. Achievements are outside MVP unless separately specified later.

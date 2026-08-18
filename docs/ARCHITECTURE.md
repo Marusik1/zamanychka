@@ -35,9 +35,9 @@ client intent
 → server RNG when required
 → game-engine transition
 → persist snapshot, events, processed action, results
+→ persist transactional outbox record
 → commit
-→ ACK sender
-→ broadcast committed events
+→ ACK sender and outbox dispatcher independently deliver committed truth
 ```
 
 Commands for one match are serialized. PostgreSQL row locking is the correctness boundary; an in-process per-match queue may reduce contention but cannot replace the transaction.
@@ -49,3 +49,7 @@ Commands for one match are serialized. PostgreSQL row locking is the correctness
 - PostgreSQL is durable truth.
 - Redis may cache but must never exclusively store dice, pawn positions, current turn, winner, final result, or rating result.
 - Commit always precedes ACK and broadcast.
+
+## Publication reliability
+
+The database outbox is the durable publication source. Workers claim committed rows safely and publish transition envelopes. ACK and broadcast are both strictly post-commit but may race with each other; neither is the durability mechanism. Unique match/version keys prevent duplicate logical transitions; duplicate network delivery remains allowed and clients deduplicate by sequence. Cross-instance delivery may arrive out of order, so clients never apply a gap. While a match is active, clients periodically compare a lightweight server version watermark and invoke `game:sync` on divergence. This watchdog closes the commit-before-broadcast crash window even when no later gameplay traffic occurs.

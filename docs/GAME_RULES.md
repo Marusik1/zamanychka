@@ -8,6 +8,9 @@ This file is the single canonical source for gameplay rules.
 - Colors: red, blue, green, yellow. Each player owns one corner.
 - The physical board is a normal 8x8 grid.
 - Pawns begin `OFF_BOARD`.
+- Internal coordinates are zero-based `{ row, col }` from the top-left. Chess-like labels are presentation-only.
+- Fixed corners are RED `(0,0)`, BLUE `(0,7)`, YELLOW `(7,7)`, and GREEN `(7,0)`.
+- Seat order is immutable after match start. Two players use RED/YELLOW; three use RED/BLUE/GREEN; four use RED/BLUE/YELLOW/GREEN. Players do not choose colors in MVP.
 
 ## Perimeter movement
 
@@ -36,10 +39,15 @@ This file is the single canonical source for gameplay rules.
 - After one complete perimeter lap, a pawn returns to its owner corner and changes from `PERIMETER` to `HOME(0)`.
 - The corner is one physical coordinate with two semantic uses: initial `PERIMETER(0)` and post-lap `HOME(0)`.
 - `HOME(1)`, `HOME(2)`, and `HOME(3)` are the next three diagonal cells toward the center.
+- Remaining steps are not reset on the perimeter-to-home transition. A single move may continue from the final perimeter cell through `HOME(0)` and onward.
 - Exact movement is required. From `HOME(0)`, a roll of 2 reaches `HOME(2)` (for A1, physical C3).
 - A pawn in `HOME(0)` physically blocks that corner for every pawn and every perimeter path.
 - `HOME(1..3)` occupy interior cells and do not block the perimeter.
 - Home cells obey physical occupancy and no-jumping rules.
+- If an opponent in `PERIMETER` occupies the physical corner and the move ends exactly at `HOME(0)`, that opponent is captured and the moving pawn enters `HOME(0)`.
+- If the occupied corner is an intermediate step toward `HOME(1..3)`, the move is illegal; capture never occurs on an intermediate step.
+- A move beyond `HOME(3)` is illegal. There is no bounce, partial move, or forced stop.
+- Every occupied intermediate home cell blocks movement. A friendly occupied destination is illegal; opposing pawns cannot normally enter `HOME(1..3)`.
 
 ## Victory
 
