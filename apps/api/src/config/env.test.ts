@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+
 import { describe, expect, it } from 'vitest';
 
 import { parseEnv } from './env.js';
@@ -222,6 +224,16 @@ describe('parseEnv auth bounds', () => {
     );
     expect(() => parseEnv({ ...valid, TELEGRAM_INIT_DATA_MAX_BYTES: 'large' })).toThrow(
       /TELEGRAM_INIT_DATA_MAX_BYTES/,
+    );
+  });
+});
+
+describe('.env.example', () => {
+  it('uses the isolated PostgreSQL test port', () => {
+    const example = readFileSync(new URL('../../../../.env.example', import.meta.url), 'utf8');
+
+    expect(example).toContain(
+      'TEST_DATABASE_URL=postgresql://zamanushka:zamanushka_local@127.0.0.1:5433/zamanushka_test',
     );
   });
 });
