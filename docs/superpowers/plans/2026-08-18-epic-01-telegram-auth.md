@@ -37,6 +37,7 @@
 - Create `apps/api/prisma/migrations/<timestamp>_epic_01_auth/migration.sql`: durable auth schema and constraints.
 - Create `apps/api/prisma.test.config.ts`: test migrations sourced only from `TEST_DATABASE_URL`.
 - Create `apps/api/vitest.integration.config.ts`: serialized PostgreSQL integration suite.
+- Modify `apps/api/vite.config.ts`: exclude `*.integration.test.ts` from the ordinary unit suite.
 - Create `apps/api/src/test/test-database.ts`: `_test` URL guard, cleanup, and lifecycle helpers.
 - Modify `infra/docker-compose.yml`: isolated `postgres_test` service on port 5433.
 - Modify `apps/api/src/config/env.ts`: explicit production/development/test auth matrix and normalized dev-user config.
@@ -98,7 +99,7 @@ Replace the stale EPIC-00 execution boundary with the user's explicit authorizat
 
 - [ ] **Step 2: Record the implementation base**
 
-After this boundary commit, record `git rev-parse HEAD` as `EPIC_01_IMPLEMENTATION_BASE` in local execution notes. Final scope review compares all implementation changes against this commit, not `HEAD~1`.
+The accepted EPIC-00 base is commit `52e7852`. Final scope review uses the exact executable command `git diff --stat 52e7852` so it includes EPIC-01 specs, plans, boundary changes, implementation, and evidence without relying on an untracked placeholder.
 
 - [ ] **Step 3: Verify and commit**
 
@@ -253,6 +254,7 @@ Commit: `git commit -m "feat(api): verify Telegram Mini App init data"`
 - Create: `apps/api/prisma/migrations/<generated_timestamp>_epic_01_auth/migration.sql`
 - Create: `apps/api/prisma.test.config.ts`
 - Create: `apps/api/vitest.integration.config.ts`
+- Modify: `apps/api/vite.config.ts`
 - Create: `apps/api/src/test/test-database.ts`
 - Modify: `apps/api/package.json`
 - Modify: `infra/docker-compose.yml`
@@ -274,20 +276,25 @@ Expected: PASS.
 
 - [ ] **Step 3: Provision and guard the isolated test database**
 
-Add `postgres_test` to Compose with database `zamanushka_test`, port 5433, and its own volume. Add `TEST_DATABASE_URL` to `.env.example`. Create `prisma.test.config.ts` that reads only `TEST_DATABASE_URL` and fails unless the parsed database name ends in `_test`. Add a serialized integration Vitest config (`fileParallelism: false`, `maxWorkers: 1`) and a helper that repeats the guard before any cleanup.
+Add `postgres_test` to Compose with database `zamanushka_test`, port 5433, and its own volume. Add `TEST_DATABASE_URL` to `.env.example`. Create `prisma.test.config.ts` that reads only `TEST_DATABASE_URL` and fails unless the parsed database name ends in `_test`. Add a serialized integration Vitest config (`include: ['src/**/*.integration.test.ts']`, `fileParallelism: false`, `maxWorkers: 1`) and a helper that repeats the guard before any cleanup. Modify the ordinary API Vitest config with `exclude: ['src/**/*.integration.test.ts']`, and add a `test:integration` script that selects the integration config.
 
 Run:
 
 ```powershell
+$env:TEST_DATABASE_URL = 'postgresql://zamanushka:zamanushka_local@127.0.0.1:5433/zamanushka_test'
 docker compose --env-file .env -f infra/docker-compose.yml up -d postgres_test
 docker compose --env-file .env -f infra/docker-compose.yml ps postgres_test
 ```
 
-Expected: isolated PostgreSQL is healthy before migration/tests.
+Expected: isolated PostgreSQL is healthy before migration/tests. The task-specific environment variable must be set in every new shell that runs test Prisma or integration commands; it is never committed with credentials.
 
 - [ ] **Step 4: Write failing repository integration tests before persistence implementation**
 
 Cover Telegram upsert stable internal ID, distinct dev users, hash-only persistence, expiry/revocation, two device sessions, sequential same-cookie replacement, and two concurrent replacements. Test setup refuses any URL whose database name does not end in `_test`; cleanup touches only the guarded database. Run the integration script and confirm RED because Prisma auth models/repository methods are absent.
+
+Run: `pnpm --filter @zamanushka/api test:integration -- src/auth/auth.integration.test.ts`
+
+Expected: RED for absent auth models/repository, after the `_test` guard succeeds.
 
 - [ ] **Step 5: Define the minimal Prisma schema**
 
@@ -314,6 +321,7 @@ Use Prisma transactions for ordinary writes. For replacement, use parameterized 
 Run:
 
 ```powershell
+$env:TEST_DATABASE_URL = 'postgresql://zamanushka:zamanushka_local@127.0.0.1:5433/zamanushka_test'
 pnpm --filter @zamanushka/api exec prisma migrate deploy --config prisma.test.config.ts
 pnpm --filter @zamanushka/api test:integration -- src/auth/auth.integration.test.ts
 ```
@@ -556,9 +564,12 @@ Run:
 
 ```powershell
 docker compose --env-file .env -f infra/docker-compose.yml up -d postgres redis
+$env:TEST_DATABASE_URL = 'postgresql://zamanushka:zamanushka_local@127.0.0.1:5433/zamanushka_test'
+docker compose --env-file .env -f infra/docker-compose.yml up -d postgres_test
 pnpm prisma:generate
 pnpm prisma:validate
 pnpm --filter @zamanushka/api exec prisma migrate deploy --config prisma.config.ts
+pnpm --filter @zamanushka/api exec prisma migrate deploy --config prisma.test.config.ts
 docker compose --env-file .env -f infra/docker-compose.yml ps
 ```
 
@@ -573,6 +584,7 @@ pnpm format:check
 pnpm lint
 pnpm typecheck
 pnpm test
+pnpm --filter @zamanushka/api test:integration
 pnpm build
 ```
 
@@ -580,7 +592,7 @@ Expected: every command exits 0. Record test counts and any intentional warnings
 
 - [ ] **Step 3: Run API operational and auth smoke tests**
 
-Start the API in dev-only mode, verify `/health` stays 200 without dependency logic and `/ready` reports both dependencies, then execute `pnpm smoke:auth`. Restart on an isolated port in development Telegram mode with a smoke-only token and execute the deterministic Telegram portion. Run `pnpm smoke:production-guard`.
+Start the API in dev-only mode, verify `/health` stays 200 without dependency logic and `/ready` reports both dependencies, then execute `pnpm smoke:auth -- --mode=development`. Restart on an isolated port in development Telegram mode with a smoke-only token and execute `pnpm smoke:auth -- --mode=telegram`. Run `pnpm smoke:production-guard`.
 
 Expected: all auth flows pass; two dev cookie jars map to different internal IDs; Telegram ID is not the application ID; logout revokes only the current session; production bypass cannot start.
 
@@ -599,7 +611,7 @@ Run:
 ```powershell
 git status --short
 git diff --check
-git diff --stat <EPIC_01_IMPLEMENTATION_BASE>
+git diff --stat 52e7852
 git grep -n -E "TELEGRAM_BOT_TOKEN=.+|initData=.+|__Host-zamanushka-session=." -- ':!pnpm-lock.yaml'
 ```
 
