@@ -7,11 +7,13 @@ import { cleanTestDatabase, getGuardedTestDatabaseUrl } from '../test/test-datab
 
 const prisma = createPrismaClient(getGuardedTestDatabaseUrl());
 const repository = createAuthRepository(prisma);
+const secondPrisma = createPrismaClient(getGuardedTestDatabaseUrl());
+const secondRepository = createAuthRepository(secondPrisma);
 
 describe('auth repository', () => {
-  beforeAll(async () => prisma.$connect());
+  beforeAll(async () => Promise.all([prisma.$connect(), secondPrisma.$connect()]));
   beforeEach(async () => cleanTestDatabase(prisma));
-  afterAll(async () => prisma.$disconnect());
+  afterAll(async () => Promise.all([prisma.$disconnect(), secondPrisma.$disconnect()]));
 
   it('upserts a Telegram profile while preserving its internal user id', async () => {
     const original = await repository.upsertTelegramUser({
@@ -145,7 +147,7 @@ describe('auth repository', () => {
     });
 
     expect(first.kind).toBe('replaced');
-    expect(second.kind).toBe('not-replaceable');
+    expect(second.kind).toBe('replacement-conflict');
     expect(await prisma.authSession.findUnique({ where: { tokenHash: 'other' } })).toBeNull();
   });
 
@@ -164,7 +166,7 @@ describe('auth repository', () => {
     expect(await prisma.authSession.count()).toBe(0);
   });
 
-  it('allows exactly one concurrent successor and reports the lock-race loser', async () => {
+  it('allows exactly one successor across independent repository instances', async () => {
     const user = await repository.upsertDevelopmentUser({ devUserKey: 'one', displayName: 'One' });
     const expiresAt = new Date('2030-01-01');
     const now = new Date('2029-01-01');
@@ -184,7 +186,7 @@ describe('auth repository', () => {
         expiresAt,
         now,
       }),
-      repository.replaceSession({
+      secondRepository.replaceSession({
         currentTokenHash: 'old',
         nextTokenHash: 'next-b',
         userId: user.id,

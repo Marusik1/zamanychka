@@ -39,8 +39,6 @@ type LockedSession = {
 };
 
 export function createAuthRepository(prisma: AppPrismaClient) {
-  const replacementsInFlight = new Map<string, number>();
-
   return {
     upsertTelegramUser(profile: TelegramProfile) {
       const data = {
@@ -89,64 +87,49 @@ export function createAuthRepository(prisma: AppPrismaClient) {
       );
     },
 
-    async replaceSession(input: ReplacementInput): Promise<ReplacementResult> {
-      const concurrentRequest = (replacementsInFlight.get(input.currentTokenHash) ?? 0) > 0;
-      replacementsInFlight.set(
-        input.currentTokenHash,
-        (replacementsInFlight.get(input.currentTokenHash) ?? 0) + 1,
-      );
-      try {
-        return await prisma.$transaction(
-          async (tx) => {
-            const observed = await tx.$queryRaw<LockedSession[]>`
+    replaceSession(input: ReplacementInput): Promise<ReplacementResult> {
+      return prisma.$transaction(
+        async (tx) => {
+          const observed = await tx.$queryRaw<LockedSession[]>`
             SELECT "id", "expiresAt", "revokedAt"
             FROM "AuthSession"
             WHERE "tokenHash" = ${input.currentTokenHash}
           `;
-            const beforeLock = observed[0];
-            if (!beforeLock) return { kind: 'no-current-session' };
-            if (beforeLock.revokedAt) {
-              return concurrentRequest
-                ? { kind: 'replacement-conflict' }
-                : { kind: 'not-replaceable' };
-            }
-            if (beforeLock.expiresAt <= input.now) {
-              return { kind: 'not-replaceable' };
-            }
+          const beforeLock = observed[0];
+          if (!beforeLock) return { kind: 'no-current-session' };
+          if (beforeLock.revokedAt) return { kind: 'replacement-conflict' };
+          if (beforeLock.expiresAt <= input.now) {
+            return { kind: 'not-replaceable' };
+          }
 
-            const rows = await tx.$queryRaw<LockedSession[]>`
+          const rows = await tx.$queryRaw<LockedSession[]>`
             SELECT "id", "expiresAt", "revokedAt"
             FROM "AuthSession"
             WHERE "tokenHash" = ${input.currentTokenHash}
             FOR UPDATE
           `;
-            const current = rows[0];
-            if (!current) return { kind: 'no-current-session' };
-            if (current.revokedAt) return { kind: 'replacement-conflict' };
-            if (current.expiresAt <= input.now) return { kind: 'not-replaceable' };
+          const current = rows[0];
+          if (!current) return { kind: 'no-current-session' };
+          if (current.revokedAt) return { kind: 'replacement-conflict' };
+          if (current.expiresAt <= input.now) return { kind: 'not-replaceable' };
 
-            await tx.$executeRaw`
+          await tx.$executeRaw`
             UPDATE "AuthSession"
             SET "revokedAt" = clock_timestamp()
             WHERE "id" = ${current.id}
           `;
-            const session = await tx.authSession.create({
-              data: {
-                userId: input.userId,
-                tokenHash: input.nextTokenHash,
-                authMethod: input.authMethod,
-                expiresAt: input.expiresAt,
-              },
-            });
-            return { kind: 'replaced', session: { id: session.id, expiresAt: session.expiresAt } };
-          },
-          { isolationLevel: 'ReadCommitted' },
-        );
-      } finally {
-        const remaining = (replacementsInFlight.get(input.currentTokenHash) ?? 1) - 1;
-        if (remaining === 0) replacementsInFlight.delete(input.currentTokenHash);
-        else replacementsInFlight.set(input.currentTokenHash, remaining);
-      }
+          const session = await tx.authSession.create({
+            data: {
+              userId: input.userId,
+              tokenHash: input.nextTokenHash,
+              authMethod: input.authMethod,
+              expiresAt: input.expiresAt,
+            },
+          });
+          return { kind: 'replaced', session: { id: session.id, expiresAt: session.expiresAt } };
+        },
+        { isolationLevel: 'ReadCommitted' },
+      );
     },
   };
 }
