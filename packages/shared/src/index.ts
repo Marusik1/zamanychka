@@ -4,3 +4,23 @@ export {
   type HealthResponse,
   type ReadinessResponse,
 } from './health.js';
+export {
+  authSessionViewSchema,
+  authSuccessSchema,
+  authUserSchema,
+  devAuthCapabilitySchema,
+  devAuthRequestSchema,
+  meResponseSchema,
+  publicErrorCodeSchema,
+  publicErrorSchema,
+  telegramAuthRequestSchema,
+  type AuthSessionView,
+  type AuthSuccess,
+  type AuthUser,
+  type DevAuthCapability,
+  type DevAuthRequest,
+  type MeResponse,
+  type PublicError,
+  type PublicErrorCode,
+  type TelegramAuthRequest,
+} from './auth.js';
