@@ -83,4 +83,12 @@ Event ordering for move, capture, home entry, extra roll, turn change, and victo
 
 Three independent review passes were completed. The last pass identified only the two contradictions resolved immediately above. Per the three-pass review limit, the specification now requires final human review before planning.
 
-`READY_PENDING_HUMAN_REVIEW`
+Human review completed on 2026-08-18. No blocking contradiction remained.
+
+`APPROVED_FOR_EPIC_00`
+
+## Non-blocking implementation notes
+
+1. Before EPIC-03, assign explicit ownership for incrementing `stateVersion`.
+2. Define `physicalPath` as visited cells after the source, including destination; therefore `physicalPath.length === distance`.
+3. Room lifecycle operations must support retry/idempotency for repeated delivery.
