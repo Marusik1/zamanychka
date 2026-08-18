@@ -137,7 +137,7 @@ The API generates at least 256 bits of randomness for the raw token and encodes 
 - `Secure=true` in production;
 - a bounded `Max-Age` matching the server expiry.
 
-The default session lifetime is thirty days and is configurable. A login without a valid current cookie creates an independent session. A login with a valid current cookie atomically replaces and revokes that cookie jar's current session so repeated bootstrap cannot accumulate inaccessible sessions. `POST /api/auth/logout` revokes only the current session and clears the cookie with the same name, Path, SameSite, Secure, and host-only attributes used when setting it. Unknown, expired, or revoked tokens all produce `401 AUTH_REQUIRED`.
+The default session lifetime is thirty days and is configurable. A login without a valid current cookie creates an independent session. A login with a valid current cookie atomically replaces and revokes that cookie jar's current session so repeated bootstrap cannot accumulate inaccessible sessions. The transaction locks the current `AuthSession` row (or uses an equivalent serializable operation) and rechecks revocation after acquiring the lock. If concurrent authentication requests present the same formerly valid cookie, only the first may create a replacement; later contenders receive `409 AUTH_SESSION_REPLACED`, do not create another session, and do not clear or overwrite the first response's new cookie. `POST /api/auth/logout` revokes only the current session and clears the cookie with the same name, Path, SameSite, Secure, and host-only attributes used when setting it. Unknown, expired, or revoked tokens used for ordinary protected access all produce `401 AUTH_REQUIRED`.
 
 `GET /api/me` accepts no user identifier. It resolves identity exclusively from the session cookie and returns the public auth-user projection.
 
@@ -164,7 +164,7 @@ type DevAuthRequest = {
 
 The key must resolve to a profile in a server-side validated allowlist containing at least two distinct users for multiplayer development. Arbitrary Telegram IDs, usernames, or profile fields are rejected by strict request schemas. Separate browser cookie jars selecting different keys receive distinct internal users and sessions.
 
-Development users are visibly marked through `authProvider: "DEVELOPMENT"` in the public auth projection. Configuration has exactly three supported modes:
+Development users are visibly marked through `authProvider: "DEVELOPMENT"` in the public auth projection. Configuration follows this matrix:
 
 ```text
 production
@@ -179,7 +179,17 @@ development + DEV_AUTH_ENABLED=true
 development + DEV_AUTH_ENABLED=false
   -> TELEGRAM_BOT_TOKEN required
   -> Telegram authentication registered and development POST not registered
+
+test + DEV_AUTH_ENABLED=true
+  -> same auth route rules as development dev-only mode
+  -> explicit test origins and a non-Secure local/test cookie name
+
+test + DEV_AUTH_ENABLED=false
+  -> same auth route rules as development Telegram mode
+  -> TELEGRAM_BOT_TOKEN required, explicit test origins, and a non-Secure local/test cookie name
 ```
+
+`NODE_ENV=test` is non-production but never inherits configuration implicitly: tests provide the auth-mode flag, origins, and any required bot token explicitly. Production alone uses the `__Host-` cookie name and mandatory `Secure`; development and test use a host-only cookie without `Domain`, with `Secure=false` only for local HTTP execution.
 
 ## Shared contracts
 
@@ -259,6 +269,7 @@ Public errors use a stable envelope and minimum disclosure:
 404 NOT_FOUND
 429 RATE_LIMITED (contract reserved; rate limiting implementation may remain a later operational concern)
 500 INTERNAL_ERROR
+409 AUTH_SESSION_REPLACED
 ```
 
 ## Logging and secret handling
@@ -293,6 +304,7 @@ Public errors use a stable envelope and minimum disclosure:
 - absent cookie `Domain` and logout clearing attributes exactly matching set-cookie scope;
 - two concurrent independent sessions;
 - same-cookie re-authentication atomically revokes the replaced session without affecting another device;
+- concurrent re-authentication with the same old cookie creates exactly one replacement, while losing contenders return `AUTH_SESSION_REPLACED` without changing cookies;
 - logout revokes only the current session;
 - expired/revoked/unknown sessions share the non-leaky unauthorized response;
 - two allowlisted development users remain distinct;
@@ -304,6 +316,7 @@ Public errors use a stable envelope and minimum disclosure:
 - auth failures do not expose Telegram, cryptographic, Prisma, or configuration details;
 - authentication and `/api/me` responses use `Cache-Control: no-store`, and raw session tokens are unpadded base64url;
 - all three supported production/development configuration modes;
+- both explicit test-mode configurations, including route registration, origins, cookie naming, and Secure behavior;
 - existing `/health` and dependency-aware `/ready` behavior remains intact.
 
 ## Verification and smoke tests
