@@ -2,17 +2,18 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { createAuthRepository } from './auth-repository.js';
 import { hashSessionToken } from './session-token.js';
-import { createPrismaClient } from '../infrastructure/prisma.js';
-import { cleanTestDatabase, getGuardedTestDatabaseUrl } from '../test/test-database.js';
+import { createTestDatabase } from '../test/test-database.js';
 
-const prisma = createPrismaClient(getGuardedTestDatabaseUrl());
+const primaryDatabase = createTestDatabase();
+const secondaryDatabase = createTestDatabase();
+const prisma = primaryDatabase.prisma;
 const repository = createAuthRepository(prisma);
-const secondPrisma = createPrismaClient(getGuardedTestDatabaseUrl());
+const secondPrisma = secondaryDatabase.prisma;
 const secondRepository = createAuthRepository(secondPrisma);
 
 describe('auth repository', () => {
   beforeAll(async () => Promise.all([prisma.$connect(), secondPrisma.$connect()]));
-  beforeEach(async () => cleanTestDatabase(prisma));
+  beforeEach(async () => primaryDatabase.clean());
   afterAll(async () => Promise.all([prisma.$disconnect(), secondPrisma.$disconnect()]));
 
   it('upserts a Telegram profile while preserving its internal user id', async () => {
@@ -148,6 +149,9 @@ describe('auth repository', () => {
 
     expect(first.kind).toBe('replaced');
     expect(second.kind).toBe('replacement-conflict');
+    const replaced = await prisma.authSession.findUniqueOrThrow({ where: { tokenHash: 'old' } });
+    expect(replaced.revokedAt).not.toBeNull();
+    expect(replaced.replacedAt).not.toBeNull();
     expect(await prisma.authSession.findUnique({ where: { tokenHash: 'other' } })).toBeNull();
   });
 
@@ -164,6 +168,37 @@ describe('auth repository', () => {
 
     expect(result).toEqual({ kind: 'no-current-session' });
     expect(await prisma.authSession.count()).toBe(0);
+  });
+
+  it('does not replace a session revoked without replacement', async () => {
+    const user = await repository.upsertDevelopmentUser({ devUserKey: 'one', displayName: 'One' });
+    const expiresAt = new Date('2030-01-01');
+    await repository.createSession({
+      userId: user.id,
+      tokenHash: 'logged-out',
+      authMethod: 'DEVELOPMENT',
+      expiresAt,
+    });
+    await repository.revokeSession('logged-out', new Date('2029-01-01'));
+
+    const result = await secondRepository.replaceSession({
+      currentTokenHash: 'logged-out',
+      nextTokenHash: 'must-not-exist',
+      userId: user.id,
+      authMethod: 'DEVELOPMENT',
+      expiresAt,
+      now: new Date('2029-01-02'),
+    });
+
+    expect(result).toEqual({ kind: 'not-replaceable' });
+    const revoked = await prisma.authSession.findUniqueOrThrow({
+      where: { tokenHash: 'logged-out' },
+    });
+    expect(revoked.revokedAt).not.toBeNull();
+    expect(revoked.replacedAt).toBeNull();
+    expect(
+      await prisma.authSession.findUnique({ where: { tokenHash: 'must-not-exist' } }),
+    ).toBeNull();
   });
 
   it('allows exactly one successor across independent repository instances', async () => {

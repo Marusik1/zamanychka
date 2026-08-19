@@ -1,30 +1,30 @@
 import type { AuthMethod } from '../generated/prisma/enums.js';
 import type { AppPrismaClient } from '../infrastructure/prisma.js';
 
-type TelegramProfile = {
+interface TelegramProfile {
   telegramId: bigint;
   username?: string;
   firstName: string;
   lastName?: string;
   languageCode?: string;
   photoUrl?: string;
-};
+}
 
-type SessionInput = {
+interface SessionInput {
   userId: string;
   tokenHash: string;
   authMethod: AuthMethod;
   expiresAt: Date;
-};
+}
 
-type ReplacementInput = {
+interface ReplacementInput {
   currentTokenHash: string;
   nextTokenHash: string;
   userId: string;
   authMethod: AuthMethod;
   expiresAt: Date;
   now: Date;
-};
+}
 
 export type ReplacementResult =
   | { kind: 'replaced'; session: { id: string; expiresAt: Date } }
@@ -32,11 +32,12 @@ export type ReplacementResult =
   | { kind: 'not-replaceable' }
   | { kind: 'replacement-conflict' };
 
-type LockedSession = {
+interface LockedSession {
   id: string;
   expiresAt: Date;
   revokedAt: Date | null;
-};
+  replacedAt: Date | null;
+}
 
 export function createAuthRepository(prisma: AppPrismaClient) {
   return {
@@ -91,31 +92,33 @@ export function createAuthRepository(prisma: AppPrismaClient) {
       return prisma.$transaction(
         async (tx) => {
           const observed = await tx.$queryRaw<LockedSession[]>`
-            SELECT "id", "expiresAt", "revokedAt"
+            SELECT "id", "expiresAt", "revokedAt", "replacedAt"
             FROM "AuthSession"
             WHERE "tokenHash" = ${input.currentTokenHash}
           `;
           const beforeLock = observed[0];
           if (!beforeLock) return { kind: 'no-current-session' };
-          if (beforeLock.revokedAt) return { kind: 'replacement-conflict' };
+          if (beforeLock.replacedAt) return { kind: 'replacement-conflict' };
+          if (beforeLock.revokedAt) return { kind: 'not-replaceable' };
           if (beforeLock.expiresAt <= input.now) {
             return { kind: 'not-replaceable' };
           }
 
           const rows = await tx.$queryRaw<LockedSession[]>`
-            SELECT "id", "expiresAt", "revokedAt"
+            SELECT "id", "expiresAt", "revokedAt", "replacedAt"
             FROM "AuthSession"
             WHERE "tokenHash" = ${input.currentTokenHash}
             FOR UPDATE
           `;
           const current = rows[0];
           if (!current) return { kind: 'no-current-session' };
-          if (current.revokedAt) return { kind: 'replacement-conflict' };
+          if (current.replacedAt) return { kind: 'replacement-conflict' };
+          if (current.revokedAt) return { kind: 'not-replaceable' };
           if (current.expiresAt <= input.now) return { kind: 'not-replaceable' };
 
           await tx.$executeRaw`
             UPDATE "AuthSession"
-            SET "revokedAt" = clock_timestamp()
+            SET "revokedAt" = clock_timestamp(), "replacedAt" = clock_timestamp()
             WHERE "id" = ${current.id}
           `;
           const session = await tx.authSession.create({
