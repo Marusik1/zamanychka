@@ -98,13 +98,7 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOpti
         reply.setCookie(
           options.cookie.name,
           result.token,
-          sessionCookie(
-            options.cookie,
-            Math.min(
-              options.sessionTtlSeconds,
-              Math.max(0, Math.floor((Date.parse(result.session.expiresAt) - Date.now()) / 1000)),
-            ),
-          ),
+          sessionCookie(options.cookie, options.sessionTtlSeconds),
         );
         return reply.send({ user: result.user, session: result.session });
       } catch (thrown) {
