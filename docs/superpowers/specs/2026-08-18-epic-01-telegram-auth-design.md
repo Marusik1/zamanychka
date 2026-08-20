@@ -212,7 +212,7 @@ type AuthUser = {
   username?: string;
   photoUrl?: string;
   languageCode?: string;
-  authProvider: "TELEGRAM" | "DEVELOPMENT";
+  authProvider: 'TELEGRAM' | 'DEVELOPMENT';
 };
 
 type AuthSessionView = {

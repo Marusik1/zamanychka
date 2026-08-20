@@ -12,23 +12,29 @@ loadEnv({ path: new URL('../../../.env', import.meta.url), quiet: true });
 const env = parseEnv(process.env);
 const dependencies = createLiveDependencies(env);
 const repository = createAuthRepository(dependencies.prisma);
-const telegramConfig = env.auth.mode === 'telegram' ? env.auth : undefined;
-const authService = createAuthService({
-  repository,
-  sessionTtlSeconds: env.auth.sessionTtlSeconds,
-  ...(env.auth.mode === 'development'
-    ? { devUsers: env.auth.users }
-    : {
-        verifyTelegram: (raw) =>
-          verifyTelegramInitData(raw, {
-            botToken: telegramConfig!.botToken,
-            maxBytes: telegramConfig!.initDataMaxBytes,
-            maxAgeSeconds: telegramConfig!.initDataMaxAgeSeconds,
-            futureSkewSeconds: telegramConfig!.initDataFutureSkewSeconds,
-            now: () => new Date(),
-          }),
+function createConfiguredAuthService() {
+  if (env.auth.mode === 'development') {
+    return createAuthService({
+      repository,
+      sessionTtlSeconds: env.auth.sessionTtlSeconds,
+      devUsers: env.auth.users,
+    });
+  }
+  const telegramAuth = env.auth;
+  return createAuthService({
+    repository,
+    sessionTtlSeconds: telegramAuth.sessionTtlSeconds,
+    verifyTelegram: (raw) =>
+      verifyTelegramInitData(raw, {
+        botToken: telegramAuth.botToken,
+        maxBytes: telegramAuth.initDataMaxBytes,
+        maxAgeSeconds: telegramAuth.initDataMaxAgeSeconds,
+        futureSkewSeconds: telegramAuth.initDataFutureSkewSeconds,
+        now: () => new Date(),
       }),
-});
+  });
+}
+const authService = createConfiguredAuthService();
 const app = buildApp({
   probes: dependencies.probes,
   logger: true,

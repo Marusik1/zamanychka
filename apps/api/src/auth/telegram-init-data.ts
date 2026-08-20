@@ -22,24 +22,24 @@ const TelegramSignedUserSchema = z
   })
   .strip();
 
-export type TelegramVerifiedUser = {
+export interface TelegramVerifiedUser {
   id: string;
   firstName: string;
   lastName?: string;
   username?: string;
   languageCode?: string;
   photoUrl?: string;
-};
+}
 
 export type TelegramInitDataResult = { ok: true; user: TelegramVerifiedUser } | typeof INVALID;
 
-export type TelegramInitDataOptions = {
+export interface TelegramInitDataOptions {
   botToken: string;
   maxBytes: number;
   maxAgeSeconds: number;
   futureSkewSeconds: number;
   now: () => Date;
-};
+}
 
 function decodeQueryComponent(component: string): string | undefined {
   if (/%(?![0-9a-fA-F]{2})/.test(component)) {

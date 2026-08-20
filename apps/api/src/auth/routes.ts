@@ -11,13 +11,13 @@ import { AuthServiceError } from './auth-service.js';
 import { clearSessionCookie, sessionCookie } from './cookies.js';
 import { isAllowedOrigin } from './origin-guard.js';
 
-export type AuthRoutesOptions = {
+export interface AuthRoutesOptions {
   service: AuthService;
   mode: 'telegram' | 'development';
   allowedOrigins: string[];
   cookie: CookiePolicy;
   sessionTtlSeconds: number;
-};
+}
 const messages: Record<PublicErrorCode, string> = {
   VALIDATION_ERROR: 'Request validation failed',
   AUTH_REQUIRED: 'Authentication required',

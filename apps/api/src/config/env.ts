@@ -21,13 +21,13 @@ const devUserSchema = z
   .strict();
 
 export type DevUserConfig = z.infer<typeof devUserSchema>;
-export type CookiePolicy = {
+export interface CookiePolicy {
   name: '__Host-zamanushka-session' | 'zamanushka-session';
   path: '/';
   httpOnly: true;
   sameSite: 'lax';
   secure: boolean;
-};
+}
 export type AuthRuntimeConfig =
   | {
       mode: 'telegram';

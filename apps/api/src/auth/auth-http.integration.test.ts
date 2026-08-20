@@ -1,4 +1,5 @@
 import { createHmac } from 'node:crypto';
+import assert from 'node:assert/strict';
 
 import { describe, expect, it } from 'vitest';
 
@@ -11,8 +12,13 @@ import { hashSessionToken } from './session-token.js';
 import { verifyTelegramInitData } from './telegram-init-data.js';
 
 const database = createTestDatabase();
-const cookiePair = (header: string | string[] | undefined) =>
-  (Array.isArray(header) ? header[0] : header)!.split(';')[0]!;
+const cookiePair = (header: string | string[] | undefined) => {
+  const value = Array.isArray(header) ? header[0] : header;
+  assert(value);
+  const pair = value.split(';')[0];
+  assert(pair);
+  return pair;
+};
 function signedTelegram(botToken: string, authDate: number, user: object) {
   const pairs = { auth_date: String(authDate), query_id: 'stable', user: JSON.stringify(user) };
   const check = Object.entries(pairs)
@@ -252,13 +258,15 @@ describe('real auth HTTP', () => {
       });
     const initial = await login();
     const initialCookie = cookiePair(initial.headers['set-cookie']);
-    const rawToken = initialCookie.split('=')[1]!;
+    const rawToken = initialCookie.split('=')[1];
+    assert(rawToken);
     const stored = await database.prisma.authSession.findFirstOrThrow();
     expect(stored.tokenHash).toBe(hashSessionToken(rawToken));
     expect(JSON.stringify(stored)).not.toContain(rawToken);
     const replacements = await Promise.all([login(initialCookie), login(initialCookie)]);
     expect(replacements.map((response) => response.statusCode).sort()).toEqual([200, 409]);
-    const loser = replacements.find((response) => response.statusCode === 409)!;
+    const loser = replacements.find((response) => response.statusCode === 409);
+    assert(loser);
     expect(loser.headers['set-cookie']).toBeUndefined();
     expect(loser.json()).toEqual({
       error: { code: 'AUTH_SESSION_REPLACED', message: 'Authentication session was replaced' },

@@ -17,13 +17,13 @@ const defaultUser = {
   photo_url: 'https://example.test/ada.png',
 };
 
-function encode(entries: ReadonlyArray<readonly [string, string]>): string {
+function encode(entries: readonly (readonly [string, string])[]): string {
   return entries
     .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
     .join('&');
 }
 
-function sign(entries: ReadonlyArray<readonly [string, string]>): string {
+function sign(entries: readonly (readonly [string, string])[]): string {
   const dataCheckString = [...entries]
     .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
     .map(([key, value]) => `${key}=${value}`)
@@ -35,14 +35,14 @@ function sign(entries: ReadonlyArray<readonly [string, string]>): string {
 
 function validEntries(
   overrides: Partial<Record<'auth_date' | 'query_id' | 'signature' | 'user', string>> = {},
-): Array<[string, string]> {
+): [string, string][] {
   return [
     ['auth_date', overrides.auth_date ?? String(NOW_SECONDS)],
     ['query_id', overrides.query_id ?? 'AAHdF6IQAAAAAN0XohDhrOrc'],
     ['user', overrides.user ?? JSON.stringify(defaultUser)],
     ...(overrides.signature === undefined
       ? []
-      : ([['signature', overrides.signature]] as Array<[string, string]>)),
+      : ([['signature', overrides.signature]] as [string, string][])),
   ];
 }
 
@@ -166,9 +166,8 @@ describe('verifyTelegramInitData', () => {
 
   it('sorts decoded keys with deterministic ordinal ordering', () => {
     expect(
-      verify(
-        sign([...validEntries(), ['z', 'last'], ['ä', 'after-ascii']] as Array<[string, string]>),
-      ).ok,
+      verify(sign([...validEntries(), ['z', 'last'], ['ä', 'after-ascii']] as [string, string][]))
+        .ok,
     ).toBe(true);
   });
 });

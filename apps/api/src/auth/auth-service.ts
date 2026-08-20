@@ -4,7 +4,7 @@ import type { TelegramInitDataResult } from './telegram-init-data.js';
 import type { ReplacementResult } from './auth-repository.js';
 import { createSessionToken, hashSessionToken } from './session-token.js';
 
-type UserRow = {
+interface UserRow {
   id: string;
   telegramId: bigint | null;
   devUserKey: string | null;
@@ -13,8 +13,11 @@ type UserRow = {
   lastName?: string | null;
   languageCode?: string | null;
   photoUrl?: string | null;
-};
-type SessionRow = { user: UserRow; authMethod: 'TELEGRAM' | 'DEVELOPMENT' };
+}
+interface SessionRow {
+  user: UserRow;
+  authMethod: 'TELEGRAM' | 'DEVELOPMENT';
+}
 export interface AuthRepository {
   upsertTelegramUser(input: {
     telegramId: bigint;
@@ -70,7 +73,7 @@ export function createAuthService(options: {
   createToken?: () => string;
   sessionTtlSeconds: number;
   verifyTelegram?: (raw: string) => TelegramInitDataResult;
-  devUsers?: Array<{ devUserKey: string; displayName: string }>;
+  devUsers?: { devUserKey: string; displayName: string }[];
 }) {
   const now = options.now ?? (() => new Date());
   async function issue(user: UserRow, method: 'TELEGRAM' | 'DEVELOPMENT', currentToken?: string) {

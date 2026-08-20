@@ -90,6 +90,7 @@
 ## Task 0: Record authorization and execution boundary
 
 **Files:**
+
 - Modify: `AGENTS.md`
 - Modify: `docs/epics/EPIC-01-TELEGRAM-AUTH.md`
 
@@ -112,6 +113,7 @@ Commit: `git commit -m "docs: authorize EPIC-01 implementation"`
 ## Task 1: Freeze shared authentication contracts
 
 **Files:**
+
 - Create: `packages/shared/src/auth.ts`
 - Create: `packages/shared/src/auth.test.ts`
 - Modify: `packages/shared/src/index.ts`
@@ -159,6 +161,7 @@ git commit -m "feat(shared): add EPIC-01 auth contracts"
 ## Task 2: Add fail-closed authentication configuration
 
 **Files:**
+
 - Modify: `apps/api/src/config/env.ts`
 - Modify: `apps/api/src/config/env.test.ts`
 - Modify: `.env.example`
@@ -220,6 +223,7 @@ Commit: `git commit -m "feat(api): enforce auth configuration matrix"`
 ## Task 3: Implement Telegram init-data verification
 
 **Files:**
+
 - Create: `apps/api/src/auth/telegram-init-data.ts`
 - Create: `apps/api/src/auth/telegram-init-data.test.ts`
 
@@ -250,6 +254,7 @@ Commit: `git commit -m "feat(api): verify Telegram Mini App init data"`
 ## Task 4: Add Prisma user and session persistence
 
 **Files:**
+
 - Modify: `apps/api/prisma/schema.prisma`
 - Create: `apps/api/prisma/migrations/<generated_timestamp>_epic_01_auth/migration.sql`
 - Create: `apps/api/prisma.test.config.ts`
@@ -335,6 +340,7 @@ Commit: `git commit -m "feat(api): persist users and revocable sessions"`
 ## Task 5: Build Fastify auth service and routes
 
 **Files:**
+
 - Modify: `apps/api/package.json`
 - Create: `apps/api/src/auth/auth-service.ts`
 - Create: `apps/api/src/auth/auth-service.test.ts`
@@ -401,6 +407,7 @@ Commit: `git commit -m "feat(api): expose secure authentication endpoints"`
 ## Task 6: Implement the Telegram browser adapter
 
 **Files:**
+
 - Modify: `apps/web/index.html`
 - Create: `apps/web/src/telegram/types.ts`
 - Create: `apps/web/src/telegram/adapter.ts`
@@ -441,6 +448,7 @@ Commit: `git commit -m "feat(web): add Telegram Mini App adapter"`
 ## Task 7: Implement `/api/me`-first web authentication
 
 **Files:**
+
 - Modify: `apps/web/package.json`
 - Create: `apps/web/src/auth/api.ts`
 - Create: `apps/web/src/auth/bootstrap.ts`
@@ -500,6 +508,7 @@ Commit: `git commit -m "feat(web): bootstrap Telegram and development auth"`
 ## Task 8: Complete operator documentation
 
 **Files:**
+
 - Modify: `docs/epics/EPIC-01-TELEGRAM-AUTH.md`
 - Modify: `docs/TELEGRAM.md`
 - Modify: `README.md`
@@ -523,6 +532,7 @@ Commit: `git commit -m "docs: document EPIC-01 auth operation"`
 ## Task 9: Add executable API smoke coverage
 
 **Files:**
+
 - Create: `scripts/epic-01-auth-smoke.mjs`
 - Create: `scripts/epic-01-production-guard-smoke.mjs`
 - Modify: `package.json`
@@ -552,6 +562,7 @@ Commit: `git commit -m "test: add EPIC-01 auth smoke coverage"`
 ## Task 10: Full verification and visual QA
 
 **Files:**
+
 - Create: `artifacts/visual-qa/epic-01/README.md`
 - Create: `artifacts/visual-qa/epic-01/auth-390x844.png`
 - Create: `artifacts/visual-qa/epic-01/auth-430x932.png`

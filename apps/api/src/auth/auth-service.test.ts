@@ -5,17 +5,47 @@ import { createAuthService, AuthServiceError, type AuthRepository } from './auth
 const now = new Date('2029-01-01T00:00:00.000Z');
 
 function fixture() {
-  const users = new Map<string, any>();
-  const sessions = new Map<string, any>();
+  interface FixtureUser {
+    id: string;
+    telegramId: bigint | null;
+    devUserKey: string | null;
+    firstName: string;
+    username?: string;
+  }
+  interface FixtureSession {
+    tokenHash?: string;
+    authMethod: 'TELEGRAM' | 'DEVELOPMENT';
+    expiresAt: Date;
+    revokedAt: Date | null;
+    replacedAt?: Date;
+    user: FixtureUser;
+  }
+  const users = new Map<string, FixtureUser>();
+  const sessions = new Map<string, FixtureSession>();
+  const findUser = (id: string) => {
+    const user = [...users.values()].find((candidate) => candidate.id === id);
+    if (!user) throw new Error(`Missing fixture user ${id}`);
+    return user;
+  };
   const repository: AuthRepository = {
     async upsertTelegramUser(profile) {
-      const user = users.get(`tg:${profile.telegramId}`) ?? { id: 'telegram-user' };
+      const user = users.get(`tg:${profile.telegramId}`) ?? {
+        id: 'telegram-user',
+        telegramId: profile.telegramId,
+        devUserKey: null,
+        firstName: profile.firstName,
+      };
       Object.assign(user, profile, { telegramId: profile.telegramId, devUserKey: null });
       users.set(`tg:${profile.telegramId}`, user);
       return user;
     },
     async upsertDevelopmentUser(profile) {
-      const user = users.get(`dev:${profile.devUserKey}`) ?? { id: `user-${profile.devUserKey}` };
+      const user = users.get(`dev:${profile.devUserKey}`) ?? {
+        id: `user-${profile.devUserKey}`,
+        telegramId: null,
+        devUserKey: profile.devUserKey,
+        firstName: profile.displayName,
+      };
       Object.assign(user, {
         devUserKey: profile.devUserKey,
         telegramId: null,
@@ -28,7 +58,7 @@ function fixture() {
       sessions.set(input.tokenHash, {
         ...input,
         revokedAt: null,
-        user: [...users.values()].find((u) => u.id === input.userId),
+        user: findUser(input.userId),
       });
       return { id: input.tokenHash, expiresAt: input.expiresAt };
     },
@@ -42,7 +72,7 @@ function fixture() {
         ...input,
         tokenHash: input.nextTokenHash,
         revokedAt: null,
-        user: [...users.values()].find((u) => u.id === input.userId),
+        user: findUser(input.userId),
       });
       return {
         kind: 'replaced',
