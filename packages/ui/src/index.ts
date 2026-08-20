@@ -1,1 +1,6 @@
-export { AppFrame, type AppFrameProps } from './app-frame.js';
+export {
+  AppFrame,
+  DesktopAppShell,
+  type AppFrameProps,
+  type DesktopAppShellProps,
+} from './app-frame.js';

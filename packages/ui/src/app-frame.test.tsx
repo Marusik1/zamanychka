@@ -1,13 +1,22 @@
-import { render, screen } from '@testing-library/react';
+import { render, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import { AppFrame } from './app-frame.js';
+import { AppFrame, DesktopAppShell } from './index.js';
 
-describe('AppFrame', () => {
-  it('provides a labelled application shell and main landmark', () => {
-    render(<AppFrame title="Заманушка">Основа продукта</AppFrame>);
+describe('DesktopAppShell', () => {
+  it('provides a labelled generic shell with banner and main landmarks', () => {
+    const view = render(<DesktopAppShell title="Заманушка">Основа продукта</DesktopAppShell>);
 
-    expect(screen.getByRole('banner')).toHaveTextContent('Заманушка');
-    expect(screen.getByRole('main')).toHaveTextContent('Основа продукта');
+    expect(within(view.container).getByRole('banner')).toHaveTextContent('Заманушка');
+    expect(within(view.container).getByRole('main')).toHaveTextContent('Основа продукта');
+  });
+});
+
+describe('AppFrame compatibility alias', () => {
+  it('stays available from the main ui package for existing consumers', () => {
+    const view = render(<AppFrame title="Заманушка">Совместимость</AppFrame>);
+
+    expect(within(view.container).getByRole('banner')).toHaveTextContent('Заманушка');
+    expect(within(view.container).getByRole('main')).toHaveTextContent('Совместимость');
   });
 });
