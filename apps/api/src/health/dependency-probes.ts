@@ -18,6 +18,7 @@ export function createLiveDependencies(env: AppEnv) {
   });
 
   return {
+    prisma,
     probes: [postgresProbe, redisProbe],
     async close() {
       if (redis.isOpen) await redis.quit();
