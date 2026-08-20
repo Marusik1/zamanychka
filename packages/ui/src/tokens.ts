@@ -130,7 +130,7 @@ export const semanticTokenVars = {
     standardEase: '--motion-ease-standard',
     emphasizedEase: '--motion-ease-emphasized',
   },
-  layers: {
+  zIndex: {
     base: '--layer-base',
     raised: '--layer-raised',
     sticky: '--layer-sticky',

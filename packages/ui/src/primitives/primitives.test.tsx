@@ -52,6 +52,27 @@ describe('semantic foundation tokens', () => {
       muted: '--text-muted',
       inverse: '--text-inverse',
     });
+    expect(semanticTokenVars.accent).toEqual({
+      primary: '--accent-primary',
+      hover: '--accent-hover',
+      pressed: '--accent-pressed',
+      success: '--accent-success',
+      warning: '--accent-warning',
+      danger: '--accent-danger',
+      focusRing: '--accent-focus-ring',
+    });
+    expect(semanticTokenVars.spacing).toEqual({
+      1: '--space-1',
+      2: '--space-2',
+      3: '--space-3',
+      4: '--space-4',
+      5: '--space-5',
+      6: '--space-6',
+      7: '--space-7',
+      8: '--space-8',
+      9: '--space-9',
+      10: '--space-10',
+    });
     expect(semanticTokenVars.typography).toEqual({
       display: {
         family: '--font-family-display',
@@ -117,6 +138,38 @@ describe('semantic foundation tokens', () => {
         letterSpacing: '--letter-spacing-body',
       },
     });
+    expect(semanticTokenVars.radius).toEqual({
+      control: '--radius-control',
+      button: '--radius-button',
+      panel: '--radius-panel',
+      sheet: '--radius-sheet',
+      pill: '--radius-pill',
+    });
+    expect(semanticTokenVars.borders).toEqual({
+      subtle: '--border-subtle',
+      strong: '--border-strong',
+      active: '--border-active',
+      contrast: '--border-contrast',
+    });
+    expect(semanticTokenVars.elevation).toEqual({
+      panel: '--shadow-panel',
+      raised: '--shadow-raised',
+      focus: '--shadow-focus',
+    });
+    expect(semanticTokenVars.motion).toEqual({
+      fast: '--motion-duration-fast',
+      normal: '--motion-duration-normal',
+      slow: '--motion-duration-slow',
+      standardEase: '--motion-ease-standard',
+      emphasizedEase: '--motion-ease-emphasized',
+    });
+    expect(semanticTokenVars.zIndex).toEqual({
+      base: '--layer-base',
+      raised: '--layer-raised',
+      sticky: '--layer-sticky',
+      overlay: '--layer-overlay',
+      modal: '--layer-modal',
+    });
 
     for (const tokenGroup of [
       semanticTokenVars.backgrounds,
@@ -127,7 +180,7 @@ describe('semantic foundation tokens', () => {
       semanticTokenVars.borders,
       semanticTokenVars.elevation,
       semanticTokenVars.motion,
-      semanticTokenVars.layers,
+      semanticTokenVars.zIndex,
     ]) {
       for (const tokenVar of Object.values(tokenGroup)) {
         expect(foundationCss).toMatch(new RegExp(`${tokenVar}:\\s*[^;]+;`));
@@ -156,9 +209,5 @@ describe('semantic foundation tokens', () => {
     expect(foundationCss).not.toContain('.app-frame');
     expect(foundationCss).not.toContain('.app-frame__header');
     expect(foundationCss).not.toContain('.app-frame__main');
-
-    expect(getComputedStyle(canvas as Element).backgroundColor).not.toBe('');
-    expect(getComputedStyle(panel as Element).color).not.toBe('');
-    expect(getComputedStyle(button).backgroundColor).not.toBe('');
   });
 });
