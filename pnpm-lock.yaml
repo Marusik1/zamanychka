@@ -104,6 +104,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@zamanushka/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@zamanushka/ui':
         specifier: workspace:*
         version: link:../../packages/ui

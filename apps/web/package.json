@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@zamanushka/shared": "workspace:*",
     "@zamanushka/ui": "workspace:*",
     "react": "latest",
     "react-dom": "latest"
