@@ -1,9 +1,13 @@
 export {
   AppFrame,
+  AppShell,
   DesktopAppShell,
   type AppFrameProps,
+  type AppShellProps,
   type DesktopAppShellProps,
 } from './app-frame.js';
+export { BottomNav, type BottomNavProps, type NavigationItem } from './navigation/bottom-nav.js';
+export { TopNav, type TopNavProps } from './navigation/top-nav.js';
 export { BottomSheet, type BottomSheetProps } from './primitives/bottom-sheet.js';
 export { Button, type ButtonProps } from './primitives/button.js';
 export { Chip, type ChipProps } from './primitives/chip.js';
