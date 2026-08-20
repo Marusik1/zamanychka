@@ -210,36 +210,41 @@ describe('semantic foundation tokens', () => {
     expect(foundationCss).not.toContain('.app-frame__header');
     expect(foundationCss).not.toContain('.app-frame__main');
 
-    const cssRules = Array.from(style.sheet?.cssRules ?? []).filter(
-      (rule): rule is CSSStyleRule => rule instanceof CSSStyleRule,
-    );
-    const getRule = (selector: string) => cssRules.find((rule) => rule.selectorText === selector);
-
-    expect(getRule('.ui-canvas')?.style.background).toContain(
+    expect(getComputedStyle(canvas as Element).getPropertyValue('--ui-canvas-background').trim()).toBe(
       `var(${semanticTokenVars.backgrounds.canvas})`,
     );
-    expect(getRule('.ui-canvas')?.style.color).toBe(`var(${semanticTokenVars.text.primary})`);
-    expect(getRule('.ui-surface')?.style.background).toContain(
+    expect(getComputedStyle(canvas as Element).getPropertyValue('--ui-canvas-text').trim()).toBe(
+      `var(${semanticTokenVars.text.primary})`,
+    );
+    expect(getComputedStyle(canvas as Element).color).toBe('var(--ui-canvas-text)');
+
+    expect(getComputedStyle(panel as Element).getPropertyValue('--ui-surface-background').trim()).toBe(
       `var(${semanticTokenVars.backgrounds.surface})`,
     );
-    expect(getRule('.ui-surface')?.style.border).toContain(
+    expect(getComputedStyle(panel as Element).getPropertyValue('--ui-surface-border').trim()).toBe(
       `var(${semanticTokenVars.borders.subtle})`,
     );
-    expect(getRule('.ui-panel')?.style.borderRadius).toBe(
+    expect(getComputedStyle(panel as Element).getPropertyValue('--ui-panel-radius').trim()).toBe(
       `var(${semanticTokenVars.radius.panel})`,
     );
-    expect(getRule('.ui-panel')?.style.boxShadow).toBe(
+    expect(getComputedStyle(panel as Element).getPropertyValue('--ui-panel-shadow').trim()).toBe(
       `var(${semanticTokenVars.elevation.panel})`,
     );
-    expect(getRule('.ui-accent')?.style.background).toContain(
-      `var(${semanticTokenVars.accent.primary})`,
+    expect(getComputedStyle(panel as Element).borderRadius).toBe('var(--ui-panel-radius)');
+    expect(getComputedStyle(panel as Element).boxShadow).toBe('var(--ui-panel-shadow)');
+
+    expect(
+      getComputedStyle(button).getPropertyValue('--ui-accent-background-base').trim(),
+    ).toBe(`var(${semanticTokenVars.accent.primary})`);
+    expect(
+      getComputedStyle(button).getPropertyValue('--ui-accent-background-emphasis').trim(),
+    ).toBe(`var(${semanticTokenVars.accent.hover})`);
+    expect(getComputedStyle(button).getPropertyValue('--ui-accent-text').trim()).toBe(
+      `var(${semanticTokenVars.text.inverse})`,
     );
-    expect(getRule('.ui-accent')?.style.background).toContain(
-      `var(${semanticTokenVars.accent.hover})`,
-    );
-    expect(getRule('.ui-accent')?.style.color).toBe(`var(${semanticTokenVars.text.inverse})`);
-    expect(getRule('.ui-accent')?.style.border).toContain(
+    expect(getComputedStyle(button).getPropertyValue('--ui-accent-border').trim()).toBe(
       `var(${semanticTokenVars.borders.strong})`,
     );
+    expect(getComputedStyle(button).color).toBe('var(--ui-accent-text)');
   });
 });

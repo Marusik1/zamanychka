@@ -143,19 +143,27 @@ textarea {
 }
 
 .ui-canvas {
-  background: var(--color-canvas);
-  color: var(--text-primary);
+  --ui-canvas-background: var(--color-canvas);
+  --ui-canvas-text: var(--text-primary);
+  background-color: var(--ui-canvas-background);
+  background: var(--ui-canvas-background);
+  color: var(--ui-canvas-text);
 }
 
 .ui-surface {
+  --ui-surface-background: var(--color-surface);
+  --ui-surface-border: var(--border-subtle);
+  background-color: var(--ui-surface-background);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 100%),
-    var(--color-surface);
-  border: 1px solid var(--border-subtle);
+    var(--ui-surface-background);
+  border: 1px solid var(--ui-surface-border);
 }
 
 .ui-panel {
-  border-radius: var(--radius-panel);
-  box-shadow: var(--shadow-panel);
+  --ui-panel-radius: var(--radius-panel);
+  --ui-panel-shadow: var(--shadow-panel);
+  border-radius: var(--ui-panel-radius);
+  box-shadow: var(--ui-panel-shadow);
   padding: var(--space-6);
 }
 
@@ -172,9 +180,18 @@ textarea {
 }
 
 .ui-accent {
-  background: linear-gradient(180deg, var(--accent-hover) 0%, var(--accent-primary) 100%);
-  color: var(--text-inverse);
-  border: 1px solid var(--border-strong);
+  --ui-accent-background-base: var(--accent-primary);
+  --ui-accent-background-emphasis: var(--accent-hover);
+  --ui-accent-text: var(--text-inverse);
+  --ui-accent-border: var(--border-strong);
+  background-color: var(--ui-accent-background-base);
+  background: linear-gradient(
+    180deg,
+    var(--ui-accent-background-emphasis) 0%,
+    var(--ui-accent-background-base) 100%
+  );
+  color: var(--ui-accent-text);
+  border: 1px solid var(--ui-accent-border);
   border-radius: var(--radius-button);
   box-shadow: var(--shadow-panel);
 }
