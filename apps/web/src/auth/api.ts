@@ -82,10 +82,7 @@ export function createAuthApi(fetcher: Fetcher = fetch): AuthApi {
       return parse(await fetcher('/api/auth/dev', post({ devUserKey }, signal)), authSuccessSchema);
     },
     async logout(signal) {
-      return parse(
-        await fetcher('/api/auth/logout', post(undefined, signal)),
-        logoutResponseSchema,
-      );
+      return parse(await fetcher('/api/auth/logout', post({}, signal)), logoutResponseSchema);
     },
   };
 }

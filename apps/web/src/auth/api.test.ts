@@ -31,6 +31,7 @@ describe('authentication API response validation', () => {
       method: 'POST',
       credentials: 'include',
       headers: { 'content-type': 'application/json' },
+      body: '{}',
       signal,
     });
   });
