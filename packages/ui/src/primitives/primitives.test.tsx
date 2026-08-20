@@ -209,5 +209,37 @@ describe('semantic foundation tokens', () => {
     expect(foundationCss).not.toContain('.app-frame');
     expect(foundationCss).not.toContain('.app-frame__header');
     expect(foundationCss).not.toContain('.app-frame__main');
+
+    const cssRules = Array.from(style.sheet?.cssRules ?? []).filter(
+      (rule): rule is CSSStyleRule => rule instanceof CSSStyleRule,
+    );
+    const getRule = (selector: string) => cssRules.find((rule) => rule.selectorText === selector);
+
+    expect(getRule('.ui-canvas')?.style.background).toContain(
+      `var(${semanticTokenVars.backgrounds.canvas})`,
+    );
+    expect(getRule('.ui-canvas')?.style.color).toBe(`var(${semanticTokenVars.text.primary})`);
+    expect(getRule('.ui-surface')?.style.background).toContain(
+      `var(${semanticTokenVars.backgrounds.surface})`,
+    );
+    expect(getRule('.ui-surface')?.style.border).toContain(
+      `var(${semanticTokenVars.borders.subtle})`,
+    );
+    expect(getRule('.ui-panel')?.style.borderRadius).toBe(
+      `var(${semanticTokenVars.radius.panel})`,
+    );
+    expect(getRule('.ui-panel')?.style.boxShadow).toBe(
+      `var(${semanticTokenVars.elevation.panel})`,
+    );
+    expect(getRule('.ui-accent')?.style.background).toContain(
+      `var(${semanticTokenVars.accent.primary})`,
+    );
+    expect(getRule('.ui-accent')?.style.background).toContain(
+      `var(${semanticTokenVars.accent.hover})`,
+    );
+    expect(getRule('.ui-accent')?.style.color).toBe(`var(${semanticTokenVars.text.inverse})`);
+    expect(getRule('.ui-accent')?.style.border).toContain(
+      `var(${semanticTokenVars.borders.strong})`,
+    );
   });
 });
