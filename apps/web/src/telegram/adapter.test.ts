@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import indexHtml from '../../index.html?raw';
 import { createTelegramAdapter } from './adapter';
 import type { TelegramEvent, TelegramWebApp } from './types';
 
@@ -46,6 +47,14 @@ afterEach(() => {
 });
 
 describe('createTelegramAdapter', () => {
+  it('loads the approved official Telegram bridge before the application module', () => {
+    const bridge = '<script src="https://telegram.org/js/telegram-web-app.js?59"></script>';
+    const application = '<script type="module" src="/src/main.tsx"></script>';
+
+    expect(indexHtml).toContain(bridge);
+    expect(indexHtml.indexOf(bridge)).toBeLessThan(indexHtml.indexOf(application));
+  });
+
   it('falls back to browser viewport and zero insets when the bridge is absent', () => {
     const adapter = createTelegramAdapter();
 
@@ -161,6 +170,18 @@ describe('createTelegramAdapter', () => {
     window.Telegram = { WebApp: webApp };
 
     const adapter = createTelegramAdapter();
+    expect(() => adapter.dispose()).not.toThrow();
+  });
+
+  it('does not subscribe when the bridge cannot unsubscribe', () => {
+    const { webApp } = fakeWebApp();
+    const onEvent = webApp.onEvent!;
+    delete webApp.offEvent;
+    window.Telegram = { WebApp: webApp };
+
+    const adapter = createTelegramAdapter();
+
+    expect(onEvent).not.toHaveBeenCalled();
     expect(() => adapter.dispose()).not.toThrow();
   });
 });

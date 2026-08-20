@@ -35,6 +35,9 @@ export interface TelegramAdapter {
 export function createTelegramAdapter(root = document.documentElement): TelegramAdapter {
   const webApp = window.Telegram?.WebApp;
   const initData = webApp?.initData || undefined;
+  const onEvent = webApp?.onEvent?.bind(webApp);
+  const offEvent = webApp?.offEvent?.bind(webApp);
+  const supportsEvents = onEvent !== undefined && offEvent !== undefined;
   let didSignalReady = false;
   let disposed = false;
 
@@ -46,8 +49,8 @@ export function createTelegramAdapter(root = document.documentElement): Telegram
     ['contentSafeAreaChanged', () => projectLayout(webApp, root)],
   ];
 
-  if (webApp?.onEvent) {
-    for (const [event, listener] of listeners) webApp.onEvent(event, listener);
+  if (supportsEvents) {
+    for (const [event, listener] of listeners) onEvent(event, listener);
   }
 
   return {
@@ -63,8 +66,8 @@ export function createTelegramAdapter(root = document.documentElement): Telegram
     dispose() {
       if (disposed) return;
       disposed = true;
-      if (webApp?.offEvent && webApp.onEvent) {
-        for (const [event, listener] of listeners) webApp.offEvent(event, listener);
+      if (supportsEvents) {
+        for (const [event, listener] of listeners) offEvent(event, listener);
       }
     },
   };
