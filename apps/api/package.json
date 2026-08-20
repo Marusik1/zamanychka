@@ -9,10 +9,12 @@
     "start": "node dist/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "prisma:generate": "prisma generate --config prisma.config.ts",
     "prisma:validate": "prisma validate --config prisma.config.ts"
   },
   "dependencies": {
+    "@fastify/cookie": "^11.1.2",
     "@prisma/adapter-pg": "latest",
     "@prisma/client": "latest",
     "@zamanushka/shared": "workspace:*",

@@ -35,4 +35,13 @@
 
 ## Current execution boundary
 
-Only EPIC-00 may be implemented in the current run. Stop after its verification and report. Do not implement Telegram auth, game rules, multiplayer gameplay, chat, profiles, or board-skin functionality without explicit user approval.
+EPIC-01 is explicitly authorized on top of the accepted EPIC-00 base at commit `52e7852`. Implement only Telegram Mini App bootstrap, verified Telegram authentication, development authentication, application sessions, `/api/me`, safe-area integration, browser fallback, and the tests, documentation, and evidence required by EPIC-01.
+
+Telegram identity and session invariants:
+
+1. Only server-verified raw Telegram `initData`, or a server-side development allowlist when explicitly enabled outside production, may establish identity.
+2. `User.id` is the sole application identity. Telegram IDs are unique external identifiers and never primary keys.
+3. Sessions are server-side and revocable. Persist only hashes of opaque session tokens; never persist or log raw tokens, raw init data, or bot tokens.
+4. Production development authentication is forbidden. Authentication requests never accept client-supplied identity fields as authoritative.
+
+Do not implement game rules, rooms, matchmaking, multiplayer gameplay, Socket.IO gameplay, chat, profiles, rating, history, boards, board skins, or the final visual system. Preserve the existing engine and room architecture notes for their future epics. Stop after EPIC-01 verification and report; EPIC-02 requires separate explicit approval. Final scope review must include `git diff --stat 52e7852`.

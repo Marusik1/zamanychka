@@ -15,6 +15,8 @@
     "build": "pnpm -r --if-present build",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "smoke:auth": "node scripts/epic-01-auth-smoke.mjs",
+    "smoke:production-guard": "node scripts/epic-01-production-guard-smoke.mjs",
     "prisma:generate": "pnpm --filter @zamanushka/api prisma:generate",
     "prisma:validate": "pnpm --filter @zamanushka/api prisma:validate"
   },

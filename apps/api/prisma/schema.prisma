@@ -7,3 +7,36 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+enum AuthMethod {
+  TELEGRAM
+  DEVELOPMENT
+}
+
+model User {
+  id           String        @id @default(cuid())
+  telegramId   BigInt?       @unique
+  devUserKey   String?       @unique
+  username     String?
+  firstName    String
+  lastName     String?
+  languageCode String?
+  photoUrl     String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  sessions     AuthSession[]
+}
+
+model AuthSession {
+  id         String     @id @default(cuid())
+  userId     String
+  tokenHash  String     @unique
+  authMethod AuthMethod
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  replacedAt DateTime?
+  createdAt  DateTime   @default(now())
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
