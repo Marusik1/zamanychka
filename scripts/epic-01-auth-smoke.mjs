@@ -105,6 +105,17 @@ function assertNoStore(response) {
   assert.match(response.headers.get('cache-control') ?? '', /(?:^|,)\s*no-store\s*(?:,|$)/i);
 }
 
+export function assertInternalTelegramIdentity(internalId, telegramId) {
+  assert.notEqual(internalId, String(telegramId), 'Telegram ID was exposed as application user.id');
+}
+
+export async function assertReplacedSessionResponse(response) {
+  assert.equal(response.status, 401, `old session unexpectedly returned ${response.status}`);
+  assertNoStore(response);
+  const body = await response.json();
+  assert.equal(body?.error?.code, 'AUTH_REQUIRED');
+}
+
 async function json(response, expectedStatus) {
   assert.equal(
     response.status,
@@ -231,10 +242,11 @@ async function developmentSmoke(config) {
 async function telegramSmoke(config, env) {
   const botToken = env.TELEGRAM_SMOKE_BOT_TOKEN?.trim();
   if (!botToken) throw new Error('TELEGRAM_SMOKE_BOT_TOKEN is required in telegram mode');
+  const telegramId = 9_000_000_001;
   const initData = signTelegramInitData({
     botToken,
     authDate: Math.floor(Date.now() / 1_000),
-    user: { id: 9_000_000_001, first_name: 'EPIC-01', last_name: 'Smoke' },
+    user: { id: telegramId, first_name: 'EPIC-01', last_name: 'Smoke' },
   });
   const jar = new CookieJar();
   const login = () =>
@@ -250,6 +262,7 @@ async function telegramSmoke(config, env) {
     );
   const first = await json(await login(), 200);
   assertAuthUser(first.user, 'TELEGRAM');
+  assertInternalTelegramIdentity(first.user.id, telegramId);
   assert.deepEqual(Object.keys(first).sort(), ['session', 'user']);
   assert.deepEqual(Object.keys(first.session), ['expiresAt']);
   const oldCookie = jar.header();
@@ -260,13 +273,7 @@ async function telegramSmoke(config, env) {
   assert.equal(replacement.user.id, first.user.id);
   assert.notEqual(jar.header(), oldCookie, 'replacement did not rotate the session cookie');
   const oldResponse = await request(config.baseUrl, '/api/me', { headers: { Cookie: oldCookie } });
-  assert.ok(
-    [401, 409].includes(oldResponse.status),
-    `old session unexpectedly returned ${oldResponse.status}`,
-  );
-  assertNoStore(oldResponse);
-  const oldBody = await oldResponse.text();
-  assert.match(oldBody, /AUTH_(?:REQUIRED|SESSION_REPLACED)/);
+  await assertReplacedSessionResponse(oldResponse);
   const logout = await json(
     await request(
       config.baseUrl,

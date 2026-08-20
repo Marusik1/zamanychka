@@ -99,7 +99,10 @@ pnpm prisma:generate
 git diff --check
 ```
 
-Executable EPIC-01 auth smoke scripts and four-viewport browser evidence are planned for the next implementation tasks and are not yet available. Until then, manually verify `/health`, `/ready`, the two-browser development chooser, `/api/me` session restoration, and logout without representing that check as the final EPIC-01 smoke gate.
+Executable EPIC-01 auth smoke scripts are available through `pnpm smoke:auth -- --mode=development`,
+`pnpm smoke:auth -- --mode=telegram`, and `pnpm smoke:production-guard`. The four required browser
+captures and command-by-command verification record are stored in
+`artifacts/visual-qa/epic-01/README.md`.
 
 ## Workspace
 

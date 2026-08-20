@@ -5,11 +5,13 @@ import test from 'node:test';
 import {
   CookieJar,
   assertAuthUser,
+  assertInternalTelegramIdentity,
+  assertReplacedSessionResponse,
   parseCli,
   signTelegramInitData,
 } from './epic-01-auth-smoke.mjs';
 
-/* global URLSearchParams */
+/* global Response, URLSearchParams */
 
 test('parseCli requires an explicit supported mode and accepts URL sources', () => {
   assert.deepEqual(parseCli(['--mode=development'], {}), {
@@ -54,6 +56,32 @@ test('auth user validation rejects a provider from the wrong server mode', () =>
   };
   assert.doesNotThrow(() => assertAuthUser(telegramUser, 'TELEGRAM'));
   assert.throws(() => assertAuthUser(telegramUser, 'DEVELOPMENT'), /authProvider/);
+});
+
+test('Telegram smoke requires an internal ID distinct from the external Telegram ID', () => {
+  assert.doesNotThrow(() => assertInternalTelegramIdentity('internal-id', 9_000_000_001));
+  assert.throws(() => assertInternalTelegramIdentity('9000000001', 9_000_000_001));
+});
+
+test('replaced-session smoke requires exactly 401 AUTH_REQUIRED', async () => {
+  await assert.doesNotReject(() =>
+    assertReplacedSessionResponse(
+      new Response(JSON.stringify({ error: { code: 'AUTH_REQUIRED', message: 'Required' } }), {
+        status: 401,
+        headers: { 'cache-control': 'no-store' },
+      }),
+    ),
+  );
+  await assert.rejects(() =>
+    assertReplacedSessionResponse(
+      new Response(
+        JSON.stringify({
+          error: { code: 'AUTH_SESSION_REPLACED', message: 'Session replaced' },
+        }),
+        { status: 409, headers: { 'cache-control': 'no-store' } },
+      ),
+    ),
+  );
 });
 
 test('CookieJar applies multiple Set-Cookie headers, replacements, and deletion', () => {
