@@ -3,7 +3,7 @@ import type { TelegramEvent, TelegramInsets, TelegramWebApp } from './types';
 const zeroInsets: TelegramInsets = { top: 0, right: 0, bottom: 0, left: 0 };
 
 function pixels(value: number | undefined): string {
-  return `${value ?? 0}px`;
+  return `${value !== undefined && Number.isFinite(value) ? Math.max(0, value) : 0}px`;
 }
 
 function setInsets(style: CSSStyleDeclaration, prefix: string, insets?: TelegramInsets) {
@@ -18,7 +18,9 @@ function projectLayout(webApp: TelegramWebApp | undefined, root: HTMLElement) {
   const style = root.style;
   style.setProperty(
     '--app-viewport-height',
-    webApp?.viewportStableHeight === undefined ? '100vh' : pixels(webApp.viewportStableHeight),
+    webApp?.viewportStableHeight === undefined || !Number.isFinite(webApp.viewportStableHeight)
+      ? '100vh'
+      : pixels(webApp.viewportStableHeight),
   );
   setInsets(style, '--app-safe-area', webApp?.safeAreaInset);
   setInsets(style, '--app-content-safe-area', webApp?.contentSafeAreaInset);
@@ -43,7 +45,7 @@ export function createTelegramAdapter(root = document.documentElement): Telegram
 
   projectLayout(webApp, root);
 
-  const listeners: Array<[TelegramEvent, () => void]> = [
+  const listeners: [TelegramEvent, () => void][] = [
     ['viewportChanged', () => projectLayout(webApp, root)],
     ['safeAreaChanged', () => projectLayout(webApp, root)],
     ['contentSafeAreaChanged', () => projectLayout(webApp, root)],
@@ -58,7 +60,7 @@ export function createTelegramAdapter(root = document.documentElement): Telegram
     isTelegram: initData !== undefined,
     initData,
     shellReady() {
-      if (webApp && !didSignalReady) {
+      if (webApp && !didSignalReady && !disposed) {
         didSignalReady = true;
         webApp.ready();
       }

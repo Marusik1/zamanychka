@@ -41,6 +41,11 @@ function fakeWebApp(overrides: Partial<TelegramWebApp> = {}) {
   };
 }
 
+function required<T>(value: T | undefined): T {
+  if (value === undefined) throw new Error('Expected fake bridge method');
+  return value;
+}
+
 afterEach(() => {
   delete window.Telegram;
   for (const variable of cssVariables) document.documentElement.style.removeProperty(variable);
@@ -114,7 +119,7 @@ describe('createTelegramAdapter', () => {
     const adapter = createTelegramAdapter();
 
     expect(webApp.onEvent).toHaveBeenCalledTimes(3);
-    expect(vi.mocked(webApp.onEvent!).mock.calls.map(([event]) => event)).toEqual([
+    expect(vi.mocked(required(webApp.onEvent)).mock.calls.map(([event]) => event)).toEqual([
       'viewportChanged',
       'safeAreaChanged',
       'contentSafeAreaChanged',
@@ -147,6 +152,47 @@ describe('createTelegramAdapter', () => {
     adapter.dispose();
   });
 
+  it('projects malformed layout values as finite non-negative CSS values', () => {
+    const bridge = fakeWebApp({
+      viewportStableHeight: Number.NaN,
+      safeAreaInset: {
+        top: -1,
+        right: Number.POSITIVE_INFINITY,
+        bottom: Number.NEGATIVE_INFINITY,
+        left: Number.NaN,
+      },
+      contentSafeAreaInset: { top: -10, right: 20, bottom: 30, left: 40 },
+    });
+    window.Telegram = { WebApp: bridge.webApp };
+
+    const adapter = createTelegramAdapter();
+
+    expect(document.documentElement.style.getPropertyValue('--app-viewport-height')).toBe('100vh');
+    expect(document.documentElement.style.getPropertyValue('--app-safe-area-top')).toBe('0px');
+    expect(document.documentElement.style.getPropertyValue('--app-safe-area-right')).toBe('0px');
+    expect(document.documentElement.style.getPropertyValue('--app-safe-area-bottom')).toBe('0px');
+    expect(document.documentElement.style.getPropertyValue('--app-safe-area-left')).toBe('0px');
+    expect(document.documentElement.style.getPropertyValue('--app-content-safe-area-top')).toBe(
+      '0px',
+    );
+    expect(document.documentElement.style.getPropertyValue('--app-content-safe-area-right')).toBe(
+      '20px',
+    );
+
+    bridge.webApp.viewportStableHeight = Number.POSITIVE_INFINITY;
+    bridge.emit('viewportChanged');
+    expect(document.documentElement.style.getPropertyValue('--app-viewport-height')).toBe('100vh');
+
+    bridge.webApp.viewportStableHeight = Number.NEGATIVE_INFINITY;
+    bridge.emit('viewportChanged');
+    expect(document.documentElement.style.getPropertyValue('--app-viewport-height')).toBe('100vh');
+
+    bridge.webApp.viewportStableHeight = -100;
+    bridge.emit('viewportChanged');
+    expect(document.documentElement.style.getPropertyValue('--app-viewport-height')).toBe('0px');
+    adapter.dispose();
+  });
+
   it('cleans up every subscription once and remains safe to dispose repeatedly', () => {
     const { webApp } = fakeWebApp();
     window.Telegram = { WebApp: webApp };
@@ -156,11 +202,22 @@ describe('createTelegramAdapter', () => {
     adapter.dispose();
 
     expect(webApp.offEvent).toHaveBeenCalledTimes(3);
-    expect(vi.mocked(webApp.offEvent!).mock.calls.map(([event]) => event)).toEqual([
+    expect(vi.mocked(required(webApp.offEvent)).mock.calls.map(([event]) => event)).toEqual([
       'viewportChanged',
       'safeAreaChanged',
       'contentSafeAreaChanged',
     ]);
+  });
+
+  it('does not call ready when shell readiness is reported after disposal', () => {
+    const { webApp } = fakeWebApp();
+    window.Telegram = { WebApp: webApp };
+    const adapter = createTelegramAdapter();
+
+    adapter.dispose();
+    adapter.shellReady();
+
+    expect(webApp.ready).not.toHaveBeenCalled();
   });
 
   it('works with older bridges that do not support lifecycle subscriptions', () => {
@@ -175,7 +232,7 @@ describe('createTelegramAdapter', () => {
 
   it('does not subscribe when the bridge cannot unsubscribe', () => {
     const { webApp } = fakeWebApp();
-    const onEvent = webApp.onEvent!;
+    const onEvent = required(webApp.onEvent);
     delete webApp.offEvent;
     window.Telegram = { WebApp: webApp };
 
