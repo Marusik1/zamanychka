@@ -1,53 +1,241 @@
 :root {
   color-scheme: dark;
-  --foundation-bg: #07131a;
-  --foundation-surface: #0d1b23;
-  --foundation-border: rgba(201, 151, 79, 0.38);
-  --foundation-gold: #c9974f;
-  --foundation-text: #f5f0e7;
-  --foundation-muted: #9eaaae;
-  font-family:
-    Inter,
+
+  /* Backgrounds */
+  --color-canvas: #08121a;
+  --color-surface: #101a22;
+  --color-surface-elevated: #16232c;
+  --color-surface-contrast: #1b2a34;
+
+  /* Text roles */
+  --text-primary: #f4efe6;
+  --text-secondary: #c8bbb0;
+  --text-muted: #958b82;
+  --text-inverse: #0d1116;
+
+  /* Accent roles */
+  --accent-primary: #c9974f;
+  --accent-hover: #d6aa6a;
+  --accent-pressed: #ae7f41;
+  --accent-success: #6bb85d;
+  --accent-warning: #d2a14a;
+  --accent-danger: #c86c58;
+  --accent-focus-ring: rgba(214, 170, 106, 0.42);
+
+  /* Spacing scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 40px;
+  --space-9: 48px;
+  --space-10: 64px;
+
+  /* Typography roles */
+  --font-family-base:
+    'Segoe UI',
+    'Noto Sans',
     ui-sans-serif,
     system-ui,
     -apple-system,
     BlinkMacSystemFont,
-    'Segoe UI',
     sans-serif;
+  --font-family-display:
+    Georgia,
+    'Times New Roman',
+    serif;
+  --font-family-numeric: 'Segoe UI', 'Noto Sans', ui-sans-serif, system-ui, sans-serif;
+
+  --font-size-display: 2.5rem;
+  --font-size-h1: 2rem;
+  --font-size-h2: 1.5rem;
+  --font-size-h3: 1.25rem;
+  --font-size-body: 1rem;
+  --font-size-body-small: 0.875rem;
+  --font-size-caption: 0.75rem;
+  --font-size-button: 0.95rem;
+  --font-size-numeric: 1rem;
+
+  --font-weight-display: 600;
+  --font-weight-heading: 600;
+  --font-weight-body: 400;
+  --font-weight-emphasis: 500;
+  --font-weight-button: 600;
+  --font-weight-numeric: 600;
+
+  --line-height-display: 1.05;
+  --line-height-heading: 1.15;
+  --line-height-body: 1.5;
+  --line-height-compact: 1.3;
+
+  --letter-spacing-display: 0.02em;
+  --letter-spacing-heading: 0.01em;
+  --letter-spacing-body: 0;
+  --letter-spacing-button: 0.04em;
+  --letter-spacing-caption: 0.06em;
+
+  /* Radius */
+  --radius-control: 10px;
+  --radius-button: 12px;
+  --radius-panel: 16px;
+  --radius-sheet: 20px;
+  --radius-pill: 999px;
+
+  /* Borders */
+  --border-subtle: rgba(201, 151, 79, 0.18);
+  --border-strong: rgba(201, 151, 79, 0.34);
+  --border-active: rgba(214, 170, 106, 0.6);
+  --border-contrast: rgba(244, 239, 230, 0.12);
+
+  /* Elevation */
+  --shadow-panel: 0 18px 40px rgba(0, 0, 0, 0.28);
+  --shadow-raised: 0 24px 52px rgba(0, 0, 0, 0.34);
+  --shadow-focus: 0 0 0 3px var(--accent-focus-ring);
+
+  /* Motion */
+  --motion-duration-fast: 120ms;
+  --motion-duration-normal: 180ms;
+  --motion-duration-slow: 280ms;
+  --motion-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --motion-ease-emphasized: cubic-bezier(0.25, 0.1, 0.1, 1);
+
+  /* Z-index layers */
+  --layer-base: 0;
+  --layer-raised: 10;
+  --layer-sticky: 20;
+  --layer-overlay: 40;
+  --layer-modal: 50;
+
+  font-family: var(--font-family-base);
 }
 
 * {
   box-sizing: border-box;
 }
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background: var(--foundation-bg);
-  color: var(--foundation-text);
+  background:
+    radial-gradient(circle at top, rgba(201, 151, 79, 0.08), transparent 28%),
+    linear-gradient(180deg, #09131b 0%, var(--color-canvas) 100%);
+  color: var(--text-primary);
+  font-family: var(--font-family-base);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
 }
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+.ui-canvas {
+  background: var(--color-canvas);
+  color: var(--text-primary);
+}
+
+.ui-surface {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 100%),
+    var(--color-surface);
+  border: 1px solid var(--border-subtle);
+}
+
+.ui-panel {
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-panel);
+  padding: var(--space-6);
+}
+
+.ui-text-primary {
+  color: var(--text-primary);
+}
+
+.ui-text-secondary {
+  color: var(--text-secondary);
+}
+
+.ui-text-muted {
+  color: var(--text-muted);
+}
+
+.ui-accent {
+  background: linear-gradient(180deg, var(--accent-hover) 0%, var(--accent-primary) 100%);
+  color: var(--text-inverse);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-button);
+  box-shadow: var(--shadow-panel);
+}
+
+.ui-type-heading {
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-size-h2);
+  font-weight: var(--font-weight-heading);
+  line-height: var(--line-height-heading);
+  letter-spacing: var(--letter-spacing-heading);
+}
+
+.ui-type-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 0 var(--space-5);
+  font-size: var(--font-size-button);
+  font-weight: var(--font-weight-button);
+  letter-spacing: var(--letter-spacing-button);
+  text-transform: uppercase;
+  transition:
+    background-color var(--motion-duration-normal) var(--motion-ease-standard),
+    transform var(--motion-duration-fast) var(--motion-ease-standard),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.ui-type-button:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
 .app-frame {
   min-height: 100vh;
   display: grid;
   grid-template-rows: auto 1fr;
+  background: var(--color-canvas);
 }
+
 .app-frame__header {
-  min-height: 64px;
+  min-height: 72px;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 0 24px;
-  border-bottom: 1px solid var(--foundation-border);
-  background: var(--foundation-surface);
+  gap: var(--space-3);
+  padding: 0 var(--space-6);
+  border-bottom: 1px solid var(--border-subtle);
+  background: rgba(8, 18, 26, 0.92);
+  backdrop-filter: blur(12px);
 }
+
 .app-frame__mark {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--foundation-gold);
+  width: 12px;
+  height: 12px;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(180deg, var(--accent-hover) 0%, var(--accent-primary) 100%);
+  box-shadow: 0 0 0 1px rgba(244, 239, 230, 0.12);
 }
+
 .app-frame__main {
   width: min(1120px, 100%);
   margin: 0 auto;
-  padding: 24px;
+  padding: var(--space-6);
 }
