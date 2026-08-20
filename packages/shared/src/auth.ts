@@ -42,6 +42,12 @@ export const meResponseSchema = z
   })
   .strict();
 
+export const logoutResponseSchema = z
+  .object({
+    ok: z.literal(true),
+  })
+  .strict();
+
 const devAuthUserSchema = z
   .object({
     devUserKey: z.string().min(1),
@@ -92,6 +98,7 @@ export type AuthUser = z.infer<typeof authUserSchema>;
 export type AuthSessionView = z.infer<typeof authSessionViewSchema>;
 export type AuthSuccess = z.infer<typeof authSuccessSchema>;
 export type MeResponse = z.infer<typeof meResponseSchema>;
+export type LogoutResponse = z.infer<typeof logoutResponseSchema>;
 export type DevAuthCapability = z.infer<typeof devAuthCapabilitySchema>;
 export type PublicErrorCode = z.infer<typeof publicErrorCodeSchema>;
 export type PublicError = z.infer<typeof publicErrorSchema>;

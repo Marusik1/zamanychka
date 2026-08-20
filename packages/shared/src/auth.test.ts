@@ -7,6 +7,7 @@ import {
   devAuthCapabilitySchema,
   devAuthRequestSchema,
   meResponseSchema,
+  logoutResponseSchema,
   publicErrorCodeSchema,
   publicErrorSchema,
   telegramAuthRequestSchema,
@@ -57,6 +58,12 @@ describe('authentication response contracts', () => {
 
     expect(meResponseSchema.parse(response)).toEqual(response);
     expect(() => meResponseSchema.parse({ ...response, sessionId: 'hidden' })).toThrow();
+  });
+
+  it('accepts only the exact logout acknowledgement', () => {
+    expect(logoutResponseSchema.parse({ ok: true })).toEqual({ ok: true });
+    expect(() => logoutResponseSchema.parse({ ok: false })).toThrow();
+    expect(() => logoutResponseSchema.parse({ ok: true, sessionId: 'hidden' })).toThrow();
   });
 
   it('requires RFC 3339 session expiry with an explicit offset', () => {

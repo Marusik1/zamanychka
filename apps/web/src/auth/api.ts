@@ -1,11 +1,14 @@
 import {
   authSuccessSchema,
   devAuthCapabilitySchema,
+  logoutResponseSchema,
   meResponseSchema,
   publicErrorSchema,
   type AuthSuccess,
   type DevAuthCapability,
+  type LogoutResponse,
   type MeResponse,
+  type PublicErrorCode,
 } from '@zamanushka/shared';
 type Fetcher = typeof fetch;
 interface Parser<T> {
@@ -13,8 +16,12 @@ interface Parser<T> {
 }
 
 export class AuthApiError extends Error {
-  constructor(readonly status: number) {
-    super('Authentication request failed');
+  constructor(
+    readonly status: number,
+    readonly code: PublicErrorCode | 'INVALID_RESPONSE' = 'INVALID_RESPONSE',
+    message = 'Unexpected authentication response',
+  ) {
+    super(message);
   }
 }
 
@@ -26,8 +33,9 @@ async function parse<T>(response: Response, schema: Parser<T>): Promise<T> {
     throw new AuthApiError(response.status);
   }
   if (!response.ok) {
-    publicErrorSchema.safeParse(body);
-    throw new AuthApiError(response.status);
+    const error = publicErrorSchema.safeParse(body);
+    if (!error.success) throw new AuthApiError(response.status);
+    throw new AuthApiError(response.status, error.data.error.code, error.data.error.message);
   }
   const result = schema.safeParse(body);
   if (!result.success) throw new AuthApiError(response.status);
@@ -50,7 +58,7 @@ export interface AuthApi {
   loginTelegram(initData: string): Promise<AuthSuccess>;
   developmentCapability(): Promise<DevAuthCapability>;
   loginDevelopment(devUserKey: string): Promise<AuthSuccess>;
-  logout(): Promise<void>;
+  logout(): Promise<LogoutResponse>;
 }
 
 export function createAuthApi(fetcher: Fetcher = fetch): AuthApi {
@@ -68,8 +76,7 @@ export function createAuthApi(fetcher: Fetcher = fetch): AuthApi {
       return parse(await fetcher('/api/auth/dev', post({ devUserKey })), authSuccessSchema);
     },
     async logout() {
-      const response = await fetcher('/api/auth/logout', post());
-      if (!response.ok) throw new AuthApiError(response.status);
+      return parse(await fetcher('/api/auth/logout', post()), logoutResponseSchema);
     },
   };
 }
