@@ -1,242 +1,435 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import * as React from 'react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { Button } from './button.js';
+import { Chip } from './chip.js';
+import { Divider } from './divider.js';
+import { EmptyState } from './empty-state.js';
+import { BottomSheet } from './bottom-sheet.js';
+import { Dialog } from './dialog.js';
+import { Field } from './field.js';
+import { ListRow } from './list-row.js';
+import { MenuTrigger } from './menu-trigger.js';
+import { SegmentedControl } from './segmented-control.js';
+import { StatItem } from './stat-item.js';
+import { Status } from './status.js';
+import { Tabs } from './tabs.js';
+import { UserChip } from './user-chip.js';
 
-import { semanticTokenVars } from '../tokens.js';
-
-const foundationCss = readFileSync(
-  resolve(process.cwd(), 'src/foundation.css'),
-  'utf8',
-);
-
-function TokenFixture() {
-  return (
-    <div className="ui-canvas">
-      <section className="ui-surface ui-text-primary ui-panel">
-        <h1 className="ui-type-heading">Zamanushka</h1>
-        <p className="ui-text-secondary">Semantic token contract only.</p>
-        <button className="ui-accent ui-type-button">Play</button>
-      </section>
-    </div>
-  );
-}
-
-describe('semantic foundation tokens', () => {
-  it('defines a typed semantic token contract and applies generic token classes', () => {
-    document.head.innerHTML = '';
-    const style = document.createElement('style');
-    style.textContent = foundationCss;
-    document.head.appendChild(style);
-
-    render(<TokenFixture />);
-
-    const canvas = screen.getByText('Zamanushka').closest('.ui-canvas');
-    const panel = screen.getByText('Zamanushka').closest('.ui-panel');
-    const button = screen.getByRole('button', { name: 'Play' });
-
-    expect(canvas).toHaveClass('ui-canvas');
-    expect(panel).toHaveClass('ui-surface', 'ui-text-primary', 'ui-panel');
-    expect(button).toHaveClass('ui-accent', 'ui-type-button');
-
-    expect(semanticTokenVars.backgrounds).toEqual({
-      canvas: '--color-canvas',
-      surface: '--color-surface',
-      surfaceElevated: '--color-surface-elevated',
-      surfaceContrast: '--color-surface-contrast',
-    });
-    expect(semanticTokenVars.text).toEqual({
-      primary: '--text-primary',
-      secondary: '--text-secondary',
-      muted: '--text-muted',
-      inverse: '--text-inverse',
-    });
-    expect(semanticTokenVars.accent).toEqual({
-      primary: '--accent-primary',
-      hover: '--accent-hover',
-      pressed: '--accent-pressed',
-      success: '--accent-success',
-      warning: '--accent-warning',
-      danger: '--accent-danger',
-      focusRing: '--accent-focus-ring',
-    });
-    expect(semanticTokenVars.spacing).toEqual({
-      1: '--space-1',
-      2: '--space-2',
-      3: '--space-3',
-      4: '--space-4',
-      5: '--space-5',
-      6: '--space-6',
-      7: '--space-7',
-      8: '--space-8',
-      9: '--space-9',
-      10: '--space-10',
-    });
-    expect(semanticTokenVars.typography).toEqual({
-      display: {
-        family: '--font-family-display',
-        size: '--font-size-display',
-        weight: '--font-weight-display',
-        lineHeight: '--line-height-display',
-        letterSpacing: '--letter-spacing-display',
-      },
-      h1: {
-        family: '--font-family-base',
-        size: '--font-size-h1',
-        weight: '--font-weight-heading',
-        lineHeight: '--line-height-heading',
-        letterSpacing: '--letter-spacing-heading',
-      },
-      h2: {
-        family: '--font-family-base',
-        size: '--font-size-h2',
-        weight: '--font-weight-heading',
-        lineHeight: '--line-height-heading',
-        letterSpacing: '--letter-spacing-heading',
-      },
-      h3: {
-        family: '--font-family-base',
-        size: '--font-size-h3',
-        weight: '--font-weight-heading',
-        lineHeight: '--line-height-heading',
-        letterSpacing: '--letter-spacing-heading',
-      },
-      body: {
-        family: '--font-family-base',
-        size: '--font-size-body',
-        weight: '--font-weight-body',
-        lineHeight: '--line-height-body',
-        letterSpacing: '--letter-spacing-body',
-      },
-      bodySmall: {
-        family: '--font-family-base',
-        size: '--font-size-body-small',
-        weight: '--font-weight-body',
-        lineHeight: '--line-height-body',
-        letterSpacing: '--letter-spacing-body',
-      },
-      caption: {
-        family: '--font-family-base',
-        size: '--font-size-caption',
-        weight: '--font-weight-emphasis',
-        lineHeight: '--line-height-compact',
-        letterSpacing: '--letter-spacing-caption',
-      },
-      button: {
-        family: '--font-family-base',
-        size: '--font-size-button',
-        weight: '--font-weight-button',
-        lineHeight: '--line-height-compact',
-        letterSpacing: '--letter-spacing-button',
-      },
-      numeric: {
-        family: '--font-family-numeric',
-        size: '--font-size-numeric',
-        weight: '--font-weight-numeric',
-        lineHeight: '--line-height-compact',
-        letterSpacing: '--letter-spacing-body',
-      },
-    });
-    expect(semanticTokenVars.radius).toEqual({
-      control: '--radius-control',
-      button: '--radius-button',
-      panel: '--radius-panel',
-      sheet: '--radius-sheet',
-      pill: '--radius-pill',
-    });
-    expect(semanticTokenVars.borders).toEqual({
-      subtle: '--border-subtle',
-      strong: '--border-strong',
-      active: '--border-active',
-      contrast: '--border-contrast',
-    });
-    expect(semanticTokenVars.elevation).toEqual({
-      panel: '--shadow-panel',
-      raised: '--shadow-raised',
-      focus: '--shadow-focus',
-    });
-    expect(semanticTokenVars.motion).toEqual({
-      fast: '--motion-duration-fast',
-      normal: '--motion-duration-normal',
-      slow: '--motion-duration-slow',
-      standardEase: '--motion-ease-standard',
-      emphasizedEase: '--motion-ease-emphasized',
-    });
-    expect(semanticTokenVars.zIndex).toEqual({
-      base: '--layer-base',
-      raised: '--layer-raised',
-      sticky: '--layer-sticky',
-      overlay: '--layer-overlay',
-      modal: '--layer-modal',
-    });
-
-    for (const tokenGroup of [
-      semanticTokenVars.backgrounds,
-      semanticTokenVars.text,
-      semanticTokenVars.accent,
-      semanticTokenVars.spacing,
-      semanticTokenVars.radius,
-      semanticTokenVars.borders,
-      semanticTokenVars.elevation,
-      semanticTokenVars.motion,
-      semanticTokenVars.zIndex,
-    ]) {
-      for (const tokenVar of Object.values(tokenGroup)) {
-        expect(foundationCss).toMatch(new RegExp(`${tokenVar}:\\s*[^;]+;`));
-      }
-    }
-
-    for (const typographyRole of Object.values(semanticTokenVars.typography)) {
-      for (const tokenVar of Object.values(typographyRole)) {
-        expect(foundationCss).toMatch(new RegExp(`${tokenVar}:\\s*[^;]+;`));
-      }
-    }
-
-    for (const semanticClass of [
-      '.ui-canvas',
-      '.ui-surface',
-      '.ui-panel',
-      '.ui-text-primary',
-      '.ui-text-secondary',
-      '.ui-accent',
-      '.ui-type-heading',
-      '.ui-type-button',
-    ]) {
-      expect(foundationCss).toContain(semanticClass);
-    }
-
-    expect(foundationCss).not.toContain('.app-frame');
-    expect(foundationCss).not.toContain('.app-frame__header');
-    expect(foundationCss).not.toContain('.app-frame__main');
-
-    const cssRules = Array.from(style.sheet?.cssRules ?? []).filter(
-      (rule): rule is CSSStyleRule => rule instanceof CSSStyleRule,
+describe('Button', () => {
+  it('renders semantic button states without layout-only APIs', () => {
+    render(
+      <>
+        <Button>Primary action</Button>
+        <Button selected>Selected action</Button>
+        <Button disabled>Disabled action</Button>
+        <Button loading>Loading action</Button>
+      </>,
     );
-    const getRule = (selector: string) => cssRules.find((rule) => rule.selectorText === selector);
 
-    const canvasRule = getRule('.ui-canvas');
-    const surfaceRule = getRule('.ui-surface');
-    const panelRule = getRule('.ui-panel');
-    const accentRule = getRule('.ui-accent');
+    expect(screen.getByRole('button', { name: 'Primary action' })).toHaveClass(
+      'ui-button',
+      'ui-button--primary',
+      'ui-interactive-hover',
+      'ui-focus-ring',
+    );
+    expect(screen.getByRole('button', { name: 'Selected action' })).toHaveClass(
+      'is-selected',
+    );
+    expect(screen.getByRole('button', { name: 'Disabled action' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Loading action' })).toHaveClass(
+      'is-loading',
+    );
+    expect(screen.getByRole('button', { name: 'Loading action' })).toContainElement(
+      screen.getByText('Loading action'),
+    );
+    expect(screen.getByRole('button', { name: 'Loading action' }).querySelector('.ui-button__spinner')).toHaveAttribute(
+      'aria-hidden',
+      'true',
+    );
+  });
 
-    expect(canvasRule).toBeDefined();
-    expect(surfaceRule).toBeDefined();
-    expect(panelRule).toBeDefined();
-    expect(accentRule).toBeDefined();
+  it('keeps focus-visible semantics on the real button element', () => {
+    render(<Button>Continue</Button>);
 
-    expect(canvasRule?.style.background).toContain(`var(${semanticTokenVars.backgrounds.canvas})`);
-    expect(canvasRule?.style.color).toBe(`var(${semanticTokenVars.text.primary})`);
+    screen.getByRole('button', { name: 'Continue' }).focus();
 
-    expect(surfaceRule?.style.background).toContain(`var(${semanticTokenVars.backgrounds.surface})`);
-    expect(surfaceRule?.style.border).toContain(`var(${semanticTokenVars.borders.subtle})`);
+    expect(screen.getByRole('button', { name: 'Continue' })).toHaveFocus();
+    expect(screen.getByRole('button', { name: 'Continue' })).toHaveClass('ui-focus-ring');
+  });
+});
 
-    expect(panelRule?.style.borderRadius).toBe(`var(${semanticTokenVars.radius.panel})`);
-    expect(panelRule?.style.boxShadow).toBe(`var(${semanticTokenVars.elevation.panel})`);
+describe('Field', () => {
+  it('renders input states with label, error messaging, and focus-visible semantics', () => {
+    render(
+      <>
+        <Field label="Display name" name="displayName" placeholder="Alexey" />
+        <Field
+          label="Room code"
+          name="roomCode"
+          invalid
+          error="Room code is required"
+        />
+        <Field label="Board note" name="boardNote" multiline />
+      </>,
+    );
 
-    expect(accentRule?.style.background).toContain(`var(${semanticTokenVars.accent.hover})`);
-    expect(accentRule?.style.background).toContain(`var(${semanticTokenVars.accent.primary})`);
-    expect(accentRule?.style.color).toBe(`var(${semanticTokenVars.text.inverse})`);
-    expect(accentRule?.style.border).toContain(`var(${semanticTokenVars.borders.strong})`);
+    const displayName = screen.getByLabelText('Display name');
+    const roomCode = screen.getByLabelText(/Room code/);
+    const boardNote = screen.getByLabelText('Board note');
+
+    displayName.focus();
+
+    expect(displayName).toHaveFocus();
+    expect(displayName).toHaveClass('ui-field__control', 'ui-interactive-hover', 'ui-focus-ring');
+    expect(roomCode).toHaveAttribute('aria-invalid', 'true');
+    expect(roomCode).toHaveAttribute('aria-describedby');
+    expect(roomCode).toHaveClass('is-error');
+    expect(screen.getByText('Room code is required')).toHaveClass('ui-field__error');
+    expect(boardNote.tagName).toBe('TEXTAREA');
+  });
+
+  it('generates a valid control id when id and name are omitted', () => {
+    render(<Field label="Anonymous field" invalid error="Required" />);
+
+    const control = screen.getByLabelText(/Anonymous field/);
+    const describedBy = control.getAttribute('aria-describedby');
+
+    expect(control).toHaveAttribute('id');
+    expect(control.getAttribute('id')).not.toContain('undefined');
+    expect(describedBy).toBeTruthy();
+    expect(describedBy).not.toContain('undefined');
+    expect(screen.getByText('Required')).toHaveAttribute('id', describedBy);
+  });
+});
+
+describe('Tabs', () => {
+  it('renders selected, disabled, and hover-safe tab states with roving semantics', () => {
+    function TabsHarness() {
+      const [value, setValue] = React.useState('stats');
+
+      return (
+        <Tabs
+          ariaLabel="Profile sections"
+          value={value}
+          onValueChange={setValue}
+          items={[
+            { value: 'overview', label: 'Overview', panel: <div>Overview panel</div> },
+            { value: 'stats', label: 'Stats', panel: <div>Stats panel</div> },
+            { value: 'history', label: 'History', disabled: true, panel: <div>History panel</div> },
+          ]}
+        />
+      );
+    }
+
+    render(<TabsHarness />);
+
+    screen.getByRole('tab', { name: 'Stats' }).focus();
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'Stats' }), { key: 'ArrowLeft' });
+
+    expect(screen.getByRole('tablist', { name: 'Profile sections' })).toHaveClass('ui-tabs');
+    expect(screen.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'Overview' })).toHaveFocus();
+    expect(screen.getByRole('tab', { name: 'Overview' })).toHaveClass(
+      'ui-tabs__tab',
+      'is-selected',
+      'ui-interactive-hover',
+      'ui-focus-ring',
+    );
+    expect(screen.getByRole('tab', { name: 'History' })).toBeDisabled();
+    expect(screen.getByRole('tabpanel')).toHaveTextContent('Overview panel');
+    expect(screen.getByRole('tabpanel')).toHaveAttribute(
+      'aria-labelledby',
+      screen.getByRole('tab', { name: 'Overview' }).getAttribute('id') ?? '',
+    );
+  });
+
+  it('normalizes a stale controlled value so selected tab and panel stay aligned', () => {
+    const view = render(
+      <Tabs
+        ariaLabel="Room sections"
+        value="missing"
+        items={[
+          { value: 'overview', label: 'Overview', panel: <div>Overview panel</div> },
+          { value: 'players', label: 'Players', panel: <div>Players panel</div> },
+        ]}
+      />,
+    );
+
+    const scoped = within(view.container);
+
+    expect(scoped.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true');
+    expect(scoped.getByRole('tab', { name: 'Players' })).toHaveAttribute('aria-selected', 'false');
+    expect(scoped.getByRole('tabpanel')).toHaveTextContent('Overview panel');
+    expect(scoped.getByRole('tabpanel')).toHaveAttribute(
+      'aria-labelledby',
+      scoped.getByRole('tab', { name: 'Overview' }).getAttribute('id') ?? '',
+    );
+    expect(scoped.getByRole('tab', { name: 'Overview' })).toHaveAttribute(
+      'aria-controls',
+      scoped.getByRole('tabpanel').getAttribute('id') ?? '',
+    );
+    expect(scoped.getByRole('tab', { name: 'Players' })).not.toHaveAttribute('aria-controls');
+  });
+});
+
+describe('Dialog', () => {
+  it('applies aria semantics, moves focus on open, traps focus, closes on Escape, and restores focus', () => {
+    const onOpenChange = vi.fn();
+
+    function DialogHarness() {
+      const [open, setOpen] = React.useState(false);
+
+      return (
+        <div>
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(true);
+            }}
+          >
+            Open dialog
+          </button>
+          <Dialog
+            open={open}
+            title="Leave room"
+            description="You can rejoin later."
+            onOpenChange={(nextOpen) => {
+              onOpenChange(nextOpen);
+              setOpen(nextOpen);
+            }}
+          >
+            <Button>Cancel</Button>
+            <Button variant="primary">Confirm</Button>
+          </Dialog>
+        </div>
+      );
+    }
+
+    render(<DialogHarness />);
+
+    const trigger = screen.getByRole('button', { name: 'Open dialog' });
+    trigger.focus();
+    fireEvent.click(trigger);
+
+    const dialog = screen.getByRole('dialog', { name: 'Leave room' });
+
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(dialog).toHaveAttribute('aria-labelledby');
+    expect(dialog).toHaveAttribute('aria-describedby');
+    expect(document.body).toHaveClass('ui-scroll-locked');
+    expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus();
+
+    fireEvent.keyDown(dialog, { key: 'Tab' });
+    expect(screen.getByRole('button', { name: 'Confirm' })).toHaveFocus();
+
+    fireEvent.keyDown(dialog, { key: 'Tab' });
+    expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus();
+
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(trigger).toHaveFocus();
+  });
+});
+
+describe('BottomSheet', () => {
+  it('uses modal semantics, moves focus on open, and restores focus only after dismissing unmounts', async () => {
+    const onOpenChange = vi.fn();
+
+    function BottomSheetHarness() {
+      const [open, setOpen] = React.useState(false);
+
+      return (
+        <div>
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(true);
+            }}
+          >
+            Open sheet
+          </button>
+          <BottomSheet
+            open={open}
+            title="Room actions"
+            onOpenChange={(nextOpen) => {
+              onOpenChange(nextOpen);
+              setOpen(nextOpen);
+            }}
+          >
+            <Button>Leave room</Button>
+          </BottomSheet>
+        </div>
+      );
+    }
+
+    render(<BottomSheetHarness />);
+
+    const trigger = screen.getByRole('button', { name: 'Open sheet' });
+    trigger.focus();
+    fireEvent.click(trigger);
+
+    const sheet = screen.getByRole('dialog', { name: 'Room actions' });
+    const backdrop = sheet.parentElement;
+
+    expect(sheet).toHaveAttribute('aria-modal', 'true');
+    expect(backdrop).toHaveAttribute('data-state', 'opening');
+    expect(backdrop).toHaveClass('ui-bottom-sheet-backdrop');
+    expect(screen.getByRole('button', { name: 'Leave room' })).toHaveFocus();
+    expect(document.body).toHaveClass('ui-scroll-locked');
+
+    await waitFor(() => {
+      expect(backdrop).toHaveAttribute('data-state', 'open');
+    });
+
+    fireEvent.keyDown(sheet, { key: 'Escape' });
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(backdrop).toHaveAttribute('data-state', 'dismissing');
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'Room actions' })).not.toBeInTheDocument();
+    });
+    expect(trigger).toHaveFocus();
+  });
+
+  it('requires an accessible label when title is absent and does not inject a fixed dismiss button', () => {
+    const onOpenChange = vi.fn();
+
+    render(
+      <BottomSheet open ariaLabel="Quick actions" onOpenChange={onOpenChange}>
+        <Button>Dismiss from content</Button>
+      </BottomSheet>,
+    );
+
+    const sheet = screen.getByRole('dialog', { name: 'Quick actions' });
+    const backdrop = sheet.parentElement;
+
+    expect(sheet).not.toHaveAttribute('aria-labelledby');
+    expect(sheet).toHaveAttribute('aria-label', 'Quick actions');
+    expect(screen.queryByRole('button', { name: 'Close' })).not.toBeInTheDocument();
+
+    fireEvent.mouseDown(backdrop!);
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+});
+
+describe('Additional primitives', () => {
+  it('renders a segmented control with keyboard navigation, roving focus, and no external focus stealing', () => {
+    function SegmentedHarness() {
+      const [value, setValue] = React.useState('grid');
+
+      return (
+        <div>
+          <button type="button" onClick={() => setValue('grid')}>
+            External change
+          </button>
+          <SegmentedControl
+            ariaLabel="View mode"
+            value={value}
+            onValueChange={setValue}
+            items={[
+              { value: 'grid', label: 'Grid' },
+              { value: 'list', label: 'List' },
+              { value: 'compact', label: 'Compact', disabled: true },
+            ]}
+          />
+        </div>
+      );
+    }
+
+    render(<SegmentedHarness />);
+
+    expect(screen.getByRole('radiogroup', { name: 'View mode' })).toHaveClass(
+      'ui-segmented-control',
+    );
+    expect(screen.getByRole('radio', { name: 'Grid' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('radio', { name: 'Grid' })).toHaveClass(
+      'ui-segmented-control__option',
+      'is-selected',
+      'ui-interactive-hover',
+      'ui-focus-ring',
+    );
+    screen.getByRole('radio', { name: 'Grid' }).focus();
+    expect(screen.getByRole('radio', { name: 'Grid' })).toHaveFocus();
+
+    fireEvent.keyDown(screen.getByRole('radio', { name: 'Grid' }), { key: 'ArrowRight' });
+
+    expect(screen.getByRole('radio', { name: 'List' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('radio', { name: 'List' })).toHaveFocus();
+    expect(screen.getByRole('radio', { name: 'Grid' })).toHaveAttribute('aria-checked', 'false');
+
+    screen.getByRole('button', { name: 'External change' }).focus();
+    fireEvent.click(screen.getByRole('button', { name: 'External change' }));
+
+    expect(screen.getByRole('button', { name: 'External change' })).toHaveFocus();
+    expect(screen.getByRole('radio', { name: 'Grid' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('radio', { name: 'Compact' })).toBeDisabled();
+  });
+
+  it('renders a semantic menu trigger and list row without domain knowledge', () => {
+    render(
+      <>
+        <MenuTrigger ariaLabel="Open options">More options</MenuTrigger>
+        <ListRow
+          title="Account"
+          description="Shell-only account preferences"
+          trailing={<span>Enabled</span>}
+        />
+      </>,
+    );
+
+    expect(screen.getByRole('button', { name: 'Open options' })).toHaveClass(
+      'ui-menu-trigger',
+      'ui-interactive-hover',
+      'ui-focus-ring',
+    );
+    expect(screen.getByRole('listitem')).toHaveClass('ui-list-row');
+    expect(screen.getByText('Account')).toHaveClass('ui-list-row__title');
+    expect(screen.getByText('Shell-only account preferences')).toHaveClass(
+      'ui-list-row__description',
+    );
+    render(<ListRow as="button" title="Settings row" />);
+    expect(screen.getByRole('button', { name: 'Settings row' })).toHaveAttribute('type', 'button');
+  });
+
+  it('renders chip, user chip, stat item, empty state, divider, and explicit status tones', () => {
+    render(
+      <>
+        <Chip tone="accent">Selected</Chip>
+        <UserChip name="Alexey" detail="Online" />
+        <StatItem label="Matches" value="12" />
+        <Status tone="info">Informational</Status>
+        <Status tone="success" role="status">Saved</Status>
+        <Status tone="warning" role="alert">Needs attention</Status>
+        <Status tone="danger" role="alert">Failed</Status>
+        <EmptyState
+          title="Nothing here yet"
+          description="Add content when the shell route is ready."
+          action={<Button>Retry</Button>}
+        />
+        <Divider label="More" />
+      </>,
+    );
+
+    expect(screen.getByText('Selected')).toHaveClass('ui-chip', 'ui-chip--accent');
+    expect(screen.getByText('Alexey')).toHaveClass('ui-user-chip__name');
+    expect(screen.getByText('Online')).toHaveClass('ui-user-chip__detail');
+    expect(screen.getByText('12')).toHaveClass('ui-stat-item__value');
+    expect(screen.getByText('Matches')).toHaveClass('ui-stat-item__label');
+    expect(screen.getByText('Nothing here yet')).toHaveClass('ui-empty-state__title');
+    expect(screen.getByText('Add content when the shell route is ready.')).toHaveClass(
+      'ui-empty-state__description',
+    );
+    expect(screen.getByText('Informational')).toHaveClass('ui-status', 'ui-status--info');
+    expect(screen.getByText('Informational')).not.toHaveAttribute('role');
+    expect(screen.getByText('Saved')).toHaveClass('ui-status--success');
+    expect(screen.getByText('Saved')).toHaveAttribute('role', 'status');
+    expect(screen.getByText('Needs attention')).toHaveClass('ui-status--warning');
+    expect(screen.getByText('Needs attention')).toHaveAttribute('role', 'alert');
+    expect(screen.getByText('Failed')).toHaveClass('ui-status--danger');
+    expect(screen.getByText('Failed')).toHaveAttribute('role', 'alert');
+    expect(screen.getByRole('separator', { name: 'More' })).toHaveClass('ui-divider');
   });
 });
