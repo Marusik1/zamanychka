@@ -18,22 +18,28 @@ const genericError: AuthState = {
 export async function bootstrapAuth(
   api: AuthApi,
   initData?: string,
+  signal?: AbortSignal,
   transition?: (state: AuthState) => void,
 ): Promise<AuthState> {
   try {
-    const me = await api.me();
+    const me = await api.me(signal);
+    signal?.throwIfAborted();
     return { status: 'AUTHENTICATED', user: me.user };
   } catch (error) {
+    signal?.throwIfAborted();
     if (!(error instanceof AuthApiError) || error.status !== 401) return genericError;
   }
 
   try {
+    signal?.throwIfAborted();
     if (initData) {
       transition?.({ status: 'AUTHENTICATING' });
-      const result = await api.loginTelegram(initData);
+      const result = await api.loginTelegram(initData, signal);
+      signal?.throwIfAborted();
       return { status: 'AUTHENTICATED', user: result.user };
     }
-    const capability = await api.developmentCapability();
+    const capability = await api.developmentCapability(signal);
+    signal?.throwIfAborted();
     if (capability.enabled) return { status: 'DEV_AUTH_REQUIRED', users: capability.users };
     return {
       status: 'ERROR',
@@ -41,6 +47,7 @@ export async function bootstrapAuth(
       retryable: true,
     };
   } catch {
+    signal?.throwIfAborted();
     return genericError;
   }
 }

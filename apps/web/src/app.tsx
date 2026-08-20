@@ -1,5 +1,5 @@
 import { AppFrame } from '@zamanushka/ui';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { createAuthApi, type AuthApi } from './auth/api.js';
 import { AuthShell } from './auth/auth-shell.js';
@@ -12,56 +12,99 @@ interface AppProps {
 }
 
 const defaultApi = createAuthApi();
+const bootstrapFailure: AuthState = {
+  status: 'ERROR',
+  message: 'Не удалось проверить вход. Попробуйте ещё раз.',
+  retryable: true,
+};
 
 export function App({ api = defaultApi, createAdapter = createTelegramAdapter }: AppProps) {
-  const [adapter] = useState(createAdapter);
   const [state, setState] = useState<AuthState>({ status: 'BOOTSTRAPPING' });
+  const mounted = useRef(false);
+  const adapter = useRef<TelegramAdapter | undefined>(undefined);
+  const request = useRef<{ controller?: AbortController; epoch: number }>({ epoch: 0 });
 
-  const start = useCallback(async () => {
-    setState({ status: 'BOOTSTRAPPING' });
-    setState(await bootstrapAuth(api, adapter.initData, setState));
-  }, [adapter.initData, api]);
+  const beginRequest = useCallback(() => {
+    request.current.controller?.abort();
+    const controller = new AbortController();
+    const epoch = request.current.epoch + 1;
+    request.current = { controller, epoch };
+    return { controller, epoch };
+  }, []);
+
+  const commit = useCallback((epoch: number, next: AuthState) => {
+    if (
+      mounted.current &&
+      request.current.epoch === epoch &&
+      !request.current.controller?.signal.aborted
+    ) {
+      setState(next);
+    }
+  }, []);
+
+  const start = useCallback(
+    async (initData = adapter.current?.initData) => {
+      const { controller, epoch } = beginRequest();
+      commit(epoch, { status: 'BOOTSTRAPPING' });
+      try {
+        const next = await bootstrapAuth(api, initData, controller.signal, (transition) =>
+          commit(epoch, transition),
+        );
+        commit(epoch, next);
+      } catch {
+        if (!controller.signal.aborted) commit(epoch, bootstrapFailure);
+      }
+    },
+    [api, beginRequest, commit],
+  );
 
   useEffect(() => {
-    let active = true;
-    const transition = (next: AuthState) => {
-      if (active) setState(next);
-    };
-    void bootstrapAuth(api, adapter.initData, transition).then((next) => {
-      if (active) setState(next);
-    });
-    adapter.shellReady();
+    mounted.current = true;
+    const ownedAdapter = createAdapter();
+    adapter.current = ownedAdapter;
+    void start(ownedAdapter.initData);
+    ownedAdapter.shellReady();
+
     return () => {
-      active = false;
-      adapter.dispose();
+      mounted.current = false;
+      request.current.epoch += 1;
+      request.current.controller?.abort();
+      if (adapter.current === ownedAdapter) adapter.current = undefined;
+      ownedAdapter.dispose();
     };
-  }, [adapter, api]);
+  }, [createAdapter, start]);
 
   async function selectDevelopmentUser(devUserKey: string) {
-    setState({ status: 'AUTHENTICATING' });
+    const { controller, epoch } = beginRequest();
+    commit(epoch, { status: 'AUTHENTICATING' });
     try {
-      const result = await api.loginDevelopment(devUserKey);
-      setState({ status: 'AUTHENTICATED', user: result.user });
+      const result = await api.loginDevelopment(devUserKey, controller.signal);
+      commit(epoch, { status: 'AUTHENTICATED', user: result.user });
     } catch {
-      setState({
-        status: 'ERROR',
-        message: 'Не удалось выполнить вход. Попробуйте ещё раз.',
-        retryable: true,
-      });
+      if (!controller.signal.aborted) {
+        commit(epoch, {
+          status: 'ERROR',
+          message: 'Не удалось выполнить вход. Попробуйте ещё раз.',
+          retryable: true,
+        });
+      }
     }
   }
 
   async function logout() {
-    setState({ status: 'AUTHENTICATING' });
+    const { controller, epoch } = beginRequest();
+    commit(epoch, { status: 'AUTHENTICATING' });
     try {
-      await api.logout();
-      await start();
+      await api.logout(controller.signal);
+      if (request.current.epoch === epoch && !controller.signal.aborted) await start();
     } catch {
-      setState({
-        status: 'ERROR',
-        message: 'Не удалось выйти. Попробуйте ещё раз.',
-        retryable: true,
-      });
+      if (!controller.signal.aborted) {
+        commit(epoch, {
+          status: 'ERROR',
+          message: 'Не удалось выйти. Попробуйте ещё раз.',
+          retryable: true,
+        });
+      }
     }
   }
 

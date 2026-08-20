@@ -42,41 +42,50 @@ async function parse<T>(response: Response, schema: Parser<T>): Promise<T> {
   return result.data;
 }
 
-const getOptions = { credentials: 'include' as const };
+function getOptions(signal?: AbortSignal): RequestInit {
+  return { credentials: 'include', ...(signal ? { signal } : {}) };
+}
 
-function post(body?: unknown): RequestInit {
+function post(body?: unknown, signal?: AbortSignal): RequestInit {
   return {
     method: 'POST',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },
+    ...(signal ? { signal } : {}),
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   };
 }
 
 export interface AuthApi {
-  me(): Promise<MeResponse>;
-  loginTelegram(initData: string): Promise<AuthSuccess>;
-  developmentCapability(): Promise<DevAuthCapability>;
-  loginDevelopment(devUserKey: string): Promise<AuthSuccess>;
-  logout(): Promise<LogoutResponse>;
+  me(signal?: AbortSignal): Promise<MeResponse>;
+  loginTelegram(initData: string, signal?: AbortSignal): Promise<AuthSuccess>;
+  developmentCapability(signal?: AbortSignal): Promise<DevAuthCapability>;
+  loginDevelopment(devUserKey: string, signal?: AbortSignal): Promise<AuthSuccess>;
+  logout(signal?: AbortSignal): Promise<LogoutResponse>;
 }
 
 export function createAuthApi(fetcher: Fetcher = fetch): AuthApi {
   return {
-    async me() {
-      return parse(await fetcher('/api/me', getOptions), meResponseSchema);
+    async me(signal) {
+      return parse(await fetcher('/api/me', getOptions(signal)), meResponseSchema);
     },
-    async loginTelegram(initData) {
-      return parse(await fetcher('/api/auth/telegram', post({ initData })), authSuccessSchema);
+    async loginTelegram(initData, signal) {
+      return parse(
+        await fetcher('/api/auth/telegram', post({ initData }, signal)),
+        authSuccessSchema,
+      );
     },
-    async developmentCapability() {
-      return parse(await fetcher('/api/auth/dev', getOptions), devAuthCapabilitySchema);
+    async developmentCapability(signal) {
+      return parse(await fetcher('/api/auth/dev', getOptions(signal)), devAuthCapabilitySchema);
     },
-    async loginDevelopment(devUserKey) {
-      return parse(await fetcher('/api/auth/dev', post({ devUserKey })), authSuccessSchema);
+    async loginDevelopment(devUserKey, signal) {
+      return parse(await fetcher('/api/auth/dev', post({ devUserKey }, signal)), authSuccessSchema);
     },
-    async logout() {
-      return parse(await fetcher('/api/auth/logout', post()), logoutResponseSchema);
+    async logout(signal) {
+      return parse(
+        await fetcher('/api/auth/logout', post(undefined, signal)),
+        logoutResponseSchema,
+      );
     },
   };
 }

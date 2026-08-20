@@ -13,6 +13,22 @@ function json(status: number, body: unknown) {
 }
 
 describe('authentication bootstrap', () => {
+  it('does not continue to Telegram login when aborted while /api/me is outstanding', async () => {
+    const pending = new Promise<Response>((resolve) => {
+      queueMicrotask(() =>
+        resolve(json(401, { error: { code: 'AUTH_REQUIRED', message: 'Войдите' } })),
+      );
+    });
+    const fetcher = vi.fn().mockReturnValueOnce(pending);
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      bootstrapAuth(createAuthApi(fetcher), 'signed', controller.signal),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
   it('always requests /api/me first and does not reauthenticate a valid session', async () => {
     const fetcher = vi.fn().mockResolvedValue(json(200, { user }));
 
@@ -55,7 +71,7 @@ describe('authentication bootstrap', () => {
       );
     const transition = vi.fn();
 
-    await bootstrapAuth(createAuthApi(fetcher), 'signed-init-data', transition);
+    await bootstrapAuth(createAuthApi(fetcher), 'signed-init-data', undefined, transition);
 
     expect(transition).toHaveBeenCalledWith({ status: 'AUTHENTICATING' });
   });

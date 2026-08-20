@@ -10,6 +10,31 @@ function json(status: number, body: unknown) {
 }
 
 describe('authentication API response validation', () => {
+  it('passes AbortSignal through every request, including JSON posts', async () => {
+    const signal = new AbortController().signal;
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        json(200, { user: { id: 'one', displayName: 'One', authProvider: 'DEVELOPMENT' } }),
+      )
+      .mockResolvedValueOnce(json(200, { enabled: false, users: [] }))
+      .mockResolvedValueOnce(json(200, { ok: true }));
+    const api = createAuthApi(fetcher);
+
+    await api.me(signal);
+    await api.developmentCapability(signal);
+    await api.logout(signal);
+
+    expect(fetcher).toHaveBeenNthCalledWith(1, '/api/me', { credentials: 'include', signal });
+    expect(fetcher).toHaveBeenNthCalledWith(2, '/api/auth/dev', { credentials: 'include', signal });
+    expect(fetcher).toHaveBeenNthCalledWith(3, '/api/auth/logout', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      signal,
+    });
+  });
+
   it('preserves a validated stable public error code and message', async () => {
     const api = createAuthApi(
       vi.fn().mockResolvedValue(
