@@ -1,9 +1,10 @@
-import { AppFrame } from '@zamanushka/ui';
+import { AppFrame, Button, Panel } from '@zamanushka/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { createAuthApi, type AuthApi } from './auth/api.js';
 import { AuthShell } from './auth/auth-shell.js';
 import { bootstrapAuth, type AuthState } from './auth/bootstrap.js';
+import { renderShellRoute, shellNavigationItems } from './shell/routes.js';
 import { createTelegramAdapter, type TelegramAdapter } from './telegram/adapter.js';
 
 interface AppProps {
@@ -20,6 +21,7 @@ const bootstrapFailure: AuthState = {
 
 export function App({ api = defaultApi, createAdapter = createTelegramAdapter }: AppProps) {
   const [state, setState] = useState<AuthState>({ status: 'BOOTSTRAPPING' });
+  const [routeHash, setRouteHash] = useState(() => window.location.hash || '#/');
   const mounted = useRef(false);
   const adapter = useRef<TelegramAdapter | undefined>(undefined);
   const request = useRef<{ controller?: AbortController; epoch: number }>({ epoch: 0 });
@@ -74,6 +76,17 @@ export function App({ api = defaultApi, createAdapter = createTelegramAdapter }:
     };
   }, [createAdapter, start]);
 
+  useEffect(() => {
+    function syncRoute() {
+      setRouteHash(window.location.hash || '#/');
+    }
+
+    syncRoute();
+    window.addEventListener('hashchange', syncRoute);
+
+    return () => window.removeEventListener('hashchange', syncRoute);
+  }, []);
+
   async function selectDevelopmentUser(devUserKey: string) {
     const { controller, epoch } = beginRequest();
     commit(epoch, { status: 'AUTHENTICATING' });
@@ -108,8 +121,35 @@ export function App({ api = defaultApi, createAdapter = createTelegramAdapter }:
     }
   }
 
+  if (state.status === 'AUTHENTICATED') {
+    const route = renderShellRoute(routeHash);
+
+    return (
+      <AppFrame
+        title="Заманушка"
+        navigation={shellNavigationItems}
+        activeNavigationKey={route.activeKey}
+      >
+        <div className="shell-authenticated-layout">
+          <div className="shell-authenticated-layout__page">{route.page}</div>
+          <Panel as="aside" className="shell-session-panel">
+            <p className="shell-session-panel__eyebrow">Authenticated session</p>
+            <p className="shell-session-panel__name">{state.user.displayName}</p>
+            <p className="shell-session-panel__meta">ID: {state.user.id}</p>
+            <p className="shell-session-panel__meta">
+              Provider: {state.user.authProvider === 'TELEGRAM' ? 'Telegram' : 'Development'}
+            </p>
+            <Button variant="secondary" onClick={() => void logout()}>
+              Выйти
+            </Button>
+          </Panel>
+        </div>
+      </AppFrame>
+    );
+  }
+
   return (
-    <AppFrame title="Заманушка">
+    <AppFrame title="Заманушка" navigation={[]}>
       <AuthShell
         state={state}
         onSelectDevUser={(key) => void selectDevelopmentUser(key)}

@@ -98,6 +98,119 @@ body {
   border-color: var(--foundation-gold);
 }
 
+.shell-authenticated-layout {
+  display: grid;
+  gap: var(--ui-space-24);
+  align-items: start;
+}
+
+.shell-authenticated-layout__page {
+  min-width: 0;
+}
+
+.shell-session-panel {
+  display: grid;
+  gap: var(--ui-space-12);
+  align-content: start;
+  max-width: 22rem;
+}
+
+.shell-session-panel__eyebrow,
+.shell-placeholder-page__eyebrow {
+  margin: 0;
+  color: var(--ui-text-muted);
+  font-size: var(--ui-type-caption-size);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.shell-session-panel__name {
+  margin: 0;
+  font-size: var(--ui-type-h3-size);
+  font-weight: var(--ui-type-h3-weight);
+}
+
+.shell-session-panel__meta {
+  margin: 0;
+  color: var(--ui-text-secondary);
+}
+
+.shell-placeholder-page {
+  display: grid;
+  gap: var(--ui-space-24);
+}
+
+.shell-placeholder-page__header {
+  display: grid;
+  gap: var(--ui-space-12);
+}
+
+.shell-placeholder-page__header h1 {
+  margin: 0;
+  font-size: clamp(2rem, 4vw, 2.75rem);
+}
+
+.shell-placeholder-page__description {
+  margin: 0;
+  max-width: 42rem;
+  color: var(--ui-text-secondary);
+}
+
+.shell-placeholder-page__scaffold {
+  display: grid;
+  gap: var(--ui-space-16);
+}
+
+.shell-placeholder-page__panel {
+  display: grid;
+  gap: var(--ui-space-16);
+  min-height: 10rem;
+}
+
+.shell-placeholder-page__bar {
+  height: 0.9rem;
+  width: min(100%, 24rem);
+  border-radius: 999px;
+  background:
+    linear-gradient(90deg, rgba(214, 163, 74, 0.28), rgba(214, 163, 74, 0.08)),
+    rgba(255, 255, 255, 0.04);
+}
+
+.shell-placeholder-page__bar--short {
+  width: min(65%, 14rem);
+}
+
+.shell-placeholder-page__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--ui-space-12);
+}
+
+.shell-placeholder-page__grid span {
+  display: block;
+  min-height: 6rem;
+  border: 1px dashed var(--ui-border-muted);
+  border-radius: var(--ui-radius-panel);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.app-shell-route-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 0.7rem;
+}
+
+@media (min-width: 1100px) {
+  .shell-authenticated-layout {
+    grid-template-columns: minmax(0, 1.6fr) minmax(18rem, 0.7fr);
+  }
+}
+
 @media (max-width: 600px) {
   .app-frame__header {
     min-height: 56px;
@@ -111,5 +224,9 @@ body {
   .auth-shell {
     min-height: calc(var(--app-viewport-height) - 88px);
     padding-inline: 4px;
+  }
+
+  .shell-placeholder-page__grid {
+    grid-template-columns: 1fr;
   }
 }
