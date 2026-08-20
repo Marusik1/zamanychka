@@ -29,16 +29,37 @@ export function parseCli(args, env = process.env) {
   const mode = option(args, 'mode');
   if (mode !== 'development' && mode !== 'telegram')
     throw new Error('--mode=development|telegram is required');
-  const baseUrl = new URL(option(args, 'base-url') ?? env.AUTH_SMOKE_BASE_URL ?? DEFAULT_BASE_URL);
-  const origin = new URL(option(args, 'origin') ?? env.AUTH_SMOKE_ORIGIN ?? baseUrl.origin);
-  if (!['http:', 'https:'].includes(baseUrl.protocol) || baseUrl.username || baseUrl.password)
-    throw new Error('--base-url must be an HTTP(S) URL without credentials');
-  if (origin.origin !== origin.href.replace(/\/$/, ''))
-    throw new Error('--origin must be a canonical HTTP(S) origin');
+  const canonicalOrigin = (raw, label) => {
+    let url;
+    try {
+      url = new URL(raw);
+    } catch {
+      throw new Error(`${label} must be a canonical HTTP(S) origin`);
+    }
+    if (
+      !['http:', 'https:'].includes(url.protocol) ||
+      url.username ||
+      url.password ||
+      url.pathname !== '/' ||
+      url.search ||
+      url.hash ||
+      (raw !== url.origin && raw !== `${url.origin}/`)
+    )
+      throw new Error(`${label} must be a canonical HTTP(S) origin`);
+    return url.origin;
+  };
+  const baseUrl = canonicalOrigin(
+    option(args, 'base-url') ?? env.AUTH_SMOKE_BASE_URL ?? DEFAULT_BASE_URL,
+    '--base-url',
+  );
+  const origin = canonicalOrigin(
+    option(args, 'origin') ?? env.AUTH_SMOKE_ORIGIN ?? baseUrl,
+    '--origin',
+  );
   return {
     mode,
-    baseUrl: baseUrl.href.replace(/\/$/, ''),
-    origin: origin.origin,
+    baseUrl,
+    origin,
   };
 }
 
@@ -96,7 +117,7 @@ async function json(response, expectedStatus) {
   return response.json();
 }
 
-function assertUser(value, provider) {
+export function assertAuthUser(value, provider) {
   assert.equal(typeof value, 'object');
   assert.deepEqual(
     Object.keys(value).sort(),
@@ -110,7 +131,7 @@ function assertUser(value, provider) {
   assert.equal(typeof value.id, 'string');
   assert.ok(value.id.length > 0);
   assert.equal(typeof value.displayName, 'string');
-  assert.equal(value.authProvider, provider);
+  assert.equal(value.authProvider, provider, 'authProvider must match the requested smoke mode');
   for (const optional of ['username', 'photoUrl', 'languageCode'])
     if (value[optional] !== undefined) assert.equal(typeof value[optional], 'string');
   for (const forbidden of ['telegramId', 'devUserKey', 'token', 'sessionToken'])
@@ -127,19 +148,19 @@ function headers(origin, jar) {
 }
 
 async function request(baseUrl, path, options = {}, jar) {
-  const response = await fetch(`${baseUrl}${path}`, options);
+  const response = await fetch(new URL(path, `${baseUrl}/`), options);
   if (jar) jar.absorb(response.headers);
   return response;
 }
 
-async function me(baseUrl, jar, status = 200) {
+async function me(baseUrl, jar, status, expectedProvider) {
   const body = await json(
     await request(baseUrl, '/api/me', { headers: jar.header() ? { Cookie: jar.header() } : {} }),
     status,
   );
   if (status === 200) {
     assert.deepEqual(Object.keys(body), ['user']);
-    assertUser(body.user, body.user.authProvider);
+    assertAuthUser(body.user, expectedProvider);
   } else {
     assert.deepEqual(body, {
       error: { code: 'AUTH_REQUIRED', message: 'Authentication required' },
@@ -170,7 +191,7 @@ async function developmentSmoke(config) {
       jar,
     );
     const body = await json(response, 200);
-    assertUser(body.user, 'DEVELOPMENT');
+    assertAuthUser(body.user, 'DEVELOPMENT');
     assert.deepEqual(Object.keys(body).sort(), ['session', 'user']);
     assert.deepEqual(Object.keys(body.session), ['expiresAt']);
     assert.equal(Number.isNaN(Date.parse(body.session.expiresAt)), false);
@@ -180,8 +201,8 @@ async function developmentSmoke(config) {
   const first = await login(firstConfig, jars[0]);
   const second = await login(secondConfig, jars[1]);
   assert.notEqual(first.id, second.id);
-  assert.equal((await me(config.baseUrl, jars[0])).user.id, first.id);
-  assert.equal((await me(config.baseUrl, jars[1])).user.id, second.id);
+  assert.equal((await me(config.baseUrl, jars[0], 200, 'DEVELOPMENT')).user.id, first.id);
+  assert.equal((await me(config.baseUrl, jars[1], 200, 'DEVELOPMENT')).user.id, second.id);
   const unknown = 'epic-01-smoke-unknown-user';
   const failure = await request(config.baseUrl, '/api/auth/dev', {
     method: 'POST',
@@ -203,8 +224,8 @@ async function developmentSmoke(config) {
     200,
   );
   assert.deepEqual(logout, { ok: true });
-  await me(config.baseUrl, jars[0], 401);
-  assert.equal((await me(config.baseUrl, jars[1])).user.id, second.id);
+  await me(config.baseUrl, jars[0], 401, 'DEVELOPMENT');
+  assert.equal((await me(config.baseUrl, jars[1], 200, 'DEVELOPMENT')).user.id, second.id);
 }
 
 async function telegramSmoke(config, env) {
@@ -228,14 +249,14 @@ async function telegramSmoke(config, env) {
       jar,
     );
   const first = await json(await login(), 200);
-  assertUser(first.user, 'TELEGRAM');
+  assertAuthUser(first.user, 'TELEGRAM');
   assert.deepEqual(Object.keys(first).sort(), ['session', 'user']);
   assert.deepEqual(Object.keys(first.session), ['expiresAt']);
   const oldCookie = jar.header();
   assert.ok(oldCookie);
-  assert.equal((await me(config.baseUrl, jar)).user.id, first.user.id);
+  assert.equal((await me(config.baseUrl, jar, 200, 'TELEGRAM')).user.id, first.user.id);
   const replacement = await json(await login(), 200);
-  assertUser(replacement.user, 'TELEGRAM');
+  assertAuthUser(replacement.user, 'TELEGRAM');
   assert.equal(replacement.user.id, first.user.id);
   assert.notEqual(jar.header(), oldCookie, 'replacement did not rotate the session cookie');
   const oldResponse = await request(config.baseUrl, '/api/me', { headers: { Cookie: oldCookie } });
@@ -256,7 +277,7 @@ async function telegramSmoke(config, env) {
     200,
   );
   assert.deepEqual(logout, { ok: true });
-  await me(config.baseUrl, jar, 401);
+  await me(config.baseUrl, jar, 401, 'TELEGRAM');
   const tampered = `${initData.slice(0, -1)}${initData.endsWith('0') ? '1' : '0'}`;
   const failure = await request(config.baseUrl, '/api/auth/telegram', {
     method: 'POST',

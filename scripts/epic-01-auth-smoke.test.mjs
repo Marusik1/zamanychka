@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 import test from 'node:test';
 
-import { CookieJar, parseCli, signTelegramInitData } from './epic-01-auth-smoke.mjs';
+import {
+  CookieJar,
+  assertAuthUser,
+  parseCli,
+  signTelegramInitData,
+} from './epic-01-auth-smoke.mjs';
 
 /* global URLSearchParams */
 
@@ -23,6 +28,32 @@ test('parseCli requires an explicit supported mode and accepts URL sources', () 
   assert.throws(() => parseCli([], {}), /--mode/);
   assert.throws(() => parseCli(['--mode=other'], {}), /--mode/);
   assert.throws(() => parseCli(['--mode=development', '--base-url'], {}), /value/);
+  for (const candidate of [
+    'ftp://localhost:3001',
+    'http://user:password@localhost:3001',
+    'http://localhost:3001/api',
+    'http://localhost:3001/?query=yes',
+    'http://localhost:3001/#fragment',
+  ]) {
+    assert.throws(
+      () => parseCli(['--mode=development', '--base-url', candidate], {}),
+      /canonical HTTP\(S\) origin/,
+    );
+    assert.throws(
+      () => parseCli(['--mode=development', '--origin', candidate], {}),
+      /canonical HTTP\(S\) origin/,
+    );
+  }
+});
+
+test('auth user validation rejects a provider from the wrong server mode', () => {
+  const telegramUser = {
+    id: 'internal-id',
+    displayName: 'Ada',
+    authProvider: 'TELEGRAM',
+  };
+  assert.doesNotThrow(() => assertAuthUser(telegramUser, 'TELEGRAM'));
+  assert.throws(() => assertAuthUser(telegramUser, 'DEVELOPMENT'), /authProvider/);
 });
 
 test('CookieJar applies multiple Set-Cookie headers, replacements, and deletion', () => {
