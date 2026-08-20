@@ -1,3 +1,11 @@
+type TypographyTokenRole = {
+  family: string;
+  size: string;
+  weight: string;
+  lineHeight: string;
+  letterSpacing: string;
+};
+
 export const semanticTokenVars = {
   backgrounds: {
     canvas: '--color-canvas',
@@ -33,13 +41,69 @@ export const semanticTokenVars = {
     10: '--space-10',
   },
   typography: {
-    display: '--font-size-display',
-    heading: '--font-size-h2',
-    body: '--font-size-body',
-    bodySmall: '--font-size-body-small',
-    caption: '--font-size-caption',
-    button: '--font-size-button',
-    numeric: '--font-size-numeric',
+    display: {
+      family: '--font-family-display',
+      size: '--font-size-display',
+      weight: '--font-weight-display',
+      lineHeight: '--line-height-display',
+      letterSpacing: '--letter-spacing-display',
+    } satisfies TypographyTokenRole,
+    h1: {
+      family: '--font-family-base',
+      size: '--font-size-h1',
+      weight: '--font-weight-heading',
+      lineHeight: '--line-height-heading',
+      letterSpacing: '--letter-spacing-heading',
+    } satisfies TypographyTokenRole,
+    h2: {
+      family: '--font-family-base',
+      size: '--font-size-h2',
+      weight: '--font-weight-heading',
+      lineHeight: '--line-height-heading',
+      letterSpacing: '--letter-spacing-heading',
+    } satisfies TypographyTokenRole,
+    h3: {
+      family: '--font-family-base',
+      size: '--font-size-h3',
+      weight: '--font-weight-heading',
+      lineHeight: '--line-height-heading',
+      letterSpacing: '--letter-spacing-heading',
+    } satisfies TypographyTokenRole,
+    body: {
+      family: '--font-family-base',
+      size: '--font-size-body',
+      weight: '--font-weight-body',
+      lineHeight: '--line-height-body',
+      letterSpacing: '--letter-spacing-body',
+    } satisfies TypographyTokenRole,
+    bodySmall: {
+      family: '--font-family-base',
+      size: '--font-size-body-small',
+      weight: '--font-weight-body',
+      lineHeight: '--line-height-body',
+      letterSpacing: '--letter-spacing-body',
+    } satisfies TypographyTokenRole,
+    caption: {
+      family: '--font-family-base',
+      size: '--font-size-caption',
+      weight: '--font-weight-emphasis',
+      lineHeight: '--line-height-compact',
+      letterSpacing: '--letter-spacing-caption',
+    } satisfies TypographyTokenRole,
+    button: {
+      family: '--font-family-base',
+      size: '--font-size-button',
+      weight: '--font-weight-button',
+      lineHeight: '--line-height-compact',
+      letterSpacing: '--letter-spacing-button',
+    } satisfies TypographyTokenRole,
+    numeric: {
+      family: '--font-family-numeric',
+      size: '--font-size-numeric',
+      weight: '--font-weight-numeric',
+      lineHeight: '--line-height-compact',
+      letterSpacing: '--letter-spacing-body',
+    } satisfies TypographyTokenRole,
   },
   radius: {
     control: '--radius-control',
@@ -76,3 +140,4 @@ export const semanticTokenVars = {
 } as const;
 
 export type SemanticTokenVars = typeof semanticTokenVars;
+export type SemanticTypographyTokenVars = typeof semanticTokenVars.typography;

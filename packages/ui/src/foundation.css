@@ -207,35 +207,3 @@ textarea {
   outline: none;
   box-shadow: var(--shadow-focus);
 }
-
-.app-frame {
-  min-height: 100vh;
-  display: grid;
-  grid-template-rows: auto 1fr;
-  background: var(--color-canvas);
-}
-
-.app-frame__header {
-  min-height: 72px;
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: 0 var(--space-6);
-  border-bottom: 1px solid var(--border-subtle);
-  background: rgba(8, 18, 26, 0.92);
-  backdrop-filter: blur(12px);
-}
-
-.app-frame__mark {
-  width: 12px;
-  height: 12px;
-  border-radius: var(--radius-pill);
-  background: linear-gradient(180deg, var(--accent-hover) 0%, var(--accent-primary) 100%);
-  box-shadow: 0 0 0 1px rgba(244, 239, 230, 0.12);
-}
-
-.app-frame__main {
-  width: min(1120px, 100%);
-  margin: 0 auto;
-  padding: var(--space-6);
-}
