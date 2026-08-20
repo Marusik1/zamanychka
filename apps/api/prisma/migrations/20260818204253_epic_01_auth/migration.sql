@@ -25,7 +25,6 @@ CREATE TABLE "AuthSession" (
     "authMethod" "AuthMethod" NOT NULL,
     "expiresAt" TIMESTAMP(3) NOT NULL,
     "revokedAt" TIMESTAMP(3),
-    "replacedAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "AuthSession_pkey" PRIMARY KEY ("id")
