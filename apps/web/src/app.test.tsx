@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import { StrictMode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -266,12 +266,19 @@ describe('EPIC-01 app lifecycle', () => {
     expect(telegram.dispose).toHaveBeenCalledTimes(1);
   });
 
-  it('does not render arbitrary identity controls or future product navigation', async () => {
+  it('limits the authenticated app to shell-safe navigation without identity editors or gameplay topology', async () => {
     const telegram = adapter();
     render(<App createAdapter={() => telegram} api={authenticatedApi()} />);
     await screen.findByText('Один');
 
+    const navigation = screen.getByRole('navigation', { name: 'Primary navigation' });
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
-    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    expect(within(navigation).getAllByRole('link')).toHaveLength(5);
+    expect(within(navigation).getByRole('link', { name: 'Home' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Create room' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Matchmaking')).not.toBeInTheDocument();
+    expect(screen.getByRole('main').querySelector('[data-layout="gameplay-three-column"]')).toBeNull();
+    expect(screen.getByRole('main').querySelector('[data-region="left-rail"]')).toBeNull();
+    expect(screen.getByRole('main').querySelector('[data-region="right-rail"]')).toBeNull();
   });
 });
