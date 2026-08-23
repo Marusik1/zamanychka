@@ -23,79 +23,115 @@ body {
 }
 
 .auth-shell {
-  width: min(100%, 480px);
-  min-height: calc(var(--app-viewport-height) - 112px);
+  width: min(100%, 560px);
+  min-height: calc(var(--app-viewport-height) - 120px);
   margin-inline: auto;
   display: grid;
   align-content: center;
-  padding: 44px 20px;
+  gap: var(--ui-space-20);
+  padding: clamp(32px, 8vw, 56px) 20px;
+}
+
+.auth-shell__hero {
+  display: grid;
+  gap: var(--ui-space-12);
   text-align: center;
 }
 
 .auth-shell__eyebrow {
-  margin: 0 0 12px;
-  color: var(--foundation-gold);
-  font-size: 0.75rem;
+  margin: 0;
+  color: var(--ui-accent-gold);
+  font-size: var(--ui-type-caption-size);
   font-weight: 700;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
 }
 
 .auth-shell h1 {
-  margin: 0 0 28px;
-  font:
-    500 clamp(2rem, 8vw, 3.5rem) / 1.05 Georgia,
-    'Times New Roman',
-    serif;
+  margin: 0;
+  font-size: clamp(2.25rem, 8vw, 4rem);
+  line-height: 0.96;
 }
 
-.auth-shell__content {
+.auth-shell__lede {
+  margin: 0 auto;
+  max-width: 32rem;
+  color: var(--ui-text-secondary);
+  font-size: clamp(0.98rem, 2.6vw, 1.08rem);
+  line-height: 1.55;
+}
+
+.auth-shell__panel,
+.auth-shell__feedback {
   display: grid;
-  gap: 18px;
+  gap: var(--ui-space-16);
+}
+
+.auth-shell__panel {
+  padding: clamp(20px, 5vw, 28px);
+}
+
+.auth-shell__panel-header {
+  display: grid;
+  gap: var(--ui-space-8);
+}
+
+.auth-shell__label {
+  margin: 0;
+  color: var(--ui-text-muted);
+  font-size: var(--ui-type-caption-size);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.auth-shell__body {
+  margin: 0;
+  color: var(--ui-text-secondary);
+  line-height: 1.5;
 }
 
 .auth-shell__name {
   margin: 0;
-  font-size: 1.35rem;
-  font-weight: 650;
+  font-size: clamp(1.5rem, 4vw, 1.9rem);
+  font-weight: 600;
 }
 
 .auth-shell__identity {
   margin: 0;
   display: grid;
-  gap: 8px;
-  color: var(--foundation-muted);
+  gap: var(--ui-space-12);
+  color: var(--ui-text-secondary);
 }
 
 .auth-shell__identity div {
   display: flex;
   justify-content: space-between;
-  gap: 20px;
+  gap: var(--ui-space-16);
+  padding-block: var(--ui-space-8);
+  border-bottom: 1px solid var(--ui-border-muted);
+}
+
+.auth-shell__identity dt {
+  color: var(--ui-text-muted);
 }
 
 .auth-shell__identity dd {
   margin: 0;
   overflow-wrap: anywhere;
+  text-align: right;
 }
 
 .auth-shell__choices {
   display: grid;
-  gap: 10px;
+  gap: var(--ui-space-12);
 }
 
-.auth-shell button {
-  min-height: 44px;
-  padding: 10px 18px;
-  border: 1px solid var(--foundation-border);
-  border-radius: 12px;
-  background: rgba(13, 27, 35, 0.9);
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
+.auth-shell__status {
+  justify-self: stretch;
 }
 
-.auth-shell button:hover,
-.auth-shell button:focus-visible {
-  border-color: var(--foundation-gold);
+.auth-shell__feedback .ui-button {
+  justify-self: start;
 }
 
 .shell-authenticated-layout {
@@ -218,8 +254,20 @@ body {
   }
 
   .auth-shell {
-    min-height: calc(var(--app-viewport-height) - 88px);
-    padding-inline: 4px;
+    min-height: calc(var(--app-viewport-height) - 92px);
+    padding-inline: 0;
+  }
+
+  .auth-shell__feedback .ui-button {
+    justify-self: stretch;
+  }
+
+  .auth-shell__identity div {
+    flex-direction: column;
+  }
+
+  .auth-shell__identity dd {
+    text-align: left;
   }
 
   .shell-placeholder-page__grid {

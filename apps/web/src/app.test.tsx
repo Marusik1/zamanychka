@@ -126,6 +126,21 @@ describe('EPIC-01 app lifecycle', () => {
     expect(api.loginTelegram).toHaveBeenCalledWith('signed', expect.any(AbortSignal));
   });
 
+  it('checks /api/me before attempting Telegram login', async () => {
+    const api = authenticatedApi(vi.fn().mockRejectedValue(new AuthApiError(401)));
+    vi.mocked(api.loginTelegram).mockResolvedValue({
+      user: { id: 'telegram', displayName: 'Телеграм', authProvider: 'TELEGRAM' },
+      session: { expiresAt: '2026-09-20T00:00:00.000Z' },
+    });
+
+    render(<App createAdapter={() => ({ ...adapter(), initData: 'signed' })} api={api} />);
+
+    await waitFor(() => expect(api.loginTelegram).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(api.me).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(api.loginTelegram).mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
+  });
+
   it('aborts an outstanding authentication request on unmount', async () => {
     let signal: AbortSignal | undefined;
     const api = authenticatedApi(
@@ -183,6 +198,35 @@ describe('EPIC-01 app lifecycle', () => {
     expect(screen.getByText('Последний')).toBeVisible();
   });
 
+  it('shows the browser fallback when Telegram is unavailable and development auth is disabled', async () => {
+    const api = authenticatedApi(vi.fn().mockRejectedValue(new AuthApiError(401)));
+    vi.mocked(api.developmentCapability).mockResolvedValue({ enabled: false, users: [] });
+
+    render(<App createAdapter={adapter} api={api} />);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Telegram');
+    expect(api.loginTelegram).not.toHaveBeenCalled();
+  });
+
+  it('shows the development chooser only after the browser bootstrap path rejects /api/me', async () => {
+    const api = authenticatedApi(vi.fn().mockRejectedValue(new AuthApiError(401)));
+    vi.mocked(api.developmentCapability).mockResolvedValue({
+      enabled: true,
+      users: [
+        { devUserKey: 'one', displayName: 'Один' },
+        { devUserKey: 'two', displayName: 'Два' },
+      ],
+    });
+
+    render(<App createAdapter={adapter} api={api} />);
+
+    await waitFor(() => expect(api.me).toHaveBeenCalledTimes(1));
+    expect(api.developmentCapability).toHaveBeenCalledTimes(1);
+    expect(api.loginTelegram).not.toHaveBeenCalled();
+    expect(await screen.findByRole('button', { name: 'Один' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Два' })).toBeVisible();
+  });
+
   it('does not let a stale retry overwrite the latest bootstrap result', async () => {
     const retries: ReturnType<typeof deferred<Awaited<ReturnType<AuthApi['me']>>>>[] = [];
     const me = vi
@@ -236,6 +280,27 @@ describe('EPIC-01 app lifecycle', () => {
     await act(() => Promise.resolve());
 
     expect(api.me).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns to the browser fallback after logout when Telegram is unavailable and development auth is disabled', async () => {
+    const me = vi
+      .fn()
+      .mockResolvedValueOnce({
+        user: { id: 'one', displayName: 'Один', authProvider: 'DEVELOPMENT' },
+      })
+      .mockRejectedValueOnce(new AuthApiError(401));
+    const api = authenticatedApi(me);
+    vi.mocked(api.developmentCapability).mockResolvedValue({ enabled: false, users: [] });
+    vi.mocked(api.logout).mockResolvedValue({ ok: true });
+
+    render(<App createAdapter={adapter} api={api} />);
+
+    const logout = await screen.findByRole('button', { name: 'Выйти' });
+    logout.click();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Telegram');
+    expect(api.me).toHaveBeenCalledTimes(2);
+    expect(api.loginTelegram).not.toHaveBeenCalled();
   });
 
   it('initializes bootstrap, renders the shell, and signals shell readiness exactly once', async () => {

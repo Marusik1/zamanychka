@@ -1,3 +1,5 @@
+import { Button, Panel, Status } from '@zamanushka/ui';
+
 import type { AuthState } from './bootstrap.js';
 
 interface AuthShellProps {
@@ -7,16 +9,36 @@ interface AuthShellProps {
   onLogout(): void;
 }
 
+function providerLabel(state: Extract<AuthState, { status: 'AUTHENTICATED' }>) {
+  return state.user.authProvider === 'TELEGRAM' ? 'Telegram' : 'Режим разработки';
+}
+
 export function AuthShell({ state, onSelectDevUser, onRetry, onLogout }: AuthShellProps) {
+  const errorTone = state.status === 'ERROR' && state.retryable ? 'warning' : 'danger';
+
   return (
     <section className="auth-shell" aria-labelledby="auth-title">
-      <p className="auth-shell__eyebrow">ЗАМАНУШКА</p>
-      <h1 id="auth-title">Добро пожаловать</h1>
-      {state.status === 'BOOTSTRAPPING' && <p role="status">Проверяем вход…</p>}
-      {state.status === 'AUTHENTICATING' && <p role="status">Выполняем вход…</p>}
+      <div className="auth-shell__hero">
+        <p className="auth-shell__eyebrow">ЗАМАНУШКА</p>
+        <h1 id="auth-title">Добро пожаловать</h1>
+        <p className="auth-shell__lede">
+          Авторизация остаётся серверной. Продолжите через Telegram или разрешённый режим
+          разработки.
+        </p>
+      </div>
+
+      {(state.status === 'BOOTSTRAPPING' || state.status === 'AUTHENTICATING') && (
+        <Status className="auth-shell__status" role="status" tone="info">
+          {state.status === 'BOOTSTRAPPING' ? 'Проверяем вход…' : 'Выполняем вход…'}
+        </Status>
+      )}
+
       {state.status === 'AUTHENTICATED' && (
-        <div className="auth-shell__content">
-          <p className="auth-shell__name">{state.user.displayName}</p>
+        <Panel as="section" className="auth-shell__panel auth-shell__panel--identity">
+          <div className="auth-shell__panel-header">
+            <p className="auth-shell__label">Активная сессия</p>
+            <p className="auth-shell__name">{state.user.displayName}</p>
+          </div>
           <dl className="auth-shell__identity">
             <div>
               <dt>ID</dt>
@@ -24,37 +46,45 @@ export function AuthShell({ state, onSelectDevUser, onRetry, onLogout }: AuthShe
             </div>
             <div>
               <dt>Вход</dt>
-              <dd>{state.user.authProvider === 'TELEGRAM' ? 'Telegram' : 'Режим разработки'}</dd>
+              <dd>{providerLabel(state)}</dd>
             </div>
           </dl>
-          <button type="button" onClick={onLogout}>
+          <Button variant="secondary" size="lg" onClick={onLogout}>
             Выйти
-          </button>
-        </div>
+          </Button>
+        </Panel>
       )}
+
       {state.status === 'DEV_AUTH_REQUIRED' && (
-        <div className="auth-shell__content">
-          <p>Выберите тестового пользователя</p>
+        <Panel as="section" className="auth-shell__panel auth-shell__panel--choices">
+          <div className="auth-shell__panel-header">
+            <p className="auth-shell__label">Режим разработки</p>
+            <p className="auth-shell__body">Выберите тестового пользователя для продолжения.</p>
+          </div>
           <div className="auth-shell__choices">
             {state.users.map((choice) => (
-              <button
+              <Button
                 key={choice.devUserKey}
-                type="button"
+                variant="secondary"
+                size="lg"
                 onClick={() => onSelectDevUser(choice.devUserKey)}
               >
                 {choice.displayName}
-              </button>
+              </Button>
             ))}
           </div>
-        </div>
+        </Panel>
       )}
+
       {state.status === 'ERROR' && (
-        <div className="auth-shell__content" role="alert">
-          <p>{state.message}</p>
+        <div className="auth-shell__feedback">
+          <Status className="auth-shell__status" role="alert" tone={errorTone}>
+            {state.message}
+          </Status>
           {state.retryable && (
-            <button type="button" onClick={onRetry}>
+            <Button variant="secondary" size="lg" onClick={onRetry}>
               Повторить
-            </button>
+            </Button>
           )}
         </div>
       )}
