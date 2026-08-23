@@ -1,4 +1,4 @@
-import { AppFrame, Button, Panel } from '@zamanushka/ui';
+import { AppFrame, AppShell, Button, Panel } from '@zamanushka/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { createAuthApi, type AuthApi } from './auth/api.js';
@@ -12,6 +12,14 @@ interface AppProps {
   createAdapter?: () => TelegramAdapter;
 }
 
+type ShellViewport = 'mobile' | 'desktop';
+
+function resolveShellViewport(width: number): ShellViewport {
+  return width >= DESKTOP_SHELL_BREAKPOINT ? 'desktop' : 'mobile';
+}
+
+const DESKTOP_SHELL_BREAKPOINT = 1024;
+
 const defaultApi = createAuthApi();
 const bootstrapFailure: AuthState = {
   status: 'ERROR',
@@ -22,6 +30,9 @@ const bootstrapFailure: AuthState = {
 export function App({ api = defaultApi, createAdapter = createTelegramAdapter }: AppProps) {
   const [state, setState] = useState<AuthState>({ status: 'BOOTSTRAPPING' });
   const [routeHash, setRouteHash] = useState(() => window.location.hash || '#/');
+  const [shellViewport, setShellViewport] = useState<ShellViewport>(() =>
+    resolveShellViewport(window.innerWidth),
+  );
   const mounted = useRef(false);
   const adapter = useRef<TelegramAdapter | undefined>(undefined);
   const request = useRef<{ controller?: AbortController; epoch: number }>({ epoch: 0 });
@@ -87,6 +98,17 @@ export function App({ api = defaultApi, createAdapter = createTelegramAdapter }:
     return () => window.removeEventListener('hashchange', syncRoute);
   }, []);
 
+  useEffect(() => {
+    function syncViewport() {
+      setShellViewport(resolveShellViewport(window.innerWidth));
+    }
+
+    syncViewport();
+    window.addEventListener('resize', syncViewport);
+
+    return () => window.removeEventListener('resize', syncViewport);
+  }, []);
+
   async function selectDevelopmentUser(devUserKey: string) {
     const { controller, epoch } = beginRequest();
     commit(epoch, { status: 'AUTHENTICATING' });
@@ -125,14 +147,15 @@ export function App({ api = defaultApi, createAdapter = createTelegramAdapter }:
     const route = renderShellRoute(routeHash);
 
     return (
-      <AppFrame
+      <AppShell
         title="Заманушка"
         navigation={shellNavigationItems}
         activeNavigationKey={route.activeKey}
+        viewport={shellViewport}
       >
         <div className="shell-authenticated-layout">
           <div className="shell-authenticated-layout__page">{route.page}</div>
-          <Panel as="aside" className="shell-session-panel">
+          <Panel as="section" className="shell-session-panel">
             <p className="shell-session-panel__eyebrow">Authenticated session</p>
             <p className="shell-session-panel__name">{state.user.displayName}</p>
             <p className="shell-session-panel__meta">ID: {state.user.id}</p>
@@ -144,7 +167,7 @@ export function App({ api = defaultApi, createAdapter = createTelegramAdapter }:
             </Button>
           </Panel>
         </div>
-      </AppFrame>
+      </AppShell>
     );
   }
 

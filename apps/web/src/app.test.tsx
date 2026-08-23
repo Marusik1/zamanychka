@@ -274,9 +274,9 @@ describe('EPIC-01 app lifecycle', () => {
     const navigation = screen.getByRole('navigation', { name: 'Primary navigation' });
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
     expect(within(navigation).getAllByRole('link')).toHaveLength(5);
-    expect(within(navigation).getByRole('link', { name: 'Home' })).toBeVisible();
-    expect(screen.queryByRole('button', { name: 'Create room' })).not.toBeInTheDocument();
-    expect(screen.queryByText('Matchmaking')).not.toBeInTheDocument();
+    expect(within(navigation).getByRole('link', { name: 'Главная' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Создать комнату' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Подбор игроков')).not.toBeInTheDocument();
     expect(screen.getByRole('main').querySelector('[data-layout="gameplay-three-column"]')).toBeNull();
     expect(screen.getByRole('main').querySelector('[data-region="left-rail"]')).toBeNull();
     expect(screen.getByRole('main').querySelector('[data-region="right-rail"]')).toBeNull();
