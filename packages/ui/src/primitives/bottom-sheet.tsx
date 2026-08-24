@@ -12,8 +12,7 @@ const FOCUSABLE_SELECTOR =
 type BottomSheetState = 'opening' | 'open' | 'dismissing';
 
 type BottomSheetLabelProps =
-  | { ariaLabel: string; title?: undefined }
-  | { ariaLabel?: string; title: string };
+  { ariaLabel: string; title?: undefined } | { ariaLabel?: string; title: string };
 
 interface BottomSheetRenderState {
   phase: BottomSheetState;
@@ -21,10 +20,7 @@ interface BottomSheetRenderState {
 }
 
 type BottomSheetAction =
-  | { type: 'openRequested' }
-  | { type: 'closeRequested' }
-  | { type: 'opened' }
-  | { type: 'closed' };
+  { type: 'openRequested' } | { type: 'closeRequested' } | { type: 'opened' } | { type: 'closed' };
 
 function bottomSheetReducer(
   state: BottomSheetRenderState,
@@ -170,20 +166,17 @@ export function BottomSheet({ ariaLabel, children, onOpenChange, open, title }: 
     previousFocusRef.current?.focus();
   }
 
-  const finalizeState = useCallback(
-    (currentState: BottomSheetState) => {
-      if (currentState === 'opening') {
-        dispatch({ type: 'opened' });
-        return;
-      }
+  const finalizeState = useCallback((currentState: BottomSheetState) => {
+    if (currentState === 'opening') {
+      dispatch({ type: 'opened' });
+      return;
+    }
 
-      if (currentState === 'dismissing') {
-        dispatch({ type: 'closed' });
-        restoreFocus();
-      }
-    },
-    [],
-  );
+    if (currentState === 'dismissing') {
+      dispatch({ type: 'closed' });
+      restoreFocus();
+    }
+  }, []);
 
   useEffect(() => {
     if (!rendered) {

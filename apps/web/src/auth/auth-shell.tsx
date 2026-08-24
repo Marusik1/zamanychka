@@ -33,10 +33,7 @@ export function AuthShell({ state, onSelectDevUser, onRetry, onLogout }: AuthShe
         <Panel as="section" className="auth-shell__panel auth-shell__panel--identity">
           <div className="auth-shell__panel-header">
             <p className="auth-shell__label">Активная сессия</p>
-            <UserChip
-              name={state.user.displayName}
-              className="auth-shell__user-chip"
-            />
+            <UserChip name={state.user.displayName} className="auth-shell__user-chip" />
           </div>
           <Button variant="secondary" size="lg" onClick={onLogout}>
             Выйти
