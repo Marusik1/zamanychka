@@ -1,6 +1,7 @@
 import type { GameCommand, GameState, GameTransitionResult } from '../domain/types.js';
 import { enterOrMovePawnTransition } from './pawn.js';
 import { rollDiceTransition } from './roll-dice.js';
+import { surrenderTransition } from './surrender.js';
 
 export function transition(state: GameState, command: GameCommand, context: { actorPlayerId: string; diceValue?: 1 | 2 | 3 | 4 | 5 | 6 }): GameTransitionResult {
   switch (command.type) {
@@ -9,6 +10,8 @@ export function transition(state: GameState, command: GameCommand, context: { ac
     case 'ENTER_PAWN':
     case 'MOVE_PAWN':
       return enterOrMovePawnTransition(state, command, context);
+    case 'SURRENDER':
+      return surrenderTransition(state, command, context);
     default:
       return {
         ok: false,
