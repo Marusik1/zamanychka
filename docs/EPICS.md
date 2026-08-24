@@ -6,7 +6,7 @@ The project is delivered sequentially. An epic starts only after explicit approv
 - [EPIC-01 Telegram Auth](./epics/EPIC-01-TELEGRAM-AUTH.md)
 - [EPIC-02 Design System](./epics/EPIC-02-DESIGN-SYSTEM.md)
 - [EPIC-03 Game Engine](./epics/EPIC-03-GAME-ENGINE.md)
-- [EPIC-04 Rooms](./epics/EPIC-04-ROOMS.md)
+- [EPIC-04 Single Persistent Game Room](./epics/EPIC-04-ROOMS.md)
 - [EPIC-05 Realtime](./epics/EPIC-05-REALTIME.md)
 - [EPIC-06 Game UI](./epics/EPIC-06-GAME-UI.md)
 - [EPIC-07 Chat](./epics/EPIC-07-CHAT.md)

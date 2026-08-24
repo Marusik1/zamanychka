@@ -22,7 +22,7 @@ packages/config        shared tooling configuration
 infra                  local infrastructure
 ```
 
-The API is a modular monolith with explicit modules for auth, users, rooms, matchmaking, games, realtime, chat, profiles, ratings, and board skins. Transport handlers contain no game rules.
+The API is a modular monolith with explicit modules for auth, users, a single persistent room/table, games, realtime, chat, profiles, ratings, and board skins. Transport handlers contain no game rules.
 
 ## Authoritative command flow
 

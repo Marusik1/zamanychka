@@ -6,7 +6,7 @@ Zamanushka is a premium Russian-language online board game for 2–4 players, de
 
 ## Product scope
 
-The complete product includes authentication, home, matchmaking, public/private rooms, realtime matches, global and room chat, profiles, history, statistics, rating, board skins, rules/onboarding, and victory results.
+The complete product includes authentication, home, a single persistent game room, realtime matches, global and room chat, profiles, history, statistics, rating, board skins, rules/onboarding, and victory results.
 
 ## MVP principles
 
@@ -18,7 +18,7 @@ The complete product includes authentication, home, matchmaking, public/private 
 
 ## Success scenario
 
-A Telegram user authenticates, creates or joins a 2–4 player room, completes a synchronized match under the canonical rules, sees the result saved to history/statistics, uses chat, and retains a selected board skin. Web and desktop layouts remain fully usable.
+A Telegram user authenticates, joins the single persistent room, takes a free seat, completes a synchronized match under the canonical rules, sees the result saved to history/statistics, uses chat, and retains a selected board skin. Web and desktop layouts remain fully usable.
 
 ## Sources of truth
 
