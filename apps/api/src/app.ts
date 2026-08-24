@@ -5,6 +5,8 @@ import type { AuthRuntimeConfig } from './config/env.js';
 import type { AuthService } from './auth/auth-service.js';
 import { registerAuthRoutes } from './auth/routes.js';
 import { registerOperationalRoutes } from './health/routes.js';
+import { registerRoomRoutes } from './rooms/routes.js';
+import type { RoomService } from './rooms/room-service.js';
 
 export type DependencyName = 'postgres' | 'redis';
 
@@ -17,9 +19,10 @@ export interface BuildAppOptions {
   probes: ReadinessProbe[];
   logger?: boolean;
   auth?: { config: AuthRuntimeConfig; service: AuthService };
+  rooms?: { service: RoomService };
 }
 
-export function buildApp({ logger = false, probes, auth }: BuildAppOptions): FastifyInstance {
+export function buildApp({ logger = false, probes, auth, rooms }: BuildAppOptions): FastifyInstance {
   const app = Fastify({
     logger: logger
       ? { redact: ['req.headers.cookie', 'req.headers.authorization', 'req.body', 'body.initData'] }
@@ -36,6 +39,11 @@ export function buildApp({ logger = false, probes, auth }: BuildAppOptions): Fas
         cookie: auth.config.cookie,
         sessionTtlSeconds: auth.config.sessionTtlSeconds,
       });
+      if (rooms)
+        registerRoomRoutes(scope, {
+          service: rooms.service,
+          auth: auth.service,
+        });
     });
   return app;
 }
