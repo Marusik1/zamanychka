@@ -18,6 +18,12 @@ export {
 export {
   getNextActivePlayerId,
 } from './turns/turn-rotation.js';
+export {
+  canMovePawn,
+} from './movement/move-legality.js';
+export {
+  resolvePhysicalPath,
+} from './movement/path.js';
 export type {
   BoardCoord,
   CreateActiveGameStateConfig,
