@@ -24,6 +24,9 @@ export {
 export {
   resolvePhysicalPath,
 } from './movement/path.js';
+export {
+  transition,
+} from './transitions/transition.js';
 export type {
   BoardCoord,
   CreateActiveGameStateConfig,

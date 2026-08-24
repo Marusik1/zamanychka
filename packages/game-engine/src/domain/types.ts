@@ -51,23 +51,27 @@ export type GameCommand =
       type: 'ROLL_DICE';
       actorPlayerId: string;
       matchId: string;
+      expectedStateVersion: number;
     }>
   | Readonly<{
       type: 'ENTER_PAWN';
       actorPlayerId: string;
       matchId: string;
       pawnId: string;
+      expectedStateVersion: number;
     }>
   | Readonly<{
       type: 'MOVE_PAWN';
       actorPlayerId: string;
       matchId: string;
       pawnId: string;
+      expectedStateVersion: number;
     }>
   | Readonly<{
       type: 'SURRENDER';
       actorPlayerId: string;
       matchId: string;
+      expectedStateVersion: number;
     }>;
 
 export type TransitionContext = Readonly<{
