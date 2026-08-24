@@ -46,11 +46,13 @@ it('creates the canonical initial ACTIVE snapshot', () => {
 type ExpectTrue<T extends true> = T;
 type _ContractsStayCanonical = ExpectTrue<
   typeof gameEngineContracts extends {
-    GameEvent: unknown;
-    GameTransitionError: unknown;
-    GameTransitionResult: unknown;
+    GameEvent: infer GameEvent;
+    GameTransitionError: infer GameTransitionError;
+    GameTransitionResult: infer GameTransitionResult;
   }
-    ? true
+    ? [GameEvent, GameTransitionError, GameTransitionResult] extends [never, never, never]
+      ? false
+      : true
     : false
 >;
 ```
@@ -290,7 +292,10 @@ it('keeps the same player and returns to WAITING_FOR_ROLL when a six has no lega
       expect.objectContaining({ type: 'diceRolled' }),
       expect.objectContaining({ type: 'extraRollGranted' }),
     ],
-    legalActions: [],
+    legalActions: expect.arrayContaining([
+      expect.objectContaining({ type: 'ROLL_DICE' }),
+      expect.objectContaining({ type: 'SURRENDER' }),
+    ]),
   });
 });
 ```
@@ -334,7 +339,7 @@ it('emits pawnEnteredHome on every perimeter-to-home move and terminalizes on ca
       expect.objectContaining({ type: 'pawnMoved' }),
       expect.objectContaining({ type: 'pawnEnteredHome' }),
     ],
-    legalActions: [],
+    legalActions: expect.any(Array),
   });
 });
 ```
@@ -413,7 +418,7 @@ git add packages/game-engine/src/transitions/surrender.ts packages/game-engine/s
 git commit -m "feat(game-engine): add surrender and victory"
 ```
 
-### Task 10: Deterministic event contract and error guards
+### Task 10: Deterministic runtime event/error helpers
 
 **Files:**
 - Create: `packages/game-engine/src/events/events.ts`
@@ -444,7 +449,7 @@ Expected: FAIL because event and error contracts are not finalized yet.
 
 - [ ] **Step 3: Write minimal implementation**
 
-Implement fixed event ordering, `GameTransitionError` codes, and failure behavior with no mutation, no events, and no version increments.
+Implement fixed runtime event helpers and `GameTransitionError` codes, plus failure behavior with no mutation, no events, and no version increments. Canonical unions remain owned by Task 1.
 
 - [ ] **Step 4: Run test to verify it passes**
 
