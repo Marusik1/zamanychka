@@ -1,0 +1,320 @@
+import type {
+  RoomCommandError,
+  RoomCommandSuccess,
+  RoomParticipantView,
+  RoomPresenceProjection,
+  RoomSeatIndex,
+  RoomState,
+  SetReadyRequest,
+  StartMatchRequest,
+  TakeSeatRequest,
+} from '@zamanushka/shared';
+
+import { createActiveGameState } from '@zamanushka/game-engine';
+import type { Prisma } from '../generated/prisma/client.js';
+import type { PersistedRoom, RoomId } from './domain.js';
+import { persistSingletonRoom } from './room-repository.js';
+import type { createRoomRepository } from './room-repository.js';
+
+type RoomRepository = ReturnType<typeof createRoomRepository>;
+type TxClient = Prisma.TransactionClient;
+
+interface RoomView extends RoomState {
+  presence: readonly RoomPresenceProjection[];
+  participantViews: readonly RoomParticipantView[];
+}
+
+interface StartMatchSuccess {
+  ok: true;
+  room: RoomState;
+  matchId: string;
+}
+
+type StartMatchResult =
+  | StartMatchSuccess
+  | {
+      ok: false;
+      error: RoomCommandError['error'];
+    };
+
+const ERROR_MESSAGES: Record<RoomCommandError['error']['code'], string> = {
+  ROOM_NOT_FOUND: 'Room is not available',
+  ROOM_ALREADY_ACTIVE: 'Room already has an active match',
+  ROOM_NOT_READY: 'Room is not ready',
+  ROOM_FULL: 'Room is full',
+  SEAT_TAKEN: 'Seat is already taken',
+  SEAT_NOT_OWNED: 'Seat is not owned by this participant',
+  SEATED_PARTICIPANT_DISCONNECTED: 'Seated participant is disconnected',
+  STALE_ROOM_VERSION: 'Room version is stale',
+  NOT_ALLOWED: 'Operation is not allowed',
+};
+
+export interface RoomPresenceStore {
+  connect(input: { roomId: RoomId; userId: string }): Promise<void>;
+  disconnect(input: { roomId: RoomId; userId: string }): Promise<void>;
+  snapshot(roomId: RoomId): Promise<ReadonlyMap<string, boolean>>;
+}
+
+export interface RoomService {
+  takeSeat(actorUserId: string, request: TakeSeatRequest): Promise<MutatingRoomResult>;
+  leaveSeat(actorUserId: string): Promise<MutatingRoomResult>;
+  setReady(actorUserId: string, request: SetReadyRequest): Promise<MutatingRoomResult>;
+  startMatch(actorUserId: string, request: StartMatchRequest): Promise<StartMatchResult>;
+  connectPresence(actorUserId: string): Promise<RoomView>;
+  disconnectPresence(actorUserId: string): Promise<RoomView>;
+  viewRoom(): Promise<RoomView>;
+}
+
+export interface StartMatchStore {
+  createInitialMatch(input: {
+    tx: TxClient;
+    roomId: string;
+    firstPlayerId: string;
+    seatOrder: readonly string[];
+    snapshot: Prisma.InputJsonValue;
+  }): Promise<{ id: string }>;
+}
+
+function roomError(code: RoomCommandError['error']['code']): MutatingRoomResult {
+  return { ok: false, error: { code, message: ERROR_MESSAGES[code] } };
+}
+
+function roomSuccess(room: RoomState): RoomCommandSuccess {
+  return { ok: true, room };
+}
+
+function startMatchError(code: RoomCommandError['error']['code']): StartMatchResult {
+  return { ok: false, error: { code, message: ERROR_MESSAGES[code] } };
+}
+
+function toRoomState(room: PersistedRoom): RoomState {
+  return {
+    roomId: room.roomId,
+    version: room.version,
+    currentMatchId: room.currentMatchId,
+    participants: room.seats
+      .filter((seat) => seat.userId !== null)
+      .map((seat) => ({
+        userId: seat.userId as string,
+        seatIndex: seat.seatIndex,
+        ready: seat.ready,
+      })),
+  };
+}
+
+function toRoomView(room: PersistedRoom, presence: ReadonlyMap<string, boolean>): RoomView {
+  const roomState = toRoomState(room);
+  const presenceEntries = new Map<string, boolean>(presence);
+  const participantViews = roomState.participants.map((participant) => ({
+    ...participant,
+    connected: presenceEntries.get(participant.userId) ?? false,
+  }));
+
+  return {
+    ...roomState,
+    presence: participantViews.map((participant) => ({
+      userId: participant.userId,
+      connected: participant.connected,
+    })),
+    participantViews,
+  };
+}
+
+function cloneRoom(room: PersistedRoom): PersistedRoom {
+  return {
+    roomId: room.roomId,
+    version: room.version,
+    currentMatchId: room.currentMatchId,
+    seats: room.seats.map((seat) => ({ ...seat })),
+  };
+}
+
+function seatByIndex(room: PersistedRoom, seatIndex: RoomSeatIndex) {
+  return room.seats.find((seat) => seat.seatIndex === seatIndex) ?? null;
+}
+
+function seatOfUser(room: PersistedRoom, userId: string) {
+  return room.seats.find((seat) => seat.userId === userId) ?? null;
+}
+
+type MutatingRoomResult =
+  | RoomCommandSuccess
+  | {
+      ok: false;
+      error: RoomCommandError['error'];
+    };
+
+type RoomMutation =
+  | { kind: 'success'; room: PersistedRoom; presence: 'connect' | 'disconnect' | null }
+  | { kind: 'error'; code: RoomCommandError['error']['code'] };
+
+export function createRoomService(options: {
+  repository: RoomRepository;
+  presenceStore: RoomPresenceStore;
+  selectFirstPlayerId?: (
+    participants: readonly { userId: string; seatIndex: RoomSeatIndex }[],
+  ) => string;
+  matchStore?: StartMatchStore;
+}): RoomService {
+  async function loadView(room?: PersistedRoom): Promise<RoomView> {
+    const current = room ?? (await options.repository.bootstrapSingletonRoom());
+    const presence = await options.presenceStore.snapshot(current.roomId);
+    return toRoomView(current, presence);
+  }
+
+  function selectFirstPlayerId(
+    participants: readonly { userId: string; seatIndex: RoomSeatIndex }[],
+  ) {
+    const selector = options.selectFirstPlayerId ?? ((seated) => seated[0]?.userId ?? '');
+    return selector(participants);
+  }
+
+  async function mutateRoom(
+    actorUserId: string,
+    mutator: (room: PersistedRoom) => RoomMutation,
+  ): Promise<MutatingRoomResult> {
+    if (!actorUserId) return roomError('NOT_ALLOWED');
+    return options.repository.withLockedSingletonRoom(async (tx, room) => {
+      if (room.currentMatchId) return roomError('ROOM_ALREADY_ACTIVE');
+
+      const next = mutator(cloneRoom(room));
+      if (next.kind === 'error') return roomError(next.code);
+
+      await persistSingletonRoom(tx, next.room);
+      if (next.presence === 'connect') {
+        await options.presenceStore.connect({ roomId: room.roomId, userId: actorUserId });
+      } else if (next.presence === 'disconnect') {
+        await options.presenceStore.disconnect({ roomId: room.roomId, userId: actorUserId });
+      }
+
+      return roomSuccess(toRoomState(next.room));
+    });
+  }
+
+  return {
+    async takeSeat(actorUserId, request) {
+      return mutateRoom(actorUserId, (room) => {
+        const existingSeat = seatOfUser(room, actorUserId);
+        if (existingSeat) return { kind: 'error', code: 'SEAT_TAKEN' };
+
+        const targetSeat = seatByIndex(room, request.seatIndex);
+        if (!targetSeat || targetSeat.userId) return { kind: 'error', code: 'SEAT_TAKEN' };
+
+        room.version += 1;
+        targetSeat.userId = actorUserId;
+        targetSeat.ready = false;
+        return { kind: 'success', room, presence: 'connect' };
+      });
+    },
+
+    async leaveSeat(actorUserId) {
+      return mutateRoom(actorUserId, (room) => {
+        const ownedSeat = seatOfUser(room, actorUserId);
+        if (!ownedSeat) return { kind: 'error', code: 'SEAT_NOT_OWNED' };
+
+        room.version += 1;
+        ownedSeat.userId = null;
+        ownedSeat.ready = false;
+        return { kind: 'success', room, presence: 'disconnect' };
+      });
+    },
+
+    async setReady(actorUserId, request) {
+      return mutateRoom(actorUserId, (room) => {
+        const ownedSeat = seatOfUser(room, actorUserId);
+        if (!ownedSeat) return { kind: 'error', code: 'SEAT_NOT_OWNED' };
+        if (ownedSeat.ready === request.ready) return { kind: 'success', room, presence: null };
+
+        room.version += 1;
+        ownedSeat.ready = request.ready;
+        return { kind: 'success', room, presence: null };
+      });
+    },
+
+    async startMatch(actorUserId) {
+      return options.repository.withLockedSingletonRoom(async (tx, room) => {
+        const presence = await options.presenceStore.snapshot(room.roomId);
+        const seatedParticipants = room.seats
+          .filter((seat): seat is typeof seat & { userId: string } => seat.userId !== null)
+          .map((seat) => ({
+            userId: seat.userId,
+            seatIndex: seat.seatIndex,
+            ready: seat.ready,
+            connected: presence.get(seat.userId) ?? false,
+          }))
+          .sort((left, right) => left.seatIndex - right.seatIndex);
+
+        if (!actorUserId) return startMatchError('NOT_ALLOWED');
+        if (!room.seats.some((seat) => seat.userId === actorUserId))
+          return startMatchError('SEAT_NOT_OWNED');
+        if (room.currentMatchId) return startMatchError('ROOM_ALREADY_ACTIVE');
+        if (seatedParticipants.length < 2) return startMatchError('ROOM_NOT_READY');
+        if (seatedParticipants.length > 4) return startMatchError('ROOM_FULL');
+        if (seatedParticipants.some((participant) => !participant.ready))
+          return startMatchError('ROOM_NOT_READY');
+        if (seatedParticipants.some((participant) => !participant.connected))
+          return startMatchError('SEATED_PARTICIPANT_DISCONNECTED');
+
+        const firstPlayerId = selectFirstPlayerId(seatedParticipants);
+        if (!seatedParticipants.some((participant) => participant.userId === firstPlayerId)) {
+          return startMatchError('NOT_ALLOWED');
+        }
+
+        const seatOrder = seatedParticipants.map((participant) => participant.userId);
+        const initialState = createActiveGameState({
+          playerCount: seatOrder.length as 2 | 3 | 4,
+          seatOrder: seatOrder as
+            [string, string] | [string, string, string] | [string, string, string, string],
+          firstPlayerId,
+        });
+
+        const match = options.matchStore
+          ? await options.matchStore.createInitialMatch({
+              tx,
+              roomId: room.roomId,
+              firstPlayerId,
+              seatOrder,
+              snapshot: initialState as Prisma.InputJsonValue,
+            })
+          : await tx.match.create({
+              data: {
+                roomKey: room.roomId,
+                firstPlayerId,
+                seatOrder,
+                snapshot: initialState as Prisma.InputJsonValue,
+              },
+              select: { id: true },
+            });
+
+        const nextRoom: PersistedRoom = {
+          ...room,
+          version: room.version + 1,
+          currentMatchId: match.id,
+        };
+        await persistSingletonRoom(tx, nextRoom);
+
+        return {
+          ok: true,
+          room: toRoomState(nextRoom),
+          matchId: match.id,
+        };
+      });
+    },
+
+    async connectPresence(actorUserId) {
+      const room = await options.repository.bootstrapSingletonRoom();
+      await options.presenceStore.connect({ roomId: room.roomId, userId: actorUserId });
+      return loadView(room);
+    },
+
+    async disconnectPresence(actorUserId) {
+      const room = await options.repository.bootstrapSingletonRoom();
+      await options.presenceStore.disconnect({ roomId: room.roomId, userId: actorUserId });
+      return loadView(room);
+    },
+
+    async viewRoom() {
+      return loadView();
+    },
+  };
+}

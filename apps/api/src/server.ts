@@ -6,12 +6,20 @@ import { createAuthService } from './auth/auth-service.js';
 import { verifyTelegramInitData } from './auth/telegram-init-data.js';
 import { parseEnv } from './config/env.js';
 import { createLiveDependencies } from './health/dependency-probes.js';
+import { createRoomRepository } from './rooms/room-repository.js';
+import { createRoomService } from './rooms/room-service.js';
+import { createInMemoryRoomPresenceStore } from './rooms/presence-store.js';
 
 loadEnv({ path: new URL('../../../.env', import.meta.url), quiet: true });
 
 const env = parseEnv(process.env);
 const dependencies = createLiveDependencies(env);
 const repository = createAuthRepository(dependencies.prisma);
+const roomRepository = createRoomRepository(dependencies.prisma);
+const roomService = createRoomService({
+  repository: roomRepository,
+  presenceStore: createInMemoryRoomPresenceStore(),
+});
 function createConfiguredAuthService() {
   if (env.auth.mode === 'development') {
     return createAuthService({
@@ -39,6 +47,7 @@ const app = buildApp({
   probes: dependencies.probes,
   logger: true,
   auth: { config: env.auth, service: authService },
+  rooms: { service: roomService },
 });
 app.addHook('onClose', async () => dependencies.close());
 

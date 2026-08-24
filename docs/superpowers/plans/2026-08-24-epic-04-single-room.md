@@ -13,6 +13,7 @@
 ### Task 1: Room domain model and persistence contracts
 
 **Files:**
+
 - Create: `apps/api/src/rooms/domain/room-types.ts`
 - Create: `apps/api/src/rooms/domain/room-contracts.ts`
 - Modify: `packages/shared/src/index.ts`
@@ -22,6 +23,7 @@
 - [ ] **Step 1: Write the failing tests**
 
 Cover the room model shape and public DTO/contracts for:
+
 - a single persistent room;
 - participant roster entries with seat assignment and readiness;
 - ephemeral connected/presence flag;
@@ -54,6 +56,7 @@ git commit -m "feat(rooms): add single-room domain contracts"
 ### Task 2: Room persistence schema and repository
 
 **Files:**
+
 - Modify: `apps/api/prisma/schema.prisma`
 - Create: `apps/api/src/rooms/room-repository.ts`
 - Create: `apps/api/src/rooms/room-repository.test.ts`
@@ -62,6 +65,7 @@ git commit -m "feat(rooms): add single-room domain contracts"
 - [ ] **Step 1: Write the failing repository tests**
 
 Cover:
+
 - loading the single room;
 - creating the room row if absent;
 - updating roster, readiness, presence, and `currentMatchId`;
@@ -91,9 +95,10 @@ git add apps/api/prisma/schema.prisma apps/api/src/rooms/room-repository.ts apps
 git commit -m "feat(rooms): persist the single game room"
 ```
 
-### Task 3: Seat lifecycle and presence handling
+### Task 3: Seat lifecycle, readiness, and presence handling
 
 **Files:**
+
 - Create: `apps/api/src/rooms/room-service.ts`
 - Create: `apps/api/src/rooms/room-service.test.ts`
 - Modify: `apps/api/src/auth/*` only if required to expose authenticated user identity to room operations
@@ -101,9 +106,11 @@ git commit -m "feat(rooms): persist the single game room"
 - [ ] **Step 1: Write the failing seat/presence tests**
 
 Cover:
+
 - take seat into one free slot;
 - reject duplicate seat claims deterministically;
 - leave seat before start;
+- set ready/unready for the seated participant;
 - reconnect reattaches the same authenticated user to the same seat;
 - disconnect does not release the seat;
 - disconnect does not clear readiness;
@@ -117,7 +124,7 @@ Expected: fail until the lifecycle service is implemented.
 
 - [ ] **Step 3: Implement seat lifecycle rules**
 
-Implement a single-room service that updates persistence through one serialized room state boundary. Keep presence ephemeral and separate from durable seat/ready state.
+Implement a single-room service that updates persistence through one serialized room state boundary. Keep presence ephemeral and separate from durable seat/ready state. This task also owns `SET_READY` business logic.
 
 - [ ] **Step 4: Run the focused room-service tests again**
 
@@ -135,6 +142,7 @@ git commit -m "feat(rooms): implement single-room seat lifecycle"
 ### Task 4: Explicit start-match orchestration
 
 **Files:**
+
 - Create: `apps/api/src/rooms/start-match.ts`
 - Create: `apps/api/src/rooms/start-match.test.ts`
 - Create: `apps/api/src/rooms/first-player-selection.ts`
@@ -145,6 +153,7 @@ git commit -m "feat(rooms): implement single-room seat lifecycle"
 - [ ] **Step 1: Write the failing start-match tests**
 
 Cover:
+
 - `START_MATCH` is explicit;
 - any seated participant may start;
 - start fails if not all seated participants are READY;
@@ -181,6 +190,7 @@ git commit -m "feat(rooms): add explicit single-room match start"
 ### Task 5: Room-to-match lifecycle after terminal game completion
 
 **Files:**
+
 - Create: `apps/api/src/rooms/match-completion.ts`
 - Create: `apps/api/src/rooms/match-completion.test.ts`
 - Modify: `apps/api/src/rooms/room-service.ts`
@@ -189,11 +199,16 @@ git commit -m "feat(rooms): add explicit single-room match start"
 - [ ] **Step 1: Write the failing post-match lifecycle tests**
 
 Cover:
+
 - room remains the same persistent table after a match ends;
 - `currentMatchId` clears on terminal match completion;
 - room returns to waiting state after a terminal match;
 - a new match can start afterward using the same room;
 - match identity remains durable and separate from the room.
+- all seats become empty when the terminal match completes;
+- READY state is cleared with the seats;
+- disconnected and connected participants alike lose their seats as part of the post-match reset;
+- rematch requires TAKE_SEAT + SET_READY again.
 
 - [ ] **Step 2: Run the focused lifecycle tests**
 
@@ -221,6 +236,7 @@ git commit -m "feat(rooms): reset single room after match completion"
 ### Task 6: API routes and guard wiring
 
 **Files:**
+
 - Create: `apps/api/src/rooms/routes.ts`
 - Create: `apps/api/src/rooms/routes.test.ts`
 - Modify: `apps/api/src/app.ts`
@@ -230,6 +246,7 @@ git commit -m "feat(rooms): reset single room after match completion"
 - [ ] **Step 1: Write the failing route tests**
 
 Cover:
+
 - take seat;
 - leave seat;
 - set ready;
@@ -264,6 +281,7 @@ git commit -m "feat(rooms): wire single-room API routes"
 ### Task 7: Cross-rule and concurrency hardening
 
 **Files:**
+
 - Create: `apps/api/src/rooms/room-concurrency.test.ts`
 - Modify: `apps/api/src/rooms/*` as needed
 - Modify: `apps/api/src/rooms/*` tests as needed
@@ -271,6 +289,7 @@ git commit -m "feat(rooms): wire single-room API routes"
 - [ ] **Step 1: Write the failing cross-rule tests**
 
 Cover:
+
 - two users race for the same seat;
 - two users race to start the match;
 - disconnected pre-start participant blocks start;
@@ -304,11 +323,13 @@ git commit -m "feat(rooms): harden single-room concurrency"
 ### Task 8: Final EPIC-04 verification
 
 **Files:**
+
 - All EPIC-04 room files
 
 - [ ] **Step 1: Run targeted package verification**
 
 Run:
+
 - `pnpm -C apps/api test`
 - `pnpm -C apps/api typecheck`
 - `pnpm -C packages/shared test`
@@ -321,6 +342,7 @@ Expected: PASS.
 - [ ] **Step 2: Run repo verification gates**
 
 Run the canonical repository gates from the root:
+
 - `pnpm format:check`
 - `pnpm lint`
 - `pnpm typecheck`
@@ -333,6 +355,7 @@ Expected: PASS.
 - [ ] **Step 3: Final review**
 
 Check the implementation against the EPIC-04 spec and confirm:
+
 - single-room invariant;
 - Room != Match;
 - no multi-room behavior;
@@ -348,4 +371,3 @@ Check the implementation against the EPIC-04 spec and confirm:
 git add .
 git commit -m "feat(rooms): implement EPIC-04 single persistent room"
 ```
-

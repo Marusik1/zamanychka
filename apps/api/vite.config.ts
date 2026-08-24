@@ -4,5 +4,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     exclude: [...configDefaults.exclude, 'src/**/*.integration.test.ts'],
+    fileParallelism: false,
+    maxWorkers: 1,
   },
 });

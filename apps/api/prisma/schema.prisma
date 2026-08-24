@@ -25,6 +25,7 @@ model User {
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   sessions     AuthSession[]
+  roomSeats    RoomSeat[]
 }
 
 model AuthSession {
@@ -39,4 +40,43 @@ model AuthSession {
   user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+model Room {
+  key           String     @id
+  version       Int        @default(0)
+  currentMatchId String?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  seats         RoomSeat[]
+  matches       Match[]
+}
+
+model Match {
+  id            String   @id @default(cuid())
+  roomKey       String
+  firstPlayerId  String
+  seatOrder     Json
+  snapshot      Json
+  status        String   @default("ACTIVE")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  room          Room     @relation(fields: [roomKey], references: [key], onDelete: Cascade)
+
+  @@index([roomKey])
+}
+
+model RoomSeat {
+  roomKey  String
+  seatIndex Int
+  userId   String?  @unique
+  ready    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  room Room @relation(fields: [roomKey], references: [key], onDelete: Cascade)
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@id([roomKey, seatIndex])
+  @@index([roomKey])
 }

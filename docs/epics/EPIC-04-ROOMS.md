@@ -2,11 +2,11 @@
 
 ## Goal
 
-Build the durable single-room layer that hosts one active Zamanushka table, tracks participants and seats, and starts a new authoritative match through the already-approved game engine.
+Build one durable room/table for the Zamanushka MVP. The room hosts 2–4 seated players, tracks readiness, starts a durable match through the approved game engine, and returns to waiting state after the match completes.
 
 ## Scope
 
-- exactly one persistent game room for the MVP;
+- exactly one persistent room for the MVP;
 - 2–4 player seat management inside that room;
 - joining a free seat;
 - leaving before the match starts;
