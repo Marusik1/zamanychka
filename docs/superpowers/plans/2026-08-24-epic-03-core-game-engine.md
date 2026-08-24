@@ -57,6 +57,8 @@ type _ContractsStayCanonical = ExpectTrue<
 >;
 ```
 
+This check is validated by `packages/game-engine` typecheck, not by runtime access to TS-only aliases.
+
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `pnpm -C packages/game-engine test -- create-active-game-state`
@@ -321,7 +323,42 @@ git add packages/game-engine/src/transitions/roll-dice.ts packages/game-engine/s
 git commit -m "feat(game-engine): add roll dice transition"
 ```
 
-### Task 8: ENTER_PAWN / MOVE_PAWN / capture / HOME transitions and victory completion
+### Task 8: Victory helper and terminal detection
+
+**Files:**
+- Create: `packages/game-engine/src/transitions/victory.ts`
+- Create: `packages/game-engine/src/transitions/victory.test.ts`
+
+- [ ] **Step 1: Write the failing test**
+
+```ts
+it('detects home-diagonal completion and last-active-player victory deterministically', () => {
+  expect(isWinningState(state, 'p1')).toBe(true);
+});
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `pnpm -C packages/game-engine test -- victory`
+Expected: FAIL because the victory helper does not exist yet.
+
+- [ ] **Step 3: Write minimal implementation**
+
+Implement the pure victory helper used by pawn transitions and surrender transitions. It must detect `HOME_DIAGONAL_COMPLETED` and `LAST_ACTIVE_PLAYER` before the pawn-transition logic finalizes the result.
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `pnpm -C packages/game-engine test -- victory`
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add packages/game-engine/src/transitions/victory.ts packages/game-engine/src/transitions/victory.test.ts
+git commit -m "feat(game-engine): add victory helper"
+```
+
+### Task 9: ENTER_PAWN / MOVE_PAWN / capture / HOME transitions and victory completion
 
 **Files:**
 - Create: `packages/game-engine/src/transitions/pawn-actions.ts`
@@ -334,12 +371,19 @@ it('emits pawnEnteredHome on every perimeter-to-home move and terminalizes on ca
   const result = transition(state, movePawnCommand, { actorPlayerId: 'p1' });
   expect(result).toEqual({
     ok: true,
-    state: expect.any(Object),
+    state: expect.objectContaining({
+      status: 'FINISHED',
+      winnerPlayerId: 'p1',
+      currentPlayerId: null,
+      turnPhase: null,
+      diceValue: null,
+    }),
     events: [
       expect.objectContaining({ type: 'pawnMoved' }),
       expect.objectContaining({ type: 'pawnEnteredHome' }),
+      expect.objectContaining({ type: 'gameWon' }),
     ],
-    legalActions: expect.any(Array),
+    legalActions: [],
   });
 });
 ```
@@ -365,7 +409,7 @@ git add packages/game-engine/src/transitions/pawn-actions.ts packages/game-engin
 git commit -m "feat(game-engine): add pawn transitions"
 ```
 
-### Task 9: Surrender, turn rotation, and terminal victory
+### Task 10: Surrender, turn rotation, and terminal victory
 
 **Files:**
 - Create: `packages/game-engine/src/transitions/surrender.ts`
@@ -421,7 +465,7 @@ git add packages/game-engine/src/transitions/surrender.ts packages/game-engine/s
 git commit -m "feat(game-engine): add surrender and victory"
 ```
 
-### Task 10: Deterministic runtime event/error helpers
+### Task 11: Deterministic runtime event/error helpers
 
 **Files:**
 - Create: `packages/game-engine/src/events/events.ts`
@@ -466,7 +510,7 @@ git add packages/game-engine/src/events/events.ts packages/game-engine/src/error
 git commit -m "feat(game-engine): add events and errors"
 ```
 
-### Task 11: Property-based hardening and final engine verification
+### Task 12: Property-based hardening and final engine verification
 
 **Files:**
 - Modify: `packages/game-engine/src/**/*.ts`
