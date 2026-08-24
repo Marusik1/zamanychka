@@ -7,6 +7,14 @@ export {
   resolvePerimeterCoord,
   resolvePerimeterIndex,
 } from './board/perimeter.js';
+export {
+  getOccupancy,
+} from './board/occupancy.js';
+export {
+  HOME_COORDS,
+  resolveHomeCoord,
+  resolvePawnCoordinate,
+} from './board/home.js';
 export type {
   BoardCoord,
   CreateActiveGameStateConfig,
