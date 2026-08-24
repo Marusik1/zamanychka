@@ -27,6 +27,10 @@ export {
 export {
   transition,
 } from './transitions/transition.js';
+export {
+  isWinningState,
+  projectTerminalState,
+} from './transitions/victory.js';
 export type {
   BoardCoord,
   CreateActiveGameStateConfig,
