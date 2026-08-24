@@ -1,14 +1,33 @@
-import { AppFrame } from '@zamanushka/ui';
+import { AppFrame, AppShell, Button, Panel } from '@zamanushka/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { createAuthApi, type AuthApi } from './auth/api.js';
 import { AuthShell } from './auth/auth-shell.js';
 import { bootstrapAuth, type AuthState } from './auth/bootstrap.js';
+import { renderShellRoute, shellNavigationItems } from './shell/routes.js';
 import { createTelegramAdapter, type TelegramAdapter } from './telegram/adapter.js';
 
 interface AppProps {
   api?: AuthApi;
   createAdapter?: () => TelegramAdapter;
+}
+
+type ShellViewport = 'mobile' | 'desktop';
+
+const DESKTOP_SHELL_BREAKPOINT = 1024;
+
+function resolveShellViewport(width: number): ShellViewport {
+  return width >= DESKTOP_SHELL_BREAKPOINT ? 'desktop' : 'mobile';
+}
+
+function renderAvatar(displayName: string) {
+  return displayName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? '')
+    .join('')
+    .slice(0, 2);
 }
 
 const defaultApi = createAuthApi();
@@ -20,6 +39,10 @@ const bootstrapFailure: AuthState = {
 
 export function App({ api = defaultApi, createAdapter = createTelegramAdapter }: AppProps) {
   const [state, setState] = useState<AuthState>({ status: 'BOOTSTRAPPING' });
+  const [routeHash, setRouteHash] = useState(() => window.location.hash || '#/');
+  const [shellViewport, setShellViewport] = useState<ShellViewport>(() =>
+    resolveShellViewport(window.innerWidth),
+  );
   const mounted = useRef(false);
   const adapter = useRef<TelegramAdapter | undefined>(undefined);
   const request = useRef<{ controller?: AbortController; epoch: number }>({ epoch: 0 });
@@ -74,6 +97,28 @@ export function App({ api = defaultApi, createAdapter = createTelegramAdapter }:
     };
   }, [createAdapter, start]);
 
+  useEffect(() => {
+    function syncRoute() {
+      setRouteHash(window.location.hash || '#/');
+    }
+
+    syncRoute();
+    window.addEventListener('hashchange', syncRoute);
+
+    return () => window.removeEventListener('hashchange', syncRoute);
+  }, []);
+
+  useEffect(() => {
+    function syncViewport() {
+      setShellViewport(resolveShellViewport(window.innerWidth));
+    }
+
+    syncViewport();
+    window.addEventListener('resize', syncViewport);
+
+    return () => window.removeEventListener('resize', syncViewport);
+  }, []);
+
   async function selectDevelopmentUser(devUserKey: string) {
     const { controller, epoch } = beginRequest();
     commit(epoch, { status: 'AUTHENTICATING' });
@@ -108,8 +153,39 @@ export function App({ api = defaultApi, createAdapter = createTelegramAdapter }:
     }
   }
 
+  if (state.status === 'AUTHENTICATED') {
+    const route = renderShellRoute(routeHash);
+
+    return (
+      <AppShell
+        title="ЗАМАНУШКА"
+        navigation={shellNavigationItems}
+        activeNavigationKey={route.activeKey}
+        viewport={shellViewport}
+      >
+        <div className="shell-authenticated-layout">
+          <div className="shell-authenticated-layout__page">{route.page}</div>
+          <Panel as="section" className="shell-session-panel">
+            <div className="shell-session-panel__identity">
+              <div className="shell-session-panel__avatar" aria-hidden="true">
+                {renderAvatar(state.user.displayName)}
+              </div>
+              <div className="shell-session-panel__identity-copy">
+                <p className="shell-session-panel__eyebrow">Активная сессия</p>
+                <p className="shell-session-panel__name">{state.user.displayName}</p>
+              </div>
+            </div>
+            <Button variant="secondary" onClick={() => void logout()}>
+              Выйти
+            </Button>
+          </Panel>
+        </div>
+      </AppShell>
+    );
+  }
+
   return (
-    <AppFrame title="Заманушка">
+    <AppFrame title="ЗАМАНУШКА" navigation={[]}>
       <AuthShell
         state={state}
         onSelectDevUser={(key) => void selectDevelopmentUser(key)}

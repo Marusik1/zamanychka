@@ -19,7 +19,7 @@ function projectLayout(webApp: TelegramWebApp | undefined, root: HTMLElement) {
   style.setProperty(
     '--app-viewport-height',
     webApp?.viewportStableHeight === undefined || !Number.isFinite(webApp.viewportStableHeight)
-      ? '100vh'
+      ? '100dvh'
       : pixels(webApp.viewportStableHeight),
   );
   setInsets(style, '--app-safe-area', webApp?.safeAreaInset);
