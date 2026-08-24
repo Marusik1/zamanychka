@@ -55,6 +55,43 @@ async function loadRoom(tx: TxClient): Promise<PersistedRoom | null> {
   return room ? toDomain(room) : null;
 }
 
+export async function persistSingletonRoom(tx: TxClient, room: PersistedRoom): Promise<PersistedRoom> {
+  await tx.room.update({
+    where: { key: SINGLETON_ROOM_KEY },
+    data: {
+      version: room.version,
+      currentMatchId: room.currentMatchId,
+    },
+  });
+
+  for (const seat of room.seats) {
+    await tx.roomSeat.upsert({
+      where: {
+        roomKey_seatIndex: {
+          roomKey: SINGLETON_ROOM_KEY,
+          seatIndex: seat.seatIndex,
+        },
+      },
+      create: {
+        roomKey: SINGLETON_ROOM_KEY,
+        seatIndex: seat.seatIndex,
+        userId: seat.userId,
+        ready: seat.ready,
+      },
+      update: {
+        userId: seat.userId,
+        ready: seat.ready,
+      },
+    });
+  }
+
+  const saved = await loadRoom(tx);
+  if (!saved) {
+    throw new Error('singleton room save failed');
+  }
+  return saved;
+}
+
 export function createRoomRepository(prisma: AppPrismaClient) {
   return {
     async bootstrapSingletonRoom(): Promise<PersistedRoom> {
@@ -75,40 +112,7 @@ export function createRoomRepository(prisma: AppPrismaClient) {
     async saveSingletonRoom(room: PersistedRoom): Promise<PersistedRoom> {
       return prisma.$transaction(async (tx) => {
         await ensureSingletonRoom(tx);
-        await tx.room.update({
-          where: { key: SINGLETON_ROOM_KEY },
-          data: {
-            version: room.version,
-            currentMatchId: room.currentMatchId,
-          },
-        });
-
-        for (const seat of room.seats) {
-          await tx.roomSeat.upsert({
-            where: {
-              roomKey_seatIndex: {
-                roomKey: SINGLETON_ROOM_KEY,
-                seatIndex: seat.seatIndex,
-              },
-            },
-            create: {
-              roomKey: SINGLETON_ROOM_KEY,
-              seatIndex: seat.seatIndex,
-              userId: seat.userId,
-              ready: seat.ready,
-            },
-            update: {
-              userId: seat.userId,
-              ready: seat.ready,
-            },
-          });
-        }
-
-        const saved = await loadRoom(tx);
-        if (!saved) {
-          throw new Error('singleton room save failed');
-        }
-        return saved;
+        return persistSingletonRoom(tx, room);
       });
     },
 

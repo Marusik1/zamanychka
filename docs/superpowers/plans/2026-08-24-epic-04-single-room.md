@@ -195,6 +195,10 @@ Cover:
 - room returns to waiting state after a terminal match;
 - a new match can start afterward using the same room;
 - match identity remains durable and separate from the room.
+ - all seats become empty when the terminal match completes;
+ - READY state is cleared with the seats;
+ - disconnected and connected participants alike lose their seats as part of the post-match reset;
+ - rematch requires TAKE_SEAT + SET_READY again.
 
 - [ ] **Step 2: Run the focused lifecycle tests**
 

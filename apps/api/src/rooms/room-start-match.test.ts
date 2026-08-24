@@ -113,8 +113,9 @@ describe('start match orchestration', () => {
     const room = await repository.loadSingletonRoom();
     expect(room?.currentMatchId).toBe(result.matchId);
 
-    const match = await database.prisma.match.findUnique({
+    const match = await database.prisma.match.findFirst({
       where: { roomKey: 'single-room' },
+      orderBy: { createdAt: 'asc' },
     });
     expect(match).not.toBeNull();
     expect(match?.firstPlayerId).toBe('user-1');
@@ -186,7 +187,10 @@ describe('start match orchestration', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    const match = await database.prisma.match.findUnique({ where: { roomKey: 'single-room' } });
+    const match = await database.prisma.match.findFirst({
+      where: { roomKey: 'single-room' },
+      orderBy: { createdAt: 'asc' },
+    });
     expect(match?.firstPlayerId).toBe('user-2');
     expect(match?.snapshot).toEqual(
       createActiveGameState({

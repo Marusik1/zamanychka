@@ -1,3 +1,5 @@
-# EPIC-04 — Lobby, Rooms, and Matchmaking
+# EPIC-04 — Single Persistent Room
 
-Implement quick play, public/private rooms, 2–4 seats, invites, ready state, joining/leaving, and match start.
+Implement one durable game room/table for 2–4 seated players, with lobby readiness, explicit match start, durable match handoff, and post-match room reset.
+
+Do not implement multi-room systems, room creation/deletion, matchmaking, invites, or room discovery.

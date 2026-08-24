@@ -14,6 +14,7 @@ import type {
 import { createActiveGameState } from '@zamanushka/game-engine';
 import type { Prisma } from '../generated/prisma/client.js';
 import type { PersistedRoom, RoomId } from './domain.js';
+import { persistSingletonRoom } from './room-repository.js';
 import type { createRoomRepository } from './room-repository.js';
 
 type RoomRepository = ReturnType<typeof createRoomRepository>;
@@ -137,37 +138,6 @@ function seatOfUser(room: PersistedRoom, userId: string) {
   return room.seats.find((seat) => seat.userId === userId) ?? null;
 }
 
-async function persistRoom(tx: TxClient, room: PersistedRoom) {
-  await tx.room.update({
-    where: { key: room.roomId },
-    data: {
-      version: room.version,
-      currentMatchId: room.currentMatchId,
-    },
-  });
-
-  for (const seat of room.seats) {
-    await tx.roomSeat.upsert({
-      where: {
-        roomKey_seatIndex: {
-          roomKey: room.roomId,
-          seatIndex: seat.seatIndex,
-        },
-      },
-      create: {
-        roomKey: room.roomId,
-        seatIndex: seat.seatIndex,
-        userId: seat.userId,
-        ready: seat.ready,
-      },
-      update: {
-        userId: seat.userId,
-        ready: seat.ready,
-      },
-    });
-  }
-}
-
 type MutatingRoomResult =
   | RoomCommandSuccess
   | {
@@ -207,7 +177,7 @@ export function createRoomService(options: {
       const next = mutator(cloneRoom(room));
       if (next.kind === 'error') return roomError(next.code);
 
-      await persistRoom(tx, next.room);
+      await persistSingletonRoom(tx, next.room);
       if (next.presence === 'connect') {
         await options.presenceStore.connect({ roomId: room.roomId, userId: actorUserId });
       } else if (next.presence === 'disconnect') {
@@ -315,7 +285,7 @@ export function createRoomService(options: {
           version: room.version + 1,
           currentMatchId: match.id,
         };
-        await persistRoom(tx, nextRoom);
+        await persistSingletonRoom(tx, nextRoom);
 
         return {
           ok: true,
