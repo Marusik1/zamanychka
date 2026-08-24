@@ -26,6 +26,6 @@ export function createTestDatabase(
   const prisma = createClient(connectionString);
   return {
     prisma,
-    clean: () => prisma.$executeRawUnsafe('TRUNCATE TABLE "AuthSession", "User" CASCADE'),
+    clean: () => prisma.$executeRawUnsafe('TRUNCATE TABLE "RoomSeat", "Room", "AuthSession", "User" CASCADE'),
   };
 }
