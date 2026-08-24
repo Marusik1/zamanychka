@@ -389,7 +389,10 @@ it('marks the last active player as the winner and terminalizes the match', () =
     }),
     events: [
       expect.objectContaining({ type: 'playerSurrendered' }),
-      expect.objectContaining({ type: 'pawnRemoved' }),
+      expect.objectContaining({ type: 'pawnRemoved', pawnId: 'p2-pawn-1' }),
+      expect.objectContaining({ type: 'pawnRemoved', pawnId: 'p2-pawn-2' }),
+      expect.objectContaining({ type: 'pawnRemoved', pawnId: 'p2-pawn-3' }),
+      expect.objectContaining({ type: 'pawnRemoved', pawnId: 'p2-pawn-4' }),
       expect.objectContaining({ type: 'gameWon' }),
     ],
     legalActions: [],
@@ -449,7 +452,7 @@ Expected: FAIL because event and error contracts are not finalized yet.
 
 - [ ] **Step 3: Write minimal implementation**
 
-Implement fixed runtime event helpers and `GameTransitionError` codes, plus failure behavior with no mutation, no events, and no version increments. Canonical unions remain owned by Task 1.
+Implement fixed runtime event helpers and `GameTransitionError` codes, plus failure behavior with no mutation, no events, and no version increments. Canonical gameplay unions remain owned by Task 1; Task 10 only owns runtime event/error helper implementations.
 
 - [ ] **Step 4: Run test to verify it passes**
 
