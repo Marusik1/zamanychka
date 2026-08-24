@@ -1,6 +1,12 @@
 export {
   createActiveGameState,
 } from './domain/create-active-game-state.js';
+export {
+  NORMALIZED_PERIMETER_COORDS,
+  PERIMETER_OFFSETS,
+  resolvePerimeterCoord,
+  resolvePerimeterIndex,
+} from './board/perimeter.js';
 export type {
   BoardCoord,
   CreateActiveGameStateConfig,
