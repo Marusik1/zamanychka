@@ -43,6 +43,7 @@ export function buildApp({ logger = false, probes, auth, rooms }: BuildAppOption
         registerRoomRoutes(scope, {
           service: rooms.service,
           auth: auth.service,
+          allowedOrigins: auth.config.allowedOrigins,
         });
     });
   return app;

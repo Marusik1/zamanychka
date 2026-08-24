@@ -82,6 +82,7 @@ describe('room routes', () => {
     registerRoomRoutes(instance, {
       service,
       auth: authService(),
+      allowedOrigins: ['http://localhost:3000', 'https://app.test'],
     });
     return instance;
   }
@@ -94,7 +95,11 @@ describe('room routes', () => {
         await instance.inject({
           method: 'POST',
           url: '/api/room/take-seat',
-          headers: { cookie: 'zamanushka-session=one', 'content-type': 'application/json' },
+          headers: {
+            cookie: 'zamanushka-session=one',
+            origin: 'http://localhost:3000',
+            'content-type': 'application/json',
+          },
           payload: { seatIndex: 0 },
         })
       ).statusCode,
@@ -104,7 +109,11 @@ describe('room routes', () => {
         await instance.inject({
           method: 'POST',
           url: '/api/room/leave-seat',
-          headers: { cookie: 'zamanushka-session=one', 'content-type': 'application/json' },
+          headers: {
+            cookie: 'zamanushka-session=one',
+            origin: 'http://localhost:3000',
+            'content-type': 'application/json',
+          },
           payload: {},
         })
       ).statusCode,
@@ -114,7 +123,11 @@ describe('room routes', () => {
         await instance.inject({
           method: 'POST',
           url: '/api/room/set-ready',
-          headers: { cookie: 'zamanushka-session=one', 'content-type': 'application/json' },
+          headers: {
+            cookie: 'zamanushka-session=one',
+            origin: 'http://localhost:3000',
+            'content-type': 'application/json',
+          },
           payload: { ready: true },
         })
       ).statusCode,
@@ -124,7 +137,11 @@ describe('room routes', () => {
         await instance.inject({
           method: 'POST',
           url: '/api/room/start-match',
-          headers: { cookie: 'zamanushka-session=one', 'content-type': 'application/json' },
+          headers: {
+            cookie: 'zamanushka-session=one',
+            origin: 'http://localhost:3000',
+            'content-type': 'application/json',
+          },
           payload: {},
         })
       ).statusCode,
@@ -134,7 +151,11 @@ describe('room routes', () => {
         await instance.inject({
           method: 'POST',
           url: '/api/room/reconnect',
-          headers: { cookie: 'zamanushka-session=one', 'content-type': 'application/json' },
+          headers: {
+            cookie: 'zamanushka-session=one',
+            origin: 'http://localhost:3000',
+            'content-type': 'application/json',
+          },
           payload: {},
         })
       ).statusCode,
@@ -159,7 +180,11 @@ describe('room routes', () => {
         await instance.inject({
           method: 'POST',
           url: '/api/room/take-seat',
-          headers: { cookie: 'zamanushka-session=one', 'content-type': 'application/json' },
+          headers: {
+            cookie: 'zamanushka-session=one',
+            origin: 'http://localhost:3000',
+            'content-type': 'application/json',
+          },
           payload: { seatIndex: 0 },
         })
       ).statusCode,
@@ -169,7 +194,11 @@ describe('room routes', () => {
         await instance.inject({
           method: 'POST',
           url: '/api/room/start-match',
-          headers: { cookie: 'zamanushka-session=one', 'content-type': 'application/json' },
+          headers: {
+            cookie: 'zamanushka-session=one',
+            origin: 'http://localhost:3000',
+            'content-type': 'application/json',
+          },
           payload: {},
         })
       ).statusCode,
@@ -184,7 +213,7 @@ describe('room routes', () => {
         await instance.inject({
           method: 'POST',
           url: '/api/room/take-seat',
-          headers: { 'content-type': 'application/json' },
+          headers: { origin: 'http://localhost:3000', 'content-type': 'application/json' },
           payload: { seatIndex: 0 },
         })
       ).statusCode,
@@ -194,7 +223,11 @@ describe('room routes', () => {
         await instance.inject({
           method: 'POST',
           url: '/api/room/take-seat',
-          headers: { cookie: 'zamanushka-session=one', 'content-type': 'application/json' },
+          headers: {
+            cookie: 'zamanushka-session=one',
+            origin: 'http://localhost:3000',
+            'content-type': 'application/json',
+          },
           payload: { seatIndex: 9 },
         })
       ).statusCode,

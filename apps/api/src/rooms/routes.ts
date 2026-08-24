@@ -9,11 +9,13 @@ import {
 } from '@zamanushka/shared';
 
 import type { AuthService } from '../auth/auth-service.js';
+import { isAllowedOrigin } from '../auth/origin-guard.js';
 import type { RoomService } from './room-service.js';
 
 export interface RoomRoutesOptions {
   service: RoomService;
   auth: AuthService;
+  allowedOrigins: string[];
 }
 
 const messages: Record<PublicErrorCode, string> = {
@@ -47,6 +49,21 @@ function roomError(reply: FastifyReply, status: number, code: RoomErrorCode) {
 
 function publicError(reply: FastifyReply, status: number, code: PublicErrorCode) {
   return reply.code(status).send({ error: { code, message: messages[code] } });
+}
+
+function requireOrigin(request: FastifyRequest, reply: FastifyReply, allowedOrigins: string[]) {
+  if (!isAllowedOrigin(request.headers.origin, allowedOrigins)) {
+    publicError(reply, 403, 'ORIGIN_NOT_ALLOWED');
+    return false;
+  }
+  return true;
+}
+
+function requireJson(request: FastifyRequest, reply: FastifyReply) {
+  if (request.headers['content-type']?.split(';')[0]?.trim().toLowerCase() === 'application/json')
+    return true;
+  publicError(reply, 415, 'VALIDATION_ERROR');
+  return false;
 }
 
 async function actorId(request: FastifyRequest, reply: FastifyReply, auth: AuthService) {
@@ -85,6 +102,8 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
   });
 
   app.post('/api/room/take-seat', async (request, reply) => {
+    if (!requireOrigin(request, reply, options.allowedOrigins) || !requireJson(request, reply))
+      return;
     const userId = await actorId(request, reply, options.auth);
     if (!userId) return;
     const parsed = takeSeatRequestSchema.safeParse(request.body);
@@ -94,6 +113,8 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
   });
 
   app.post('/api/room/leave-seat', async (request, reply) => {
+    if (!requireOrigin(request, reply, options.allowedOrigins) || !requireJson(request, reply))
+      return;
     const userId = await actorId(request, reply, options.auth);
     if (!userId) return;
     const parsed = leaveSeatRequestSchema.safeParse(request.body);
@@ -103,6 +124,8 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
   });
 
   app.post('/api/room/set-ready', async (request, reply) => {
+    if (!requireOrigin(request, reply, options.allowedOrigins) || !requireJson(request, reply))
+      return;
     const userId = await actorId(request, reply, options.auth);
     if (!userId) return;
     const parsed = setReadyRequestSchema.safeParse(request.body);
@@ -112,6 +135,8 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
   });
 
   app.post('/api/room/start-match', async (request, reply) => {
+    if (!requireOrigin(request, reply, options.allowedOrigins) || !requireJson(request, reply))
+      return;
     const userId = await actorId(request, reply, options.auth);
     if (!userId) return;
     const parsed = startMatchRequestSchema.safeParse(request.body);
@@ -128,6 +153,8 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
   });
 
   app.post('/api/room/reconnect', async (request, reply) => {
+    if (!requireOrigin(request, reply, options.allowedOrigins) || !requireJson(request, reply))
+      return;
     const userId = await actorId(request, reply, options.auth);
     if (!userId) return;
     const parsed = roomReconnectRequestSchema.safeParse(request.body);

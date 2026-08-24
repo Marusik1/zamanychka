@@ -229,9 +229,8 @@ export function createRoomService(options: {
     },
 
     async startMatch(actorUserId, _request) {
-      const roomSnapshot = await options.repository.bootstrapSingletonRoom();
-      const presence = await options.presenceStore.snapshot(roomSnapshot.roomId);
       return options.repository.withLockedSingletonRoom(async (tx, room) => {
+        const presence = await options.presenceStore.snapshot(room.roomId);
         const seatedParticipants = room.seats
           .filter((seat): seat is (typeof seat & { userId: string }) => seat.userId !== null)
           .map((seat) => ({
