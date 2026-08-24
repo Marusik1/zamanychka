@@ -36,17 +36,8 @@
 
   /* Typography roles */
   --font-family-base:
-    'Segoe UI',
-    'Noto Sans',
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    sans-serif;
-  --font-family-display:
-    Georgia,
-    'Times New Roman',
-    serif;
+    'Segoe UI', 'Noto Sans', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-family-display: Georgia, 'Times New Roman', serif;
   --font-family-numeric: 'Segoe UI', 'Noto Sans', ui-sans-serif, system-ui, sans-serif;
 
   --font-size-display: 2.5rem;
@@ -126,6 +117,7 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  overflow-x: clip;
   background:
     radial-gradient(circle at top, rgba(201, 151, 79, 0.08), transparent 28%),
     linear-gradient(180deg, #09131b 0%, var(--color-canvas) 100%);
@@ -150,8 +142,8 @@ textarea {
 
 .ui-surface {
   background-color: var(--color-surface);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 100%),
-    var(--color-surface);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 100%), var(--color-surface);
   border: 1px solid var(--border-subtle);
 }
 
@@ -175,11 +167,7 @@ textarea {
 
 .ui-accent {
   background-color: var(--accent-primary);
-  background: linear-gradient(
-    180deg,
-    var(--accent-hover) 0%,
-    var(--accent-primary) 100%
-  );
+  background: linear-gradient(180deg, var(--accent-hover) 0%, var(--accent-primary) 100%);
   color: var(--text-inverse);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-button);
@@ -235,7 +223,11 @@ textarea {
 
 .ui-panel-surface {
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 2%, transparent), transparent 100%),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--text-primary) 2%, transparent),
+      transparent 100%
+    ),
     var(--color-surface-elevated);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-panel);
@@ -859,10 +851,7 @@ textarea.ui-field__control {
   position: sticky;
   bottom: 0;
   z-index: var(--layer-sticky);
-  padding:
-    var(--space-3)
-    var(--space-4)
-    calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
+  padding: var(--space-3) var(--space-4) calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--border-subtle);
   background: color-mix(in srgb, var(--color-surface) 94%, transparent);
 }
@@ -891,6 +880,30 @@ textarea.ui-field__control {
 
 .ui-app-shell--desktop .ui-app-shell__main {
   padding-top: var(--space-7);
+}
+
+@media (max-width: 600px) {
+  .ui-bottom-nav {
+    padding-inline: var(--space-3);
+  }
+
+  .ui-bottom-nav__list {
+    gap: var(--space-1);
+  }
+
+  .ui-bottom-nav__link {
+    min-width: 0;
+    padding-inline: var(--space-1);
+  }
+
+  .ui-bottom-nav__label {
+    max-width: 100%;
+    overflow: hidden;
+    font-size: 0.625rem;
+    letter-spacing: 0.02em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
 @media (min-width: 768px) {

@@ -1,10 +1,10 @@
-type TypographyTokenRole = {
+interface TypographyTokenRole {
   family: string;
   size: string;
   weight: string;
   lineHeight: string;
   letterSpacing: string;
-};
+}
 
 export const semanticTokenVars = {
   backgrounds: {

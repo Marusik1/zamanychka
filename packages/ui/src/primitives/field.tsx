@@ -1,15 +1,15 @@
 import { useId } from 'react';
 import type { InputHTMLAttributes, TextareaHTMLAttributes } from 'react';
 
-type FieldBaseProps = {
+interface FieldBaseProps {
   error?: string;
   invalid?: boolean;
   label: string;
   multiline?: boolean;
-};
+}
 
-type InputProps = FieldBaseProps & InputHTMLAttributes<HTMLInputElement>;
-type TextareaProps = FieldBaseProps & TextareaHTMLAttributes<HTMLTextAreaElement>;
+interface InputProps extends FieldBaseProps, InputHTMLAttributes<HTMLInputElement> {}
+interface TextareaProps extends FieldBaseProps, TextareaHTMLAttributes<HTMLTextAreaElement> {}
 
 export type FieldProps = InputProps | TextareaProps;
 

@@ -1,11 +1,11 @@
 import { Panel } from '@zamanushka/ui';
 
-type PlaceholderPageProps = {
+interface PlaceholderPageProps {
   eyebrow: string;
   title: string;
   description: string;
   scaffoldLabel: string;
-};
+}
 
 export function PlaceholderPage({
   description,

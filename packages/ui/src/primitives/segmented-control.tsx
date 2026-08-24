@@ -1,18 +1,18 @@
 import { forwardRef, useEffect, useRef } from 'react';
 import type { ButtonHTMLAttributes, KeyboardEvent } from 'react';
 
-export type SegmentedControlItem = {
+export interface SegmentedControlItem {
   disabled?: boolean;
   label: string;
   value: string;
-};
+}
 
-export type SegmentedControlProps = {
+export interface SegmentedControlProps {
   ariaLabel: string;
   items: SegmentedControlItem[];
   onValueChange?: (value: string) => void;
   value: string;
-};
+}
 
 type SegmentedControlOptionProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'type'>;
 
@@ -30,9 +30,10 @@ export function SegmentedControl({
 }: SegmentedControlProps) {
   const optionRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const pendingFocusValueRef = useRef<string | null>(null);
-  const resolvedValue = items.find((item) => item.value === value && !item.disabled)?.value
-    ?? items.find((item) => !item.disabled)?.value
-    ?? items[0]?.value;
+  const resolvedValue =
+    items.find((item) => item.value === value && !item.disabled)?.value ??
+    items.find((item) => !item.disabled)?.value ??
+    items[0]?.value;
   const enabledItems = items.filter((item) => !item.disabled);
 
   useEffect(() => {

@@ -1,19 +1,19 @@
 import { useEffect, useId, useRef } from 'react';
 import type { KeyboardEvent, ReactNode } from 'react';
 
-export type TabsItem = {
+export interface TabsItem {
   disabled?: boolean;
   label: string;
   panel?: ReactNode;
   value: string;
-};
+}
 
-export type TabsProps = {
+export interface TabsProps {
   ariaLabel: string;
   items: TabsItem[];
   onValueChange?: (value: string) => void;
   value: string;
-};
+}
 
 export function Tabs({ ariaLabel, items, onValueChange, value }: TabsProps) {
   const instanceId = useId().replace(/:/g, '');
@@ -21,10 +21,10 @@ export function Tabs({ ariaLabel, items, onValueChange, value }: TabsProps) {
   const pendingFocusValueRef = useRef<string | null>(null);
   const enabledItems = items.filter((item) => !item.disabled);
   const resolvedSelectedItem =
-    items.find((item) => item.value === value && !item.disabled)
-    ?? enabledItems[0]
-    ?? items.find((item) => item.value === value)
-    ?? items[0];
+    items.find((item) => item.value === value && !item.disabled) ??
+    enabledItems[0] ??
+    items.find((item) => item.value === value) ??
+    items[0];
   const resolvedValue = resolvedSelectedItem?.value;
 
   useEffect(() => {

@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import { AppFrame, AppShell, DesktopAppShell } from './index.js';
@@ -35,10 +35,12 @@ describe('DesktopAppShell', () => {
     );
 
     expect(within(view.container).getByRole('banner')).toHaveTextContent('Reference Library');
-    expect(within(view.container).getByRole('navigation', { name: 'Primary navigation' })).toHaveClass(
-      'ui-top-nav',
-    );
-    expect(within(view.container).queryByRole('navigation', { name: 'Bottom navigation' })).not.toBeInTheDocument();
+    expect(
+      within(view.container).getByRole('navigation', { name: 'Primary navigation' }),
+    ).toHaveClass('ui-top-nav');
+    expect(
+      within(view.container).queryByRole('navigation', { name: 'Bottom navigation' }),
+    ).not.toBeInTheDocument();
     expect(within(view.container).getByRole('main')).toHaveTextContent('Archive');
     expect(within(view.container).queryByRole('complementary')).not.toBeInTheDocument();
   });
@@ -56,7 +58,9 @@ describe('AppFrame compatibility alias', () => {
     );
 
     expect(within(view.container).getByRole('banner')).toHaveTextContent('Reference Library');
-    expect(within(view.container).getByRole('navigation', { name: 'Primary navigation' })).toBeInTheDocument();
+    expect(
+      within(view.container).getByRole('navigation', { name: 'Primary navigation' }),
+    ).toBeInTheDocument();
     expect(within(view.container).getByRole('main')).toHaveTextContent('Compatibility');
   });
 });
@@ -86,7 +90,9 @@ describe('AppShell landmarks', () => {
     expect(within(view.container).getByRole('banner')).toBeInTheDocument();
     expect(within(view.container).getByText('Curated sections')).toBeInTheDocument();
     expect(within(view.container).getByRole('main')).toBeInTheDocument();
-    expect(within(view.container).getByRole('region', { name: 'Page content' })).toHaveTextContent('Home');
+    expect(within(view.container).getByRole('region', { name: 'Page content' })).toHaveTextContent(
+      'Home',
+    );
     expect(view.container.querySelector('.ui-app-shell__container')).not.toBeNull();
   });
 });

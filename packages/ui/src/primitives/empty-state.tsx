@@ -6,13 +6,7 @@ export type EmptyStateProps = HTMLAttributes<HTMLElement> & {
   title: ReactNode;
 };
 
-export function EmptyState({
-  action,
-  className,
-  description,
-  title,
-  ...props
-}: EmptyStateProps) {
+export function EmptyState({ action, className, description, title, ...props }: EmptyStateProps) {
   const classes = ['ui-empty-state', className ?? ''].filter(Boolean).join(' ');
 
   return (

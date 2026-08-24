@@ -34,20 +34,15 @@ describe('Button', () => {
       'ui-interactive-hover',
       'ui-focus-ring',
     );
-    expect(screen.getByRole('button', { name: 'Selected action' })).toHaveClass(
-      'is-selected',
-    );
+    expect(screen.getByRole('button', { name: 'Selected action' })).toHaveClass('is-selected');
     expect(screen.getByRole('button', { name: 'Disabled action' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Loading action' })).toHaveClass(
-      'is-loading',
-    );
+    expect(screen.getByRole('button', { name: 'Loading action' })).toHaveClass('is-loading');
     expect(screen.getByRole('button', { name: 'Loading action' })).toContainElement(
       screen.getByText('Loading action'),
     );
-    expect(screen.getByRole('button', { name: 'Loading action' }).querySelector('.ui-button__spinner')).toHaveAttribute(
-      'aria-hidden',
-      'true',
-    );
+    expect(
+      screen.getByRole('button', { name: 'Loading action' }).querySelector('.ui-button__spinner'),
+    ).toHaveAttribute('aria-hidden', 'true');
   });
 
   it('keeps focus-visible semantics on the real button element', () => {
@@ -65,12 +60,7 @@ describe('Field', () => {
     render(
       <>
         <Field label="Display name" name="displayName" placeholder="Alexey" />
-        <Field
-          label="Room code"
-          name="roomCode"
-          invalid
-          error="Room code is required"
-        />
+        <Field label="Room code" name="roomCode" invalid error="Room code is required" />
         <Field label="Board note" name="boardNote" multiline />
       </>,
     );
@@ -310,7 +300,8 @@ describe('BottomSheet', () => {
     expect(sheet).toHaveAttribute('aria-label', 'Quick actions');
     expect(screen.queryByRole('button', { name: 'Close' })).not.toBeInTheDocument();
 
-    fireEvent.mouseDown(backdrop!);
+    expect(backdrop).not.toBeNull();
+    fireEvent.mouseDown(backdrop as Element);
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 });
@@ -401,9 +392,15 @@ describe('Additional primitives', () => {
         <UserChip name="Alexey" detail="Online" />
         <StatItem label="Matches" value="12" />
         <Status tone="info">Informational</Status>
-        <Status tone="success" role="status">Saved</Status>
-        <Status tone="warning" role="alert">Needs attention</Status>
-        <Status tone="danger" role="alert">Failed</Status>
+        <Status tone="success" role="status">
+          Saved
+        </Status>
+        <Status tone="warning" role="alert">
+          Needs attention
+        </Status>
+        <Status tone="danger" role="alert">
+          Failed
+        </Status>
         <EmptyState
           title="Nothing here yet"
           description="Add content when the shell route is ready."

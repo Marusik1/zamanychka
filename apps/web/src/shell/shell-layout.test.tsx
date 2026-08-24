@@ -42,7 +42,9 @@ describe('EPIC-02 shell placeholder routes', () => {
     renderAuthenticatedApp('#/');
 
     expect(await screen.findByRole('heading', { name: 'Главная' })).toBeVisible();
-    expect(screen.getByText('Этот экран зарезервирован только для проверки оболочки и ритма отступов.')).toBeVisible();
+    expect(
+      screen.getByText('Этот экран зарезервирован только для проверки оболочки и ритма отступов.'),
+    ).toBeVisible();
   });
 
   it('renders the rooms placeholder', async () => {
@@ -76,7 +78,9 @@ describe('EPIC-02 shell placeholder routes', () => {
     const navigation = await screen.findByRole('navigation', { name: 'Primary navigation' });
     const current = within(navigation).getByRole('link', { name: 'Чат' });
     expect(current).toHaveAttribute('aria-current', 'page');
-    expect(within(navigation).getByRole('link', { name: 'Главная' })).not.toHaveAttribute('aria-current');
+    expect(within(navigation).getByRole('link', { name: 'Главная' })).not.toHaveAttribute(
+      'aria-current',
+    );
   });
 
   it('keeps placeholders feature-empty and layout-only', async () => {
@@ -117,8 +121,13 @@ describe('EPIC-02 shell placeholder routes', () => {
 
     await screen.findByRole('heading', { name: 'Чат' });
     const navigation = await screen.findByRole('navigation', { name: 'Bottom navigation' });
-    expect(within(navigation).getByRole('link', { name: 'Чат' })).toHaveAttribute('aria-current', 'page');
-    expect(screen.queryByRole('navigation', { name: 'Primary navigation' })).not.toBeInTheDocument();
+    expect(within(navigation).getByRole('link', { name: 'Чат' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    expect(
+      screen.queryByRole('navigation', { name: 'Primary navigation' }),
+    ).not.toBeInTheDocument();
   });
 
   it('uses desktop top navigation for authenticated placeholder routes at desktop takeover and above', async () => {
@@ -127,7 +136,10 @@ describe('EPIC-02 shell placeholder routes', () => {
 
     await screen.findByRole('heading', { name: 'Чат' });
     const navigation = await screen.findByRole('navigation', { name: 'Primary navigation' });
-    expect(within(navigation).getByRole('link', { name: 'Чат' })).toHaveAttribute('aria-current', 'page');
+    expect(within(navigation).getByRole('link', { name: 'Чат' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
     expect(screen.queryByRole('navigation', { name: 'Bottom navigation' })).not.toBeInTheDocument();
   });
 });

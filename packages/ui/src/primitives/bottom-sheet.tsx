@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useReducer, useRef } from 'react';
 import type {
   AnimationEvent as ReactAnimationEvent,
   KeyboardEvent as ReactKeyboardEvent,
@@ -14,6 +14,61 @@ type BottomSheetState = 'opening' | 'open' | 'dismissing';
 type BottomSheetLabelProps =
   | { ariaLabel: string; title?: undefined }
   | { ariaLabel?: string; title: string };
+
+interface BottomSheetRenderState {
+  phase: BottomSheetState;
+  rendered: boolean;
+}
+
+type BottomSheetAction =
+  | { type: 'openRequested' }
+  | { type: 'closeRequested' }
+  | { type: 'opened' }
+  | { type: 'closed' };
+
+function bottomSheetReducer(
+  state: BottomSheetRenderState,
+  action: BottomSheetAction,
+): BottomSheetRenderState {
+  switch (action.type) {
+    case 'openRequested':
+      if (state.rendered && state.phase !== 'dismissing') {
+        return state;
+      }
+
+      return {
+        rendered: true,
+        phase: 'opening',
+      };
+    case 'closeRequested':
+      if (!state.rendered || state.phase === 'dismissing') {
+        return state;
+      }
+
+      return {
+        rendered: true,
+        phase: 'dismissing',
+      };
+    case 'opened':
+      if (!state.rendered || state.phase !== 'opening') {
+        return state;
+      }
+
+      return {
+        rendered: true,
+        phase: 'open',
+      };
+    case 'closed':
+      if (!state.rendered) {
+        return state;
+      }
+
+      return {
+        rendered: false,
+        phase: 'open',
+      };
+  }
+}
 
 export type BottomSheetProps = BottomSheetLabelProps & {
   children: ReactNode;
@@ -39,18 +94,19 @@ export function BottomSheet({ ariaLabel, children, onOpenChange, open, title }: 
   const isClosingRef = useRef(false);
   const instanceId = useId().replace(/:/g, '');
   const titleId = title ? `${instanceId}-title` : undefined;
-  const [rendered, setRendered] = useState(open);
-  const [state, setState] = useState<BottomSheetState>('open');
+  const [{ phase, rendered }, dispatch] = useReducer(bottomSheetReducer, {
+    rendered: open,
+    phase: 'open',
+  });
 
   useEffect(() => {
     if (open) {
-      setRendered(true);
-      setState('opening');
+      dispatch({ type: 'openRequested' });
       return;
     }
 
     if (rendered) {
-      setState('dismissing');
+      dispatch({ type: 'closeRequested' });
     }
   }, [open, rendered]);
 
@@ -61,7 +117,7 @@ export function BottomSheet({ ariaLabel, children, onOpenChange, open, title }: 
       return;
     }
 
-    isClosingRef.current = state === 'dismissing';
+    isClosingRef.current = phase === 'dismissing';
     document.body.classList.add('ui-scroll-locked');
 
     const handleFocusIn = (event: FocusEvent) => {
@@ -89,17 +145,16 @@ export function BottomSheet({ ariaLabel, children, onOpenChange, open, title }: 
       document.removeEventListener('focusin', handleFocusIn);
       document.body.classList.remove('ui-scroll-locked');
     };
-  }, [rendered, state]);
+  }, [phase, rendered]);
 
   useLayoutEffect(() => {
-    if (!rendered || state === 'dismissing') {
+    if (!rendered || phase === 'dismissing') {
       return;
     }
 
-    if (state === 'opening') {
-      previousFocusRef.current = document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null;
+    if (phase === 'opening') {
+      previousFocusRef.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
     }
 
     const focusable = getFocusableElements(sheetRef.current);
@@ -109,54 +164,57 @@ export function BottomSheet({ ariaLabel, children, onOpenChange, open, title }: 
     }
 
     sheetRef.current?.focus();
-  }, [rendered, state]);
+  }, [phase, rendered]);
+
+  function restoreFocus() {
+    previousFocusRef.current?.focus();
+  }
+
+  const finalizeState = useCallback(
+    (currentState: BottomSheetState) => {
+      if (currentState === 'opening') {
+        dispatch({ type: 'opened' });
+        return;
+      }
+
+      if (currentState === 'dismissing') {
+        dispatch({ type: 'closed' });
+        restoreFocus();
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!rendered) {
       return;
     }
 
-    if (state === 'open') {
+    if (phase === 'open') {
       return;
     }
 
-    const transitionDelay = state === 'opening' ? 0 : getBottomSheetTransitionDelay();
+    const transitionDelay = phase === 'opening' ? 0 : getBottomSheetTransitionDelay();
     const transitionTimer = window.setTimeout(() => {
-      finalizeState(state);
+      finalizeState(phase);
     }, transitionDelay);
 
     return () => {
       window.clearTimeout(transitionTimer);
     };
-  }, [rendered, state]);
+  }, [finalizeState, phase, rendered]);
 
   if (!rendered) {
     return null;
   }
 
-  function finalizeState(currentState: BottomSheetState) {
-    if (currentState === 'opening') {
-      setState('open');
-      return;
-    }
-
-    if (currentState === 'dismissing') {
-      setRendered(false);
-      restoreFocus();
-    }
-  }
-
-  function restoreFocus() {
-    previousFocusRef.current?.focus();
-  }
-
   function dismiss() {
-    if (state === 'dismissing') {
+    if (phase === 'dismissing') {
       return;
     }
 
     isClosingRef.current = true;
-    setState('dismissing');
+    dispatch({ type: 'closeRequested' });
     onOpenChange?.(false);
   }
 
@@ -178,9 +236,8 @@ export function BottomSheet({ ariaLabel, children, onOpenChange, open, title }: 
       return;
     }
 
-    const currentElement = document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null;
+    const currentElement =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
 
     if (!currentElement || !sheetRef.current?.contains(currentElement)) {
       event.preventDefault();
@@ -212,15 +269,15 @@ export function BottomSheet({ ariaLabel, children, onOpenChange, open, title }: 
       return;
     }
 
-    const nextState = state === 'opening' ? 'open' : state;
+    const nextState = phase === 'opening' ? 'open' : phase;
     event.currentTarget.parentElement?.setAttribute('data-state', nextState);
-    finalizeState(state);
+    finalizeState(phase);
   }
 
   return (
     <div
       className="ui-bottom-sheet-backdrop"
-      data-state={state}
+      data-state={phase}
       onMouseDown={handleBackdropMouseDown}
     >
       <section
@@ -235,7 +292,11 @@ export function BottomSheet({ ariaLabel, children, onOpenChange, open, title }: 
         onAnimationEnd={handleAnimationEnd}
       >
         <div className="ui-bottom-sheet__handle" aria-hidden="true" />
-        {title ? <h2 className="ui-bottom-sheet__title" id={titleId}>{title}</h2> : null}
+        {title ? (
+          <h2 className="ui-bottom-sheet__title" id={titleId}>
+            {title}
+          </h2>
+        ) : null}
         <div className="ui-bottom-sheet__body">{children}</div>
       </section>
     </div>

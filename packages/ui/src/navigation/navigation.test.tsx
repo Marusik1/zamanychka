@@ -89,26 +89,50 @@ describe('AppShell navigation', () => {
       </AppShell>,
     );
 
-    expect(within(view.container).getByRole('navigation', { name: 'Section navigation' })).toHaveClass('ui-top-nav');
-    expect(within(view.container).getByRole('link', { name: 'Rooms' })).toHaveAttribute('aria-current', 'page');
-    expect(within(view.container).queryByRole('navigation', { name: 'Bottom navigation' })).not.toBeInTheDocument();
+    expect(
+      within(view.container).getByRole('navigation', { name: 'Section navigation' }),
+    ).toHaveClass('ui-top-nav');
+    expect(within(view.container).getByRole('link', { name: 'Rooms' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    expect(
+      within(view.container).queryByRole('navigation', { name: 'Bottom navigation' }),
+    ).not.toBeInTheDocument();
   });
 
   it('renders mobile bottom navigation with the active item selected', () => {
     const view = render(
-      <AppShell viewport="mobile" title="Reference Library" navigation={items} activeNavigationKey="home">
+      <AppShell
+        viewport="mobile"
+        title="Reference Library"
+        navigation={items}
+        activeNavigationKey="home"
+      >
         <section>Mobile shell content</section>
       </AppShell>,
     );
 
-    expect(within(view.container).getByRole('navigation', { name: 'Bottom navigation' })).toHaveClass('ui-bottom-nav');
-    expect(within(view.container).getByRole('link', { name: 'Home' })).toHaveAttribute('aria-current', 'page');
-    expect(within(view.container).queryByRole('navigation', { name: 'Primary navigation' })).not.toBeInTheDocument();
+    expect(
+      within(view.container).getByRole('navigation', { name: 'Bottom navigation' }),
+    ).toHaveClass('ui-bottom-nav');
+    expect(within(view.container).getByRole('link', { name: 'Home' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    expect(
+      within(view.container).queryByRole('navigation', { name: 'Primary navigation' }),
+    ).not.toBeInTheDocument();
   });
 
   it('renders icons alongside labels in both navigation patterns', () => {
     const desktopView = render(
-      <AppShell viewport="desktop" title="Reference Library" navigation={items} activeNavigationKey="home">
+      <AppShell
+        viewport="desktop"
+        title="Reference Library"
+        navigation={items}
+        activeNavigationKey="home"
+      >
         <section>Desktop shell content</section>
       </AppShell>,
     );
@@ -117,7 +141,12 @@ describe('AppShell navigation', () => {
     expect(within(desktopView.container).getByText('Rooms')).toBeInTheDocument();
 
     const mobileView = render(
-      <AppShell viewport="mobile" title="Reference Library" navigation={items} activeNavigationKey="home">
+      <AppShell
+        viewport="mobile"
+        title="Reference Library"
+        navigation={items}
+        activeNavigationKey="home"
+      >
         <section>Mobile shell content</section>
       </AppShell>,
     );
@@ -128,7 +157,12 @@ describe('AppShell navigation', () => {
 
   it('keeps keyboard focus on navigation links with real focusable elements', () => {
     const view = render(
-      <AppShell viewport="desktop" title="Reference Library" navigation={items} activeNavigationKey="home">
+      <AppShell
+        viewport="desktop"
+        title="Reference Library"
+        navigation={items}
+        activeNavigationKey="home"
+      >
         <section>Keyboard shell content</section>
       </AppShell>,
     );

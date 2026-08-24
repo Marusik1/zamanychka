@@ -102,6 +102,7 @@
 ## Task 1: Freeze EPIC-02 Reference and Shell Boundaries
 
 **Files:**
+
 - Inspect: `docs/superpowers/specs/2026-08-20-epic-02-design-system.md`
 - Inspect: `references/README.md`
 - Test: `packages/ui/src/navigation/navigation.test.tsx`
@@ -135,6 +136,7 @@ Expected: PASS
 ## Task 2: Replace Provisional Foundation Tokens
 
 **Files:**
+
 - Modify: `packages/ui/src/foundation.css`
 - Create: `packages/ui/src/tokens.ts`
 - Test: `packages/ui/src/primitives/primitives.test.tsx`
@@ -186,6 +188,7 @@ git commit -m "feat(ui): add EPIC-02 semantic foundation tokens"
 ## Task 3: Build Shared Primitives
 
 **Files:**
+
 - Create: `packages/ui/src/primitives/button.tsx`
 - Create: `packages/ui/src/primitives/icon-button.tsx`
 - Create: `packages/ui/src/primitives/panel.tsx`
@@ -239,6 +242,7 @@ git commit -m "feat(ui): add EPIC-02 shell primitives"
 ## Task 4: Build Generic Responsive Shell Navigation
 
 **Files:**
+
 - Create: `packages/ui/src/shell/app-shell.tsx`
 - Create: `packages/ui/src/navigation/top-nav.tsx`
 - Create: `packages/ui/src/navigation/bottom-nav.tsx`
@@ -297,6 +301,7 @@ git commit -m "feat(ui): add responsive app shell navigation"
 ## Task 5: Add Web Shell Routes and Safe Placeholders
 
 **Files:**
+
 - Create: `apps/web/src/shell/routes.tsx`
 - Create: `apps/web/src/shell/placeholder-page.tsx`
 - Create: `apps/web/src/shell/shell-layout.test.tsx`
@@ -353,6 +358,7 @@ git commit -m "feat(web): add EPIC-02 shell placeholder routes"
 ## Task 6: Migrate the Auth Shell Without Changing Auth Semantics
 
 **Files:**
+
 - Modify: `apps/web/src/auth/auth-shell.tsx`
 - Modify: `apps/web/src/auth/auth-shell.test.tsx`
 - Modify: `apps/web/src/app.test.tsx`
@@ -413,6 +419,7 @@ git commit -m "feat(web): migrate auth shell to EPIC-02 design system"
 ## Task 7: Optional Development-Only UI Showcase
 
 **Files:**
+
 - Create: `apps/web/src/dev/ui-showcase.tsx`
 - Create: `apps/web/src/dev/ui-showcase.test.tsx`
 - Modify: `apps/web/src/shell/routes.tsx`
@@ -456,6 +463,7 @@ git commit -m "feat(web): add dev-only UI showcase"
 ## Task 8: Update the Concise Canonical Design-System Contract
 
 **Files:**
+
 - Modify: `docs/DESIGN_SYSTEM.md`
 - Inspect: `docs/superpowers/specs/2026-08-20-epic-02-design-system.md`
 
@@ -480,6 +488,7 @@ git commit -m "docs: refresh canonical design system contract"
 ## Task 9: Run Verification and Produce Visual Evidence
 
 **Files:**
+
 - Create: `artifacts/visual-qa/epic-02/README.md`
 - Create: `artifacts/visual-qa/epic-02/390x844.png`
 - Create: `artifacts/visual-qa/epic-02/430x932.png`

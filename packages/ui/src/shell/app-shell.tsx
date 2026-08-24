@@ -36,7 +36,11 @@ export function AppShell({
   const navigationProps =
     activeNavigationKey === undefined
       ? { items: navigation, ariaLabel: resolvedNavigationAriaLabel }
-      : { items: navigation, activeKey: activeNavigationKey, ariaLabel: resolvedNavigationAriaLabel };
+      : {
+          items: navigation,
+          activeKey: activeNavigationKey,
+          ariaLabel: resolvedNavigationAriaLabel,
+        };
 
   const navigationMarkup =
     viewport === 'desktop' ? <TopNav {...navigationProps} /> : <BottomNav {...navigationProps} />;

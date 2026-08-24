@@ -19,7 +19,8 @@ export function ListRow({
 }: ListRowProps) {
   const Component = as;
   const classes = ['ui-list-row', className ?? ''].filter(Boolean).join(' ');
-  const buttonSafetyProps = as === 'button' && !('type' in props) ? { type: 'button' as const } : {};
+  const buttonSafetyProps =
+    as === 'button' && !('type' in props) ? { type: 'button' as const } : {};
 
   return (
     <Component {...buttonSafetyProps} {...props} className={classes}>

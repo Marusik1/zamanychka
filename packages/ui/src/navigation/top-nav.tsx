@@ -1,11 +1,11 @@
 import type { ComponentPropsWithoutRef, ReactNode } from 'react';
 
-export type NavigationItem = {
+export interface NavigationItem {
   key: string;
   label: string;
   href: string;
   icon?: ReactNode;
-};
+}
 
 export type TopNavProps = Omit<ComponentPropsWithoutRef<'nav'>, 'aria-label'> & {
   items: readonly NavigationItem[];
@@ -13,7 +13,13 @@ export type TopNavProps = Omit<ComponentPropsWithoutRef<'nav'>, 'aria-label'> & 
   ariaLabel?: string;
 };
 
-export function TopNav({ activeKey, ariaLabel = 'Primary navigation', className, items, ...props }: TopNavProps) {
+export function TopNav({
+  activeKey,
+  ariaLabel = 'Primary navigation',
+  className,
+  items,
+  ...props
+}: TopNavProps) {
   const classes = ['ui-top-nav', className ?? ''].filter(Boolean).join(' ');
 
   return (

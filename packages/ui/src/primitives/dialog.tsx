@@ -4,13 +4,13 @@ import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
 const FOCUSABLE_SELECTOR =
   'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-export type DialogProps = {
+export interface DialogProps {
   children: ReactNode;
   description?: string;
   onOpenChange?: (open: boolean) => void;
   open: boolean;
   title: string;
-};
+}
 
 function getFocusableElements(container: HTMLElement | null) {
   return Array.from(container?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR) ?? []);
@@ -64,9 +64,8 @@ export function Dialog({ children, description, onOpenChange, open, title }: Dia
       return;
     }
 
-    previousFocusRef.current = document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null;
+    previousFocusRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
 
     const focusable = getFocusableElements(dialogRef.current);
     if (focusable.length > 0) {
@@ -105,9 +104,8 @@ export function Dialog({ children, description, onOpenChange, open, title }: Dia
       return;
     }
 
-    const currentElement = document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null;
+    const currentElement =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
 
     if (!currentElement || !dialogRef.current?.contains(currentElement)) {
       event.preventDefault();

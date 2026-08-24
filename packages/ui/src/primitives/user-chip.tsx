@@ -12,7 +12,9 @@ export function UserChip({ avatar, className, detail, name, ...props }: UserChip
   return (
     <div {...props} className={classes}>
       <span className="ui-user-chip__avatar" aria-hidden="true">
-        {avatar ?? <span className="ui-user-chip__avatar-fallback">{String(name).slice(0, 1)}</span>}
+        {avatar ?? (
+          <span className="ui-user-chip__avatar-fallback">{String(name).slice(0, 1)}</span>
+        )}
       </span>
       <span className="ui-user-chip__content">
         <span className="ui-user-chip__name">{name}</span>

@@ -6,7 +6,7 @@ import { PlaceholderPage } from './placeholder-page.js';
 
 export type ShellRouteKey = 'home' | 'rooms' | 'chat' | 'collection' | 'profile';
 
-type ShellRoute = {
+interface ShellRoute {
   key: ShellRouteKey;
   hash: string;
   title: string;
@@ -14,7 +14,7 @@ type ShellRoute = {
   eyebrow: string;
   scaffoldLabel: string;
   icon: ReactNode;
-};
+}
 
 function routeIcon(paths: readonly string[]) {
   return (
@@ -58,7 +58,8 @@ const shellRoutes: readonly ShellRoute[] = [
     key: 'chat',
     hash: '#/chat',
     title: 'Чат',
-    description: 'Здесь проверяется только компоновка оболочки без поведения чата и списков сообщений.',
+    description:
+      'Здесь проверяется только компоновка оболочки без поведения чата и списков сообщений.',
     eyebrow: 'Маршрут-заглушка',
     scaffoldLabel: 'Каркас плейсхолдера чата',
     icon: routeIcon(['M4.5 5.5h11v7h-6L6 15v-2.5H4.5z', 'M7.5 8.5h5']),
@@ -81,10 +82,14 @@ const shellRoutes: readonly ShellRoute[] = [
     key: 'profile',
     hash: '#/profile',
     title: 'Профиль',
-    description: 'Профильный маршрут ограничен проверкой оболочки и не показывает будущие функции профиля.',
+    description:
+      'Профильный маршрут ограничен проверкой оболочки и не показывает будущие функции профиля.',
     eyebrow: 'Маршрут-заглушка',
     scaffoldLabel: 'Каркас плейсхолдера профиля',
-    icon: routeIcon(['M10 10a2.75 2.75 0 1 0 0-5.5 2.75 2.75 0 0 0 0 5.5Z', 'M5.5 15.5a4.5 4.5 0 0 1 9 0']),
+    icon: routeIcon([
+      'M10 10a2.75 2.75 0 1 0 0-5.5 2.75 2.75 0 0 0 0 5.5Z',
+      'M5.5 15.5a4.5 4.5 0 0 1 9 0',
+    ]),
   },
 ] as const;
 

@@ -6,13 +6,7 @@ export type PanelProps = HTMLAttributes<HTMLElement> & {
   selected?: boolean;
 };
 
-export function Panel({
-  as = 'div',
-  children,
-  className,
-  selected = false,
-  ...props
-}: PanelProps) {
+export function Panel({ as = 'div', children, className, selected = false, ...props }: PanelProps) {
   const Component = as;
   const classes = ['ui-panel-surface', selected ? 'is-selected' : '', className ?? '']
     .filter(Boolean)

@@ -149,6 +149,7 @@ body {
   gap: var(--ui-space-12);
   align-content: start;
   max-width: 22rem;
+  min-width: 0;
 }
 
 .shell-session-panel__eyebrow,
@@ -270,7 +271,55 @@ body {
     text-align: left;
   }
 
+  .shell-authenticated-layout {
+    gap: var(--ui-space-16);
+  }
+
+  .shell-session-panel {
+    order: -1;
+    max-width: none;
+    gap: var(--ui-space-8);
+    padding: var(--ui-space-4);
+  }
+
+  .shell-session-panel .ui-button {
+    width: 100%;
+  }
+
+  .shell-session-panel__name {
+    font-size: 1.125rem;
+  }
+
+  .shell-session-panel__meta {
+    font-size: var(--ui-type-body-small-size);
+  }
+
+  .shell-placeholder-page {
+    gap: var(--ui-space-16);
+  }
+
+  .shell-placeholder-page__header {
+    gap: var(--ui-space-8);
+  }
+
+  .shell-placeholder-page__header h1 {
+    font-size: 2rem;
+  }
+
+  .shell-placeholder-page__scaffold {
+    gap: var(--ui-space-12);
+  }
+
+  .shell-placeholder-page__panel {
+    min-height: 7.5rem;
+    padding: var(--ui-space-4);
+  }
+
   .shell-placeholder-page__grid {
     grid-template-columns: 1fr;
+  }
+
+  .shell-placeholder-page__grid span {
+    min-height: 4.5rem;
   }
 }
