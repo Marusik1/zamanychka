@@ -53,17 +53,62 @@ model Room {
 }
 
 model Match {
-  id            String   @id @default(cuid())
-  roomKey       String
+  id             String            @id @default(cuid())
+  roomKey        String
   firstPlayerId  String
-  seatOrder     Json
-  snapshot      Json
-  status        String   @default("ACTIVE")
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  room          Room     @relation(fields: [roomKey], references: [key], onDelete: Cascade)
+  seatOrder      Json
+  snapshot       Json
+  stateVersion   Int               @default(0)
+  lastSequence   Int               @default(0)
+  status         String            @default("ACTIVE")
+  terminalResult Json?
+  finishedAt     DateTime?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  room           Room              @relation(fields: [roomKey], references: [key], onDelete: Cascade)
+  events         MatchEvent[]
+  actions        ProcessedAction[]
+  outboxRows     OutboxRow[]
 
   @@index([roomKey])
+}
+
+model MatchEvent {
+  id           String   @id @default(cuid())
+  matchId      String
+  sequence     Int
+  stateVersion Int
+  payload      Json
+  createdAt    DateTime @default(now())
+  match        Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, sequence])
+  @@index([matchId, stateVersion])
+}
+
+model ProcessedAction {
+  id                 String   @id @default(cuid())
+  matchId            String
+  actionId           String
+  requestFingerprint String
+  result             Json
+  createdAt          DateTime @default(now())
+  match              Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, actionId])
+}
+
+model OutboxRow {
+  id                    String    @id @default(cuid())
+  matchId               String
+  resultingStateVersion Int
+  payload               Json
+  createdAt             DateTime  @default(now())
+  publishedAt           DateTime?
+  match                 Match     @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, resultingStateVersion])
+  @@index([publishedAt, createdAt])
 }
 
 model RoomSeat {
