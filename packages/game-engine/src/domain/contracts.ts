@@ -1,6 +1,3 @@
-export {
-  createActiveGameState,
-} from './domain/create-active-game-state.js';
 export type {
   BoardCoord,
   CreateActiveGameStateConfig,
@@ -21,4 +18,5 @@ export type {
   TransitionContext,
   TurnPhase,
   WinReason,
-} from './domain/contracts.js';
+} from './types.js';
+
