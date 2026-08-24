@@ -25,19 +25,17 @@ describe('AuthShell', () => {
     expect(screen.getByRole('status')).toHaveClass('ui-status');
   });
 
-  it('shows authenticated internal identity and provider with logout', () => {
+  it('shows authenticated identity without raw metadata and with logout', () => {
     render(<AuthShell state={{ status: 'AUTHENTICATED', user }} {...handlers} />);
 
-    expect(screen.getByText('Анна').closest('.ui-panel-surface')).not.toBeNull();
     expect(screen.getByText('Анна')).toBeVisible();
-    expect(screen.getByText(/internal-42/)).toBeVisible();
-    expect(screen.getAllByText(/режим разработки/i)).toHaveLength(2);
+    expect(screen.queryByText(/internal-42/)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Выйти' })).toHaveClass('ui-button');
     fireEvent.click(screen.getByRole('button', { name: 'Выйти' }));
     expect(handlers.onLogout).toHaveBeenCalledTimes(1);
   });
 
-  it('shows Telegram as the authenticated provider label when needed', () => {
+  it('does not render provider labels in the ordinary authenticated shell', () => {
     render(
       <AuthShell
         state={{
@@ -48,7 +46,7 @@ describe('AuthShell', () => {
       />,
     );
 
-    expect(screen.getByText('Telegram')).toBeVisible();
+    expect(screen.getByText('Телеграм')).toBeVisible();
   });
 
   it('renders exactly the two configured development choices and sends the selected key', () => {

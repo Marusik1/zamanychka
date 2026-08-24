@@ -310,7 +310,7 @@ describe('EPIC-01 app lifecycle', () => {
 
     render(<App createAdapter={() => telegram} api={api} />);
 
-    expect(screen.getByRole('banner')).toHaveTextContent('Заманушка');
+    expect(screen.getByRole('banner')).toHaveTextContent('ЗАМАНУШКА');
     expect(screen.getByRole('status')).toHaveTextContent('Проверяем вход');
     expect(telegram.shellReady).toHaveBeenCalledTimes(1);
     await act(() => {

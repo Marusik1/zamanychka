@@ -1,4 +1,4 @@
-import { Button, Panel, Status } from '@zamanushka/ui';
+import { Button, Panel, Status, UserChip } from '@zamanushka/ui';
 
 import type { AuthState } from './bootstrap.js';
 
@@ -7,10 +7,6 @@ interface AuthShellProps {
   onSelectDevUser(devUserKey: string): void;
   onRetry(): void;
   onLogout(): void;
-}
-
-function providerLabel(state: Extract<AuthState, { status: 'AUTHENTICATED' }>) {
-  return state.user.authProvider === 'TELEGRAM' ? 'Telegram' : 'Режим разработки';
 }
 
 export function AuthShell({ state, onSelectDevUser, onRetry, onLogout }: AuthShellProps) {
@@ -37,18 +33,11 @@ export function AuthShell({ state, onSelectDevUser, onRetry, onLogout }: AuthShe
         <Panel as="section" className="auth-shell__panel auth-shell__panel--identity">
           <div className="auth-shell__panel-header">
             <p className="auth-shell__label">Активная сессия</p>
-            <p className="auth-shell__name">{state.user.displayName}</p>
+            <UserChip
+              name={state.user.displayName}
+              className="auth-shell__user-chip"
+            />
           </div>
-          <dl className="auth-shell__identity">
-            <div>
-              <dt>ID</dt>
-              <dd>{state.user.id}</dd>
-            </div>
-            <div>
-              <dt>Вход</dt>
-              <dd>{providerLabel(state)}</dd>
-            </div>
-          </dl>
           <Button variant="secondary" size="lg" onClick={onLogout}>
             Выйти
           </Button>

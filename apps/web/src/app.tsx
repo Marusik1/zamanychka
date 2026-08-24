@@ -14,11 +14,21 @@ interface AppProps {
 
 type ShellViewport = 'mobile' | 'desktop';
 
+const DESKTOP_SHELL_BREAKPOINT = 1024;
+
 function resolveShellViewport(width: number): ShellViewport {
   return width >= DESKTOP_SHELL_BREAKPOINT ? 'desktop' : 'mobile';
 }
 
-const DESKTOP_SHELL_BREAKPOINT = 1024;
+function renderAvatar(displayName: string) {
+  return displayName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? '')
+    .join('')
+    .slice(0, 2);
+}
 
 const defaultApi = createAuthApi();
 const bootstrapFailure: AuthState = {
@@ -148,7 +158,7 @@ export function App({ api = defaultApi, createAdapter = createTelegramAdapter }:
 
     return (
       <AppShell
-        title="Заманушка"
+        title="ЗАМАНУШКА"
         navigation={shellNavigationItems}
         activeNavigationKey={route.activeKey}
         viewport={shellViewport}
@@ -156,12 +166,15 @@ export function App({ api = defaultApi, createAdapter = createTelegramAdapter }:
         <div className="shell-authenticated-layout">
           <div className="shell-authenticated-layout__page">{route.page}</div>
           <Panel as="section" className="shell-session-panel">
-            <p className="shell-session-panel__eyebrow">Authenticated session</p>
-            <p className="shell-session-panel__name">{state.user.displayName}</p>
-            <p className="shell-session-panel__meta">ID: {state.user.id}</p>
-            <p className="shell-session-panel__meta">
-              Provider: {state.user.authProvider === 'TELEGRAM' ? 'Telegram' : 'Development'}
-            </p>
+            <div className="shell-session-panel__identity">
+              <div className="shell-session-panel__avatar" aria-hidden="true">
+                {renderAvatar(state.user.displayName)}
+              </div>
+              <div className="shell-session-panel__identity-copy">
+                <p className="shell-session-panel__eyebrow">Активная сессия</p>
+                <p className="shell-session-panel__name">{state.user.displayName}</p>
+              </div>
+            </div>
             <Button variant="secondary" onClick={() => void logout()}>
               Выйти
             </Button>
@@ -172,7 +185,7 @@ export function App({ api = defaultApi, createAdapter = createTelegramAdapter }:
   }
 
   return (
-    <AppFrame title="Заманушка" navigation={[]}>
+    <AppFrame title="ЗАМАНУШКА" navigation={[]}>
       <AuthShell
         state={state}
         onSelectDevUser={(key) => void selectDevelopmentUser(key)}

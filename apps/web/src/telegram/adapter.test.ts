@@ -66,7 +66,7 @@ describe('createTelegramAdapter', () => {
     expect(adapter.isAvailable).toBe(false);
     expect(adapter.isTelegram).toBe(false);
     expect(adapter.initData).toBeUndefined();
-    expect(document.documentElement.style.getPropertyValue('--app-viewport-height')).toBe('100vh');
+    expect(document.documentElement.style.getPropertyValue('--app-viewport-height')).toBe('100dvh');
     for (const variable of cssVariables.slice(1)) {
       expect(document.documentElement.style.getPropertyValue(variable)).toBe('0px');
     }
@@ -167,7 +167,7 @@ describe('createTelegramAdapter', () => {
 
     const adapter = createTelegramAdapter();
 
-    expect(document.documentElement.style.getPropertyValue('--app-viewport-height')).toBe('100vh');
+    expect(document.documentElement.style.getPropertyValue('--app-viewport-height')).toBe('100dvh');
     expect(document.documentElement.style.getPropertyValue('--app-safe-area-top')).toBe('0px');
     expect(document.documentElement.style.getPropertyValue('--app-safe-area-right')).toBe('0px');
     expect(document.documentElement.style.getPropertyValue('--app-safe-area-bottom')).toBe('0px');
@@ -181,11 +181,11 @@ describe('createTelegramAdapter', () => {
 
     bridge.webApp.viewportStableHeight = Number.POSITIVE_INFINITY;
     bridge.emit('viewportChanged');
-    expect(document.documentElement.style.getPropertyValue('--app-viewport-height')).toBe('100vh');
+    expect(document.documentElement.style.getPropertyValue('--app-viewport-height')).toBe('100dvh');
 
     bridge.webApp.viewportStableHeight = Number.NEGATIVE_INFINITY;
     bridge.emit('viewportChanged');
-    expect(document.documentElement.style.getPropertyValue('--app-viewport-height')).toBe('100vh');
+    expect(document.documentElement.style.getPropertyValue('--app-viewport-height')).toBe('100dvh');
 
     bridge.webApp.viewportStableHeight = -100;
     bridge.emit('viewportChanged');

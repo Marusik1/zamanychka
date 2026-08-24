@@ -1,5 +1,5 @@
 :root {
-  --app-viewport-height: 100vh;
+  --app-viewport-height: 100dvh;
   --app-safe-area-top: 0px;
   --app-safe-area-right: 0px;
   --app-safe-area-bottom: 0px;
@@ -41,15 +41,18 @@ body {
 .auth-shell__eyebrow {
   margin: 0;
   color: var(--ui-accent-gold);
-  font-size: var(--ui-type-caption-size);
-  font-weight: 700;
-  letter-spacing: 0.18em;
+  font-family: var(--ui-font-display);
+  font-size: clamp(1.7rem, 6vw, 2.4rem);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  line-height: 1;
   text-transform: uppercase;
 }
 
 .auth-shell h1 {
   margin: 0;
-  font-size: clamp(2.25rem, 8vw, 4rem);
+  color: var(--ui-text-primary);
+  font-size: clamp(2.1rem, 8vw, 4rem);
   line-height: 0.96;
 }
 
@@ -96,29 +99,9 @@ body {
   font-weight: 600;
 }
 
-.auth-shell__identity {
-  margin: 0;
-  display: grid;
-  gap: var(--ui-space-12);
-  color: var(--ui-text-secondary);
-}
-
-.auth-shell__identity div {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--ui-space-16);
-  padding-block: var(--ui-space-8);
-  border-bottom: 1px solid var(--ui-border-muted);
-}
-
-.auth-shell__identity dt {
-  color: var(--ui-text-muted);
-}
-
-.auth-shell__identity dd {
-  margin: 0;
-  overflow-wrap: anywhere;
-  text-align: right;
+.auth-shell__user-chip {
+  width: 100%;
+  justify-content: flex-start;
 }
 
 .auth-shell__choices {
@@ -152,6 +135,33 @@ body {
   min-width: 0;
 }
 
+.shell-session-panel__identity {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-12);
+}
+
+.shell-session-panel__avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ui-accent-gold) 18%, transparent);
+  color: var(--ui-accent-gold);
+  font-family: var(--ui-font-display);
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.shell-session-panel__identity-copy {
+  display: grid;
+  gap: var(--ui-space-4);
+  min-width: 0;
+}
+
 .shell-session-panel__eyebrow,
 .shell-placeholder-page__eyebrow {
   margin: 0;
@@ -165,11 +175,7 @@ body {
   margin: 0;
   font-size: var(--ui-type-h3-size);
   font-weight: var(--ui-type-h3-weight);
-}
-
-.shell-session-panel__meta {
-  margin: 0;
-  color: var(--ui-text-secondary);
+  overflow-wrap: anywhere;
 }
 
 .shell-placeholder-page {
@@ -185,6 +191,7 @@ body {
 .shell-placeholder-page__header h1 {
   margin: 0;
   font-size: clamp(2rem, 4vw, 2.75rem);
+  line-height: 1.05;
 }
 
 .shell-placeholder-page__description {
@@ -209,7 +216,7 @@ body {
   width: min(100%, 24rem);
   border-radius: 999px;
   background:
-    linear-gradient(90deg, rgba(214, 163, 74, 0.28), rgba(214, 163, 74, 0.08)),
+    linear-gradient(90deg, rgba(214, 163, 74, 0.14), rgba(214, 163, 74, 0.04)),
     rgba(255, 255, 255, 0.04);
 }
 
@@ -248,6 +255,7 @@ body {
   .app-frame__header {
     min-height: 56px;
     padding-inline: 18px;
+    justify-content: center;
   }
 
   .app-frame__main {
@@ -263,12 +271,8 @@ body {
     justify-self: stretch;
   }
 
-  .auth-shell__identity div {
-    flex-direction: column;
-  }
-
-  .auth-shell__identity dd {
-    text-align: left;
+  .auth-shell__name {
+    font-size: 1.35rem;
   }
 
   .shell-authenticated-layout {
@@ -282,16 +286,21 @@ body {
     padding: var(--ui-space-4);
   }
 
+  .shell-session-panel__identity {
+    gap: var(--ui-space-8);
+  }
+
+  .shell-session-panel__avatar {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+
   .shell-session-panel .ui-button {
     width: 100%;
   }
 
   .shell-session-panel__name {
     font-size: 1.125rem;
-  }
-
-  .shell-session-panel__meta {
-    font-size: var(--ui-type-body-small-size);
   }
 
   .shell-placeholder-page {
