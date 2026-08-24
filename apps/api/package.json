@@ -17,6 +17,7 @@
     "@fastify/cookie": "^11.1.2",
     "@prisma/adapter-pg": "latest",
     "@prisma/client": "latest",
+    "@zamanushka/game-engine": "workspace:*",
     "@zamanushka/shared": "workspace:*",
     "dotenv": "latest",
     "fastify": "^5.0.0",

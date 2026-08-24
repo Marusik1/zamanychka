@@ -49,6 +49,19 @@ model Room {
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
   seats         RoomSeat[]
+  matches       Match[]
+}
+
+model Match {
+  id            String   @id @default(cuid())
+  roomKey       String   @unique
+  firstPlayerId  String
+  seatOrder     Json
+  snapshot      Json
+  status        String   @default("ACTIVE")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  room          Room     @relation(fields: [roomKey], references: [key], onDelete: Cascade)
 }
 
 model RoomSeat {

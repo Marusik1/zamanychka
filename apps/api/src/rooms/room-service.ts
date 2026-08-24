@@ -7,9 +7,11 @@ import type {
   RoomSeatIndex,
   RoomState,
   SetReadyRequest,
+  StartMatchRequest,
   TakeSeatRequest,
 } from '@zamanushka/shared';
 
+import { createActiveGameState } from '@zamanushka/game-engine';
 import type { Prisma } from '../generated/prisma/client.js';
 import type { PersistedRoom, RoomId } from './domain.js';
 import type { createRoomRepository } from './room-repository.js';
@@ -21,6 +23,19 @@ type RoomView = RoomState & {
   presence: ReadonlyArray<RoomPresenceProjection>;
   participantViews: ReadonlyArray<RoomParticipantView>;
 };
+
+type StartMatchSuccess = {
+  ok: true;
+  room: RoomState;
+  matchId: string;
+};
+
+type StartMatchResult =
+  | StartMatchSuccess
+  | {
+      ok: false;
+      error: RoomCommandError['error'];
+    };
 
 const ERROR_MESSAGES: Record<RoomCommandError['error']['code'], string> = {
   ROOM_NOT_FOUND: 'Room is not available',
@@ -44,9 +59,20 @@ export interface RoomService {
   takeSeat(actorUserId: string, request: TakeSeatRequest): Promise<MutatingRoomResult>;
   leaveSeat(actorUserId: string): Promise<MutatingRoomResult>;
   setReady(actorUserId: string, request: SetReadyRequest): Promise<MutatingRoomResult>;
+  startMatch(actorUserId: string, request: StartMatchRequest): Promise<StartMatchResult>;
   connectPresence(actorUserId: string): Promise<RoomView>;
   disconnectPresence(actorUserId: string): Promise<RoomView>;
   viewRoom(): Promise<RoomView>;
+}
+
+export interface StartMatchStore {
+  createInitialMatch(input: {
+    tx: TxClient;
+    roomId: string;
+    firstPlayerId: string;
+    seatOrder: readonly string[];
+    snapshot: Prisma.InputJsonValue;
+  }): Promise<{ id: string }>;
 }
 
 function roomError(code: RoomCommandError['error']['code']): MutatingRoomResult {
@@ -55,6 +81,10 @@ function roomError(code: RoomCommandError['error']['code']): MutatingRoomResult 
 
 function roomSuccess(room: RoomState): RoomCommandSuccess {
   return { ok: true, room };
+}
+
+function startMatchError(code: RoomCommandError['error']['code']): StartMatchResult {
+  return { ok: false, error: { code, message: ERROR_MESSAGES[code] } };
 }
 
 function toRoomState(room: PersistedRoom): RoomState {
@@ -152,11 +182,18 @@ type RoomMutation =
 export function createRoomService(options: {
   repository: RoomRepository;
   presenceStore: RoomPresenceStore;
+  selectFirstPlayerId?: (participants: ReadonlyArray<{ userId: string; seatIndex: RoomSeatIndex }>) => string;
+  matchStore?: StartMatchStore;
 }): RoomService {
   async function loadView(room?: PersistedRoom): Promise<RoomView> {
     const current = room ?? (await options.repository.bootstrapSingletonRoom());
     const presence = await options.presenceStore.snapshot(current.roomId);
     return toRoomView(current, presence);
+  }
+
+  function selectFirstPlayerId(participants: ReadonlyArray<{ userId: string; seatIndex: RoomSeatIndex }>) {
+    const selector = options.selectFirstPlayerId ?? ((seated) => seated[0]?.userId ?? '');
+    return selector(participants);
   }
 
   async function mutateRoom(
@@ -218,6 +255,73 @@ export function createRoomService(options: {
         room.version += 1;
         ownedSeat.ready = request.ready;
         return { kind: 'success', room, presence: null };
+      });
+    },
+
+    async startMatch(actorUserId, _request) {
+      const roomSnapshot = await options.repository.bootstrapSingletonRoom();
+      const presence = await options.presenceStore.snapshot(roomSnapshot.roomId);
+      return options.repository.withLockedSingletonRoom(async (tx, room) => {
+        const seatedParticipants = room.seats
+          .filter((seat): seat is (typeof seat & { userId: string }) => seat.userId !== null)
+          .map((seat) => ({
+            userId: seat.userId,
+            seatIndex: seat.seatIndex,
+            ready: seat.ready,
+            connected: presence.get(seat.userId) ?? false,
+          }))
+          .sort((left, right) => left.seatIndex - right.seatIndex);
+
+        if (!actorUserId) return startMatchError('NOT_ALLOWED');
+        if (!room.seats.some((seat) => seat.userId === actorUserId)) return startMatchError('SEAT_NOT_OWNED');
+        if (room.currentMatchId) return startMatchError('ROOM_ALREADY_ACTIVE');
+        if (seatedParticipants.length < 2) return startMatchError('ROOM_NOT_READY');
+        if (seatedParticipants.length > 4) return startMatchError('ROOM_FULL');
+        if (seatedParticipants.some((participant) => !participant.ready)) return startMatchError('ROOM_NOT_READY');
+        if (seatedParticipants.some((participant) => !participant.connected)) return startMatchError('SEATED_PARTICIPANT_DISCONNECTED');
+
+        const firstPlayerId = selectFirstPlayerId(seatedParticipants);
+        if (!seatedParticipants.some((participant) => participant.userId === firstPlayerId)) {
+          return startMatchError('NOT_ALLOWED');
+        }
+
+        const seatOrder = seatedParticipants.map((participant) => participant.userId);
+        const initialState = createActiveGameState({
+          playerCount: seatOrder.length as 2 | 3 | 4,
+          seatOrder: seatOrder as [string, string] | [string, string, string] | [string, string, string, string],
+          firstPlayerId,
+        });
+
+        const match = options.matchStore
+          ? await options.matchStore.createInitialMatch({
+              tx,
+              roomId: room.roomId,
+              firstPlayerId,
+              seatOrder,
+              snapshot: initialState as Prisma.InputJsonValue,
+            })
+          : await tx.match.create({
+              data: {
+                roomKey: room.roomId,
+                firstPlayerId,
+                seatOrder,
+                snapshot: initialState as Prisma.InputJsonValue,
+              },
+              select: { id: true },
+            });
+
+        const nextRoom: PersistedRoom = {
+          ...room,
+          version: room.version + 1,
+          currentMatchId: match.id,
+        };
+        await persistRoom(tx, nextRoom);
+
+        return {
+          ok: true,
+          room: toRoomState(nextRoom),
+          matchId: match.id,
+        };
       });
     },
 
