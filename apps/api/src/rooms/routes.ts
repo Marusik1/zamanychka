@@ -67,7 +67,8 @@ function requireJson(request: FastifyRequest, reply: FastifyReply) {
 }
 
 async function actorId(request: FastifyRequest, reply: FastifyReply, auth: AuthService) {
-  const token = request.cookies['__Host-zamanushka-session'] ?? request.cookies['zamanushka-session'];
+  const token =
+    request.cookies['__Host-zamanushka-session'] ?? request.cookies['zamanushka-session'];
   try {
     const result = await auth.me(token);
     return result.user.id;
@@ -77,7 +78,10 @@ async function actorId(request: FastifyRequest, reply: FastifyReply, auth: AuthS
   }
 }
 
-function mapRoomResult(reply: FastifyReply, result: { ok: true } | { ok: false; error: { code: RoomErrorCode } }) {
+function mapRoomResult(
+  reply: FastifyReply,
+  result: { ok: true } | { ok: false; error: { code: RoomErrorCode } },
+) {
   if (result.ok) return reply.send(result);
   const status =
     result.error.code === 'ROOM_NOT_FOUND'

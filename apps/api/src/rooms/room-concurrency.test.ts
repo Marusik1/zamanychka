@@ -156,7 +156,10 @@ describe('room concurrency', () => {
     await service.disconnectPresence('user-2');
     await expect(service.startMatch('user-1', {})).resolves.toEqual({
       ok: false,
-      error: { code: 'SEATED_PARTICIPANT_DISCONNECTED', message: 'Seated participant is disconnected' },
+      error: {
+        code: 'SEATED_PARTICIPANT_DISCONNECTED',
+        message: 'Seated participant is disconnected',
+      },
     });
     await service.connectPresence('user-2');
     const started = await service.startMatch('user-1', {});
@@ -180,7 +183,10 @@ describe('room concurrency', () => {
     const matchA = await firstLobby.startMatch('user-1', {});
     expect(matchA.ok).toBe(true);
     if (!matchA.ok) throw new Error('match A failed');
-    await database.prisma.match.update({ where: { id: matchA.matchId }, data: { status: 'FINISHED' } });
+    await database.prisma.match.update({
+      where: { id: matchA.matchId },
+      data: { status: 'FINISHED' },
+    });
 
     const completion = createMatchCompletionService({ repository });
     await completion.completeTerminalMatch(matchA.matchId);

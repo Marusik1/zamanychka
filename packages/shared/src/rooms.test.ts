@@ -37,7 +37,14 @@ describe('room contracts', () => {
       seatIndex: 2,
       ready: true,
     });
-    expect(roomParticipantViewSchema.parse({ userId: 'u1', seatIndex: 2, ready: true, connected: false })).toEqual({
+    expect(
+      roomParticipantViewSchema.parse({
+        userId: 'u1',
+        seatIndex: 2,
+        ready: true,
+        connected: false,
+      }),
+    ).toEqual({
       userId: 'u1',
       seatIndex: 2,
       ready: true,

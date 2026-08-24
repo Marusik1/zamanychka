@@ -1,13 +1,13 @@
 import type { Prisma } from '../generated/prisma/client.js';
 import type { AppPrismaClient } from '../infrastructure/prisma.js';
-import type { PersistedRoom, RoomSeatRecord } from './domain.js';
+import type { PersistedRoom, RoomSeatIndex, RoomSeatRecord } from './domain.js';
 
 export const SINGLETON_ROOM_KEY = 'single-room';
-const DEFAULT_SEAT_INDICES = [0, 1, 2, 3] as const;
+const DEFAULT_SEAT_INDICES: readonly RoomSeatIndex[] = [0, 1, 2, 3];
 
 type TxClient = Prisma.TransactionClient;
 
-function sortSeats(seats: ReadonlyArray<RoomSeatRecord>): RoomSeatRecord[] {
+function sortSeats(seats: readonly RoomSeatRecord[]): RoomSeatRecord[] {
   return [...seats].sort((left, right) => left.seatIndex - right.seatIndex);
 }
 
@@ -15,7 +15,7 @@ function toDomain(room: {
   key: string;
   version: number;
   currentMatchId: string | null;
-  seats: Array<{ seatIndex: number; userId: string | null; ready: boolean }>;
+  seats: { seatIndex: number; userId: string | null; ready: boolean }[];
 }): PersistedRoom {
   return {
     roomId: room.key,
@@ -55,7 +55,10 @@ async function loadRoom(tx: TxClient): Promise<PersistedRoom | null> {
   return room ? toDomain(room) : null;
 }
 
-export async function persistSingletonRoom(tx: TxClient, room: PersistedRoom): Promise<PersistedRoom> {
+export async function persistSingletonRoom(
+  tx: TxClient,
+  room: PersistedRoom,
+): Promise<PersistedRoom> {
   await tx.room.update({
     where: { key: SINGLETON_ROOM_KEY },
     data: {
@@ -116,7 +119,9 @@ export function createRoomRepository(prisma: AppPrismaClient) {
       });
     },
 
-    async withLockedSingletonRoom<T>(handler: (tx: TxClient, room: PersistedRoom) => Promise<T>): Promise<T> {
+    async withLockedSingletonRoom<T>(
+      handler: (tx: TxClient, room: PersistedRoom) => Promise<T>,
+    ): Promise<T> {
       return prisma.$transaction(async (tx) => {
         await ensureSingletonRoom(tx);
         await tx.$queryRaw`

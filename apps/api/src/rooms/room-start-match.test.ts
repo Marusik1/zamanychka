@@ -29,7 +29,9 @@ class InMemoryRoomPresenceStore implements RoomPresenceStore {
 }
 
 function createService(options?: {
-  selectFirstPlayerId?: (participants: ReadonlyArray<{ userId: string; seatIndex: 0 | 1 | 2 | 3 }>) => string;
+  selectFirstPlayerId?: (
+    participants: readonly { userId: string; seatIndex: 0 | 1 | 2 | 3 }[],
+  ) => string;
   matchStore?: StartMatchStore;
 }) {
   return createRoomService({
@@ -148,7 +150,10 @@ describe('start match orchestration', () => {
 
     await expect(service.startMatch('user-1', {})).resolves.toEqual({
       ok: false,
-      error: { code: 'SEATED_PARTICIPANT_DISCONNECTED', message: 'Seated participant is disconnected' },
+      error: {
+        code: 'SEATED_PARTICIPANT_DISCONNECTED',
+        message: 'Seated participant is disconnected',
+      },
     });
   });
 
@@ -180,7 +185,8 @@ describe('start match orchestration', () => {
   it('uses the server-side first-player selector and does not accept client input', async () => {
     const { users } = await seedSeats(3);
     const customService = createService({
-      selectFirstPlayerId: (participants) => participants[1]?.userId ?? participants[0]?.userId ?? '',
+      selectFirstPlayerId: (participants) =>
+        participants[1]?.userId ?? participants[0]?.userId ?? '',
     });
 
     const result = await customService.startMatch(users[0]?.id ?? '', {});
@@ -203,6 +209,7 @@ describe('start match orchestration', () => {
 
   it('rolls back both match and room changes if match persistence fails after create', async () => {
     const { service, users } = await seedSeats(2);
+    void service;
     const failingMatchStore: StartMatchStore = {
       async createInitialMatch({ tx, roomId, firstPlayerId, seatOrder, snapshot }) {
         const created = await tx.match.create({

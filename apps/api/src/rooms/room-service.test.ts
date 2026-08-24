@@ -173,7 +173,12 @@ describe('room service', () => {
     expect(reconnected.presence).toEqual([{ userId: 'user-1', connected: true }]);
 
     const room = await repository.loadSingletonRoom();
-    expect(room?.seats).toEqual([{ seatIndex: 0, userId: 'user-1', ready: true }, { seatIndex: 1, userId: null, ready: false }, { seatIndex: 2, userId: null, ready: false }, { seatIndex: 3, userId: null, ready: false }]);
+    expect(room?.seats).toEqual([
+      { seatIndex: 0, userId: 'user-1', ready: true },
+      { seatIndex: 1, userId: null, ready: false },
+      { seatIndex: 2, userId: null, ready: false },
+      { seatIndex: 3, userId: null, ready: false },
+    ]);
   });
 
   it('does not mutate the room roster during active-match disconnect presence changes', async () => {

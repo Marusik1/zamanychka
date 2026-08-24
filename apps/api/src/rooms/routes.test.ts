@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
 
+import type { AuthService } from '../auth/auth-service.js';
+import type { RoomService } from './room-service.js';
 import { registerRoomRoutes } from './routes.js';
 
 const user = { id: 'user-1', displayName: 'User One', authProvider: 'DEVELOPMENT' as const };
@@ -12,7 +14,7 @@ function authService() {
       if (!token) throw new Error('AUTH_REQUIRED');
       return { user };
     },
-  } as any;
+  } as unknown as AuthService;
 }
 
 function roomService() {
@@ -31,7 +33,9 @@ function roomService() {
         roomId: 'single-room',
         version: 2,
         currentMatchId: null,
-        participants: [{ userId: actorUserId, seatIndex: request.seatIndex, ready: false as const }],
+        participants: [
+          { userId: actorUserId, seatIndex: request.seatIndex, ready: false as const },
+        ],
       },
     }),
     leaveSeat: async () => ({
@@ -58,7 +62,9 @@ function roomService() {
       currentMatchId: null,
       participants: [{ userId: user.id, seatIndex: 0 as const, ready: true as const }],
       presence: [{ userId: user.id, connected: true }],
-      participantViews: [{ userId: user.id, seatIndex: 0 as const, ready: true as const, connected: true }],
+      participantViews: [
+        { userId: user.id, seatIndex: 0 as const, ready: true as const, connected: true },
+      ],
     }),
     disconnectPresence: async () => ({
       roomId: 'single-room',
@@ -66,16 +72,18 @@ function roomService() {
       currentMatchId: null,
       participants: [{ userId: user.id, seatIndex: 0 as const, ready: true as const }],
       presence: [{ userId: user.id, connected: false }],
-      participantViews: [{ userId: user.id, seatIndex: 0 as const, ready: true as const, connected: false }],
+      participantViews: [
+        { userId: user.id, seatIndex: 0 as const, ready: true as const, connected: false },
+      ],
     }),
-  } as any;
+  } as unknown as RoomService;
 }
 
 describe('room routes', () => {
   const apps: ReturnType<typeof Fastify>[] = [];
   afterEach(async () => Promise.all(apps.splice(0).map((app) => app.close())));
 
-  async function app(service: any = roomService()) {
+  async function app(service: RoomService = roomService()) {
     const instance = Fastify();
     apps.push(instance);
     await instance.register(cookie);
@@ -89,7 +97,10 @@ describe('room routes', () => {
 
   it('wires room lifecycle routes behind auth and rejects unknown room discovery endpoints', async () => {
     const instance = await app();
-    expect((await instance.inject({ url: '/api/room', headers: { cookie: 'zamanushka-session=one' } })).statusCode).toBe(200);
+    expect(
+      (await instance.inject({ url: '/api/room', headers: { cookie: 'zamanushka-session=one' } }))
+        .statusCode,
+    ).toBe(200);
     expect(
       (
         await instance.inject({
@@ -168,12 +179,18 @@ describe('room routes', () => {
   it('returns stable conflict responses for seat and start-match failures', async () => {
     const failing = {
       ...roomService(),
-      takeSeat: async () => ({ ok: false as const, error: { code: 'SEAT_TAKEN' as const, message: 'Seat is already taken' } }),
+      takeSeat: async () => ({
+        ok: false as const,
+        error: { code: 'SEAT_TAKEN' as const, message: 'Seat is already taken' },
+      }),
       startMatch: async () => ({
         ok: false as const,
-        error: { code: 'ROOM_ALREADY_ACTIVE' as const, message: 'Room already has an active match' },
+        error: {
+          code: 'ROOM_ALREADY_ACTIVE' as const,
+          message: 'Room already has an active match',
+        },
       }),
-    };
+    } as RoomService;
     const instance = await app(failing);
     expect(
       (

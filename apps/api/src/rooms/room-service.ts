@@ -1,6 +1,5 @@
 import type {
   RoomCommandError,
-  RoomCommandResult,
   RoomCommandSuccess,
   RoomParticipantView,
   RoomPresenceProjection,
@@ -20,16 +19,16 @@ import type { createRoomRepository } from './room-repository.js';
 type RoomRepository = ReturnType<typeof createRoomRepository>;
 type TxClient = Prisma.TransactionClient;
 
-type RoomView = RoomState & {
-  presence: ReadonlyArray<RoomPresenceProjection>;
-  participantViews: ReadonlyArray<RoomParticipantView>;
-};
+interface RoomView extends RoomState {
+  presence: readonly RoomPresenceProjection[];
+  participantViews: readonly RoomParticipantView[];
+}
 
-type StartMatchSuccess = {
+interface StartMatchSuccess {
   ok: true;
   room: RoomState;
   matchId: string;
-};
+}
 
 type StartMatchResult =
   | StartMatchSuccess
@@ -152,7 +151,9 @@ type RoomMutation =
 export function createRoomService(options: {
   repository: RoomRepository;
   presenceStore: RoomPresenceStore;
-  selectFirstPlayerId?: (participants: ReadonlyArray<{ userId: string; seatIndex: RoomSeatIndex }>) => string;
+  selectFirstPlayerId?: (
+    participants: readonly { userId: string; seatIndex: RoomSeatIndex }[],
+  ) => string;
   matchStore?: StartMatchStore;
 }): RoomService {
   async function loadView(room?: PersistedRoom): Promise<RoomView> {
@@ -161,7 +162,9 @@ export function createRoomService(options: {
     return toRoomView(current, presence);
   }
 
-  function selectFirstPlayerId(participants: ReadonlyArray<{ userId: string; seatIndex: RoomSeatIndex }>) {
+  function selectFirstPlayerId(
+    participants: readonly { userId: string; seatIndex: RoomSeatIndex }[],
+  ) {
     const selector = options.selectFirstPlayerId ?? ((seated) => seated[0]?.userId ?? '');
     return selector(participants);
   }
@@ -228,11 +231,11 @@ export function createRoomService(options: {
       });
     },
 
-    async startMatch(actorUserId, _request) {
+    async startMatch(actorUserId) {
       return options.repository.withLockedSingletonRoom(async (tx, room) => {
         const presence = await options.presenceStore.snapshot(room.roomId);
         const seatedParticipants = room.seats
-          .filter((seat): seat is (typeof seat & { userId: string }) => seat.userId !== null)
+          .filter((seat): seat is typeof seat & { userId: string } => seat.userId !== null)
           .map((seat) => ({
             userId: seat.userId,
             seatIndex: seat.seatIndex,
@@ -242,12 +245,15 @@ export function createRoomService(options: {
           .sort((left, right) => left.seatIndex - right.seatIndex);
 
         if (!actorUserId) return startMatchError('NOT_ALLOWED');
-        if (!room.seats.some((seat) => seat.userId === actorUserId)) return startMatchError('SEAT_NOT_OWNED');
+        if (!room.seats.some((seat) => seat.userId === actorUserId))
+          return startMatchError('SEAT_NOT_OWNED');
         if (room.currentMatchId) return startMatchError('ROOM_ALREADY_ACTIVE');
         if (seatedParticipants.length < 2) return startMatchError('ROOM_NOT_READY');
         if (seatedParticipants.length > 4) return startMatchError('ROOM_FULL');
-        if (seatedParticipants.some((participant) => !participant.ready)) return startMatchError('ROOM_NOT_READY');
-        if (seatedParticipants.some((participant) => !participant.connected)) return startMatchError('SEATED_PARTICIPANT_DISCONNECTED');
+        if (seatedParticipants.some((participant) => !participant.ready))
+          return startMatchError('ROOM_NOT_READY');
+        if (seatedParticipants.some((participant) => !participant.connected))
+          return startMatchError('SEATED_PARTICIPANT_DISCONNECTED');
 
         const firstPlayerId = selectFirstPlayerId(seatedParticipants);
         if (!seatedParticipants.some((participant) => participant.userId === firstPlayerId)) {
@@ -257,7 +263,8 @@ export function createRoomService(options: {
         const seatOrder = seatedParticipants.map((participant) => participant.userId);
         const initialState = createActiveGameState({
           playerCount: seatOrder.length as 2 | 3 | 4,
-          seatOrder: seatOrder as [string, string] | [string, string, string] | [string, string, string, string],
+          seatOrder: seatOrder as
+            [string, string] | [string, string, string] | [string, string, string, string],
           firstPlayerId,
         });
 

@@ -22,7 +22,12 @@ export interface BuildAppOptions {
   rooms?: { service: RoomService };
 }
 
-export function buildApp({ logger = false, probes, auth, rooms }: BuildAppOptions): FastifyInstance {
+export function buildApp({
+  logger = false,
+  probes,
+  auth,
+  rooms,
+}: BuildAppOptions): FastifyInstance {
   const app = Fastify({
     logger: logger
       ? { redact: ['req.headers.cookie', 'req.headers.authorization', 'req.body', 'body.initData'] }
