@@ -17,8 +17,20 @@ const snapshot = {
   diceValue: null,
   winnerPlayerId: null,
   winReason: null,
-  players: [],
-  pawns: [],
+  players: [
+    { playerId: 'p1', color: 'RED', seatIndex: 0, status: 'ACTIVE' },
+    { playerId: 'p2', color: 'BLUE', seatIndex: 1, status: 'ACTIVE' },
+  ],
+  pawns: [
+    { pawnId: 'pawn-1', playerId: 'p1', color: 'RED', position: { zone: 'OFF_BOARD' } },
+    { pawnId: 'pawn-2', playerId: 'p1', color: 'RED', position: { zone: 'PERIMETER', progress: 0 } },
+    { pawnId: 'pawn-3', playerId: 'p1', color: 'RED', position: { zone: 'HOME', homeIndex: 0 } },
+    { pawnId: 'pawn-4', playerId: 'p1', color: 'RED', position: { zone: 'REMOVED' } },
+    { pawnId: 'pawn-5', playerId: 'p2', color: 'BLUE', position: { zone: 'OFF_BOARD' } },
+    { pawnId: 'pawn-6', playerId: 'p2', color: 'BLUE', position: { zone: 'PERIMETER', progress: 27 } },
+    { pawnId: 'pawn-7', playerId: 'p2', color: 'BLUE', position: { zone: 'HOME', homeIndex: 3 } },
+    { pawnId: 'pawn-8', playerId: 'p2', color: 'BLUE', position: { zone: 'REMOVED' } },
+  ],
   lastSequence: 3,
 };
 
@@ -95,7 +107,15 @@ describe('realtime contracts', () => {
       stateVersion: 2,
       fromSequence: 3,
       toSequence: 2,
-      events: [],
+      events: [{
+        matchId: 'm1',
+        eventId: 'e1',
+        sequence: 3,
+        stateVersion: 2,
+        type: 'turnChanged',
+        payload: { fromPlayerId: 'p1', toPlayerId: 'p2' },
+        createdAt: '2026-08-24T00:00:00.000Z',
+      }],
       watermark: { stateVersion: 2, lastSequence: 2 },
       snapshot,
     })).toThrow();
@@ -104,7 +124,16 @@ describe('realtime contracts', () => {
   it('discriminates command results and sync modes', () => {
     expect(gameCommandResultSchema.parse({
       ok: true, matchId: 'm1', actionId: 'a1', stateVersion: 2, lastSequence: 3,
-      snapshot, events: [],
+      snapshot,
+      events: [{
+        matchId: 'm1',
+        eventId: 'e1',
+        sequence: 3,
+        stateVersion: 2,
+        type: 'turnChanged',
+        payload: { fromPlayerId: 'p1', toPlayerId: 'p2' },
+        createdAt: '2026-08-24T00:00:00.000Z',
+      }],
       ack: { actionId: 'a1', stateVersion: 2, lastSequence: 3 },
     })).toEqual(expect.objectContaining({ ok: true }));
     expect(gameCommandResultSchema.parse({

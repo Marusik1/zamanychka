@@ -233,119 +233,6 @@ const pawnRemovedEventSchema = z
   })
   .strict();
 
-const participantJoinedEventSchema = z
-  .object({
-    matchId: id,
-    eventId: id,
-    sequence: version,
-    stateVersion: version,
-    type: z.literal('participantJoined'),
-    payload: z
-      .object({
-        playerId: id,
-      })
-      .strict(),
-    createdAt: z.string().min(1),
-  })
-  .strict();
-
-const participantLeftEventSchema = z
-  .object({
-    matchId: id,
-    eventId: id,
-    sequence: version,
-    stateVersion: version,
-    type: z.literal('participantLeft'),
-    payload: z
-      .object({
-        playerId: id,
-      })
-      .strict(),
-    createdAt: z.string().min(1),
-  })
-  .strict();
-
-const participantReadyChangedEventSchema = z
-  .object({
-    matchId: id,
-    eventId: id,
-    sequence: version,
-    stateVersion: version,
-    type: z.literal('participantReadyChanged'),
-    payload: z
-      .object({
-        playerId: id,
-        ready: z.boolean(),
-      })
-      .strict(),
-    createdAt: z.string().min(1),
-  })
-  .strict();
-
-const matchReadyEventSchema = z
-  .object({
-    matchId: id,
-    eventId: id,
-    sequence: version,
-    stateVersion: version,
-    type: z.literal('matchReady'),
-    payload: z
-      .object({
-        matchId: id,
-      })
-      .strict(),
-    createdAt: z.string().min(1),
-  })
-  .strict();
-
-const matchWaitingEventSchema = z
-  .object({
-    matchId: id,
-    eventId: id,
-    sequence: version,
-    stateVersion: version,
-    type: z.literal('matchWaiting'),
-    payload: z
-      .object({
-        matchId: id,
-      })
-      .strict(),
-    createdAt: z.string().min(1),
-  })
-  .strict();
-
-const matchStartedEventSchema = z
-  .object({
-    matchId: id,
-    eventId: id,
-    sequence: version,
-    stateVersion: version,
-    type: z.literal('matchStarted'),
-    payload: z
-      .object({
-        matchId: id,
-      })
-      .strict(),
-    createdAt: z.string().min(1),
-  })
-  .strict();
-
-const matchAbandonedEventSchema = z
-  .object({
-    matchId: id,
-    eventId: id,
-    sequence: version,
-    stateVersion: version,
-    type: z.literal('matchAbandoned'),
-    payload: z
-      .object({
-        matchId: id,
-      })
-      .strict(),
-    createdAt: z.string().min(1),
-  })
-  .strict();
-
 const extraRollGrantedEventSchema = z
   .object({
     matchId: id,
@@ -397,13 +284,6 @@ const gameWonEventSchema = z
   .strict();
 
 export const gameEventEnvelopeSchema = z.discriminatedUnion('type', [
-  participantJoinedEventSchema,
-  participantLeftEventSchema,
-  participantReadyChangedEventSchema,
-  matchReadyEventSchema,
-  matchWaitingEventSchema,
-  matchStartedEventSchema,
-  matchAbandonedEventSchema,
   diceRolledEventSchema,
   pawnEnteredEventSchema,
   pawnMovedEventSchema,
@@ -426,14 +306,29 @@ export const transitionEnvelopeSchema = z
     toSequence: version,
     events: z.array(gameEventEnvelopeSchema),
     watermark: gameWatermarkSchema,
-    snapshot: z.object({}).passthrough(),
+    snapshot: matchSnapshotSchema,
   })
   .strict()
   .superRefine((value, ctx) => {
+    if (value.events.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'transitions must contain at least one committed event',
+      });
+      return;
+    }
+
     if (value.fromSequence > value.toSequence) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'fromSequence must be less than or equal to toSequence',
+      });
+    }
+
+    if (value.events.length !== value.toSequence - value.fromSequence + 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'events must cover the declared sequence range exactly',
       });
     }
 
@@ -447,42 +342,35 @@ export const transitionEnvelopeSchema = z
       });
     }
 
-    if (value.events.length > 0) {
-      const eventSequences = value.events.map((event) => event.sequence);
-      const firstSequence = value.events[0]!.sequence;
-      const lastSequence = value.events[value.events.length - 1]!.sequence;
+    const eventSequences = value.events.map((event) => event.sequence);
+    const firstSequence = value.events[0]!.sequence;
+    const lastSequence = value.events[value.events.length - 1]!.sequence;
 
-      if (firstSequence !== value.fromSequence || lastSequence !== value.toSequence) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'events must span the declared sequence range',
-        });
-      }
-
-      for (let index = 1; index < eventSequences.length; index += 1) {
-        if (eventSequences[index] !== eventSequences[index - 1]! + 1) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: 'events must be strictly contiguous and ordered',
-          });
-          break;
-        }
-      }
-
-      for (const event of value.events) {
-        if (event.matchId !== value.matchId || event.stateVersion !== value.stateVersion) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: 'events must match the transition identity',
-          });
-          break;
-        }
-      }
-    } else if (value.fromSequence !== value.toSequence) {
+    if (firstSequence !== value.fromSequence || lastSequence !== value.toSequence) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'empty transitions must not claim a non-zero sequence range',
+        message: 'events must span the declared sequence range',
       });
+    }
+
+    for (let index = 1; index < eventSequences.length; index += 1) {
+      if (eventSequences[index] !== eventSequences[index - 1]! + 1) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'events must be strictly contiguous and ordered',
+        });
+        break;
+      }
+    }
+
+    for (const event of value.events) {
+      if (event.matchId !== value.matchId || event.stateVersion !== value.stateVersion) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'events must match the transition identity',
+        });
+        break;
+      }
     }
   });
 
@@ -503,21 +391,26 @@ const success = z
     lastSequence: version,
     snapshot: matchSnapshotSchema,
     events: z.array(gameEventEnvelopeSchema),
-    ack: gameAckMetadataSchema.optional(),
+    ack: gameAckMetadataSchema,
   })
   .strict()
   .superRefine((value, ctx) => {
-    if (value.ack) {
-      if (
-        value.ack.actionId !== value.actionId ||
-        value.ack.stateVersion !== value.stateVersion ||
-        value.ack.lastSequence !== value.lastSequence
-      ) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'ack metadata must match the command result',
-        });
-      }
+    if (
+      value.ack.actionId !== value.actionId ||
+      value.ack.stateVersion !== value.stateVersion ||
+      value.ack.lastSequence !== value.lastSequence
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'ack metadata must match the command result',
+      });
+    }
+
+    if (value.events.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'successful command results must include committed events',
+      });
     }
   });
 
