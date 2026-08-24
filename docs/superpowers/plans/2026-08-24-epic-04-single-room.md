@@ -91,7 +91,7 @@ git add apps/api/prisma/schema.prisma apps/api/src/rooms/room-repository.ts apps
 git commit -m "feat(rooms): persist the single game room"
 ```
 
-### Task 3: Seat lifecycle and presence handling
+### Task 3: Seat lifecycle, readiness, and presence handling
 
 **Files:**
 - Create: `apps/api/src/rooms/room-service.ts`
@@ -104,6 +104,7 @@ Cover:
 - take seat into one free slot;
 - reject duplicate seat claims deterministically;
 - leave seat before start;
+- set ready/unready for the seated participant;
 - reconnect reattaches the same authenticated user to the same seat;
 - disconnect does not release the seat;
 - disconnect does not clear readiness;
@@ -117,7 +118,7 @@ Expected: fail until the lifecycle service is implemented.
 
 - [ ] **Step 3: Implement seat lifecycle rules**
 
-Implement a single-room service that updates persistence through one serialized room state boundary. Keep presence ephemeral and separate from durable seat/ready state.
+Implement a single-room service that updates persistence through one serialized room state boundary. Keep presence ephemeral and separate from durable seat/ready state. This task also owns `SET_READY` business logic.
 
 - [ ] **Step 4: Run the focused room-service tests again**
 
