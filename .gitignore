@@ -12,4 +12,7 @@ coverage/
 .superpowers/
 .worktrees/
 apps/api/src/generated/prisma/
+packages/game-engine/src/**/*.js
+packages/game-engine/src/**/*.d.ts
+packages/game-engine/src/**/*.d.ts.map
 artifacts/tmp/

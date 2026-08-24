@@ -1,5 +1,9 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": { "noEmit": false, "outDir": "dist", "rootDir": "src" },
+  "references": [
+    { "path": "../../packages/game-engine/tsconfig.build.json" },
+    { "path": "../../packages/shared/tsconfig.build.json" }
+  ],
   "exclude": ["src/**/*.test.ts", "prisma.config.ts", "prisma.test.config.ts", "vite*.config.ts"]
 }
