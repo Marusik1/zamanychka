@@ -10,6 +10,7 @@ import type {
   PawnState,
   WinReason,
 } from '../domain/types.js';
+import { gameEvents } from '../events/events.js';
 import { canMovePawn } from '../movement/move-legality.js';
 import { getNextActivePlayerId } from '../turns/turn-rotation.js';
 import { isWinningState, projectTerminalState } from './victory.js';
@@ -150,8 +151,8 @@ function enterPawnTransition(state: GameState, command: Extract<GameCommand, { t
   };
 
   const events: GameEvent[] = [
-    { type: 'pawnEntered', pawnId: pawn.pawnId, playerId: pawn.playerId },
-    { type: 'extraRollGranted', playerId: pawn.playerId },
+    gameEvents.pawnEntered(pawn.pawnId, pawn.playerId),
+    gameEvents.extraRollGranted(pawn.playerId),
   ];
 
   if (isWinningState(enteredState, pawn.playerId)) {
@@ -160,7 +161,7 @@ function enterPawnTransition(state: GameState, command: Extract<GameCommand, { t
     return {
       ok: true,
       state: incrementStateVersion(terminal),
-      events: [...events, { type: 'gameWon', winnerPlayerId: pawn.playerId, reason }],
+      events: [...events, gameEvents.gameWon(pawn.playerId, reason)],
       legalActions: [],
     };
   }
@@ -235,26 +236,22 @@ function movePawnTransition(state: GameState, command: Extract<GameCommand, { ty
   const capturedOccupant = destinationOccupants.find((occupant) => occupant.playerId !== pawn.playerId && occupant.zone === 'PERIMETER') ?? null;
 
   let movedState = updatePawnPosition(state, pawn.pawnId, nextPosition);
-  const events: GameEvent[] = [{ type: 'pawnMoved', pawnId: pawn.pawnId, playerId: pawn.playerId }];
+  const events: GameEvent[] = [gameEvents.pawnMoved(pawn.pawnId, pawn.playerId)];
 
   if (capturedOccupant) {
     movedState = moveCapturedPawnOffBoard(movedState, capturedOccupant.pawnId);
-    events.push({
-      type: 'pawnCaptured',
-      pawnId: pawn.pawnId,
-      playerId: pawn.playerId,
-      capturedPawnId: capturedOccupant.pawnId,
-      capturedPlayerId: capturedOccupant.playerId,
-    });
+    events.push(
+      gameEvents.pawnCaptured(
+        pawn.pawnId,
+        pawn.playerId,
+        capturedOccupant.pawnId,
+        capturedOccupant.playerId,
+      ),
+    );
   }
 
   if (pawn.position.zone === 'PERIMETER' && nextPosition.zone === 'HOME') {
-    events.push({
-      type: 'pawnEnteredHome',
-      pawnId: pawn.pawnId,
-      playerId: pawn.playerId,
-      homeIndex: nextPosition.homeIndex,
-    });
+    events.push(gameEvents.pawnEnteredHome(pawn.pawnId, pawn.playerId, nextPosition.homeIndex));
   }
 
   const nextStateWithoutVersion: GameState =
@@ -279,20 +276,21 @@ function movePawnTransition(state: GameState, command: Extract<GameCommand, { ty
     return {
       ok: true,
       state: incrementStateVersion(terminal),
-      events: [...events, { type: 'gameWon', winnerPlayerId: pawn.playerId, reason }],
+      events: [...events, gameEvents.gameWon(pawn.playerId, reason)],
       legalActions: [],
     };
   }
 
   if (state.diceValue === 6) {
-    events.push({ type: 'extraRollGranted', playerId: pawn.playerId });
+    events.push(gameEvents.extraRollGranted(pawn.playerId));
   } else {
-    events.push({
-      type: 'turnChanged',
-      fromPlayerId: pawn.playerId,
-      toPlayerId: nextStateWithoutVersion.currentPlayerId ?? pawn.playerId,
-      turnNumber: nextStateWithoutVersion.turnNumber,
-    });
+    events.push(
+      gameEvents.turnChanged(
+        pawn.playerId,
+        nextStateWithoutVersion.currentPlayerId ?? pawn.playerId,
+        nextStateWithoutVersion.turnNumber,
+      ),
+    );
   }
 
   return {

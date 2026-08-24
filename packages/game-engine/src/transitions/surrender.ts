@@ -1,6 +1,7 @@
 import type { GameCommand, GameEvent, GameState, GameTransitionErrorCode, GameTransitionResult, PawnState, PlayerState } from '../domain/types.js';
 import { getLegalActions } from '../actions/legal-actions.js';
 import { getOccupancy } from '../board/occupancy.js';
+import { gameEvents } from '../events/events.js';
 import { getNextActivePlayerId } from '../turns/turn-rotation.js';
 import { isWinningState, projectTerminalState } from './victory.js';
 
@@ -76,11 +77,11 @@ export function surrenderTransition(state: GameState, command: Extract<GameComma
 
   const removedState = removePlayerPawns(surrenderedState, context.actorPlayerId);
   const events: GameEvent[] = [
-    { type: 'playerSurrendered', playerId: context.actorPlayerId },
+    gameEvents.playerSurrendered(context.actorPlayerId),
     ...[...state.pawns]
       .filter((pawn) => pawn.playerId === context.actorPlayerId)
       .sort((left, right) => left.pawnId.localeCompare(right.pawnId))
-      .map((pawn) => ({ type: 'pawnRemoved', pawnId: pawn.pawnId, playerId: pawn.playerId }) as const),
+      .map((pawn) => gameEvents.pawnRemoved(pawn.pawnId, pawn.playerId)),
   ];
 
   const terminal = terminalizeIfNeeded(removedState);
@@ -88,7 +89,7 @@ export function surrenderTransition(state: GameState, command: Extract<GameComma
     return {
       ok: true,
       state: incrementStateVersion(terminal),
-      events: [...events, { type: 'gameWon', winnerPlayerId: terminal.winnerPlayerId!, reason: 'LAST_ACTIVE_PLAYER' }],
+      events: [...events, gameEvents.gameWon(terminal.winnerPlayerId!, 'LAST_ACTIVE_PLAYER')],
       legalActions: [],
     };
   }
@@ -116,12 +117,7 @@ export function surrenderTransition(state: GameState, command: Extract<GameComma
     state.currentPlayerId === context.actorPlayerId
       ? nextCurrentPlayerId
         ? [
-            {
-              type: 'turnChanged',
-              fromPlayerId: context.actorPlayerId,
-              toPlayerId: nextCurrentPlayerId,
-              turnNumber: nextState.turnNumber,
-            } as const,
+            gameEvents.turnChanged(context.actorPlayerId, nextCurrentPlayerId, nextState.turnNumber),
           ]
         : []
       : [];

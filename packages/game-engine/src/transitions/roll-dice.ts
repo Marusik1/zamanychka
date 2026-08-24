@@ -1,6 +1,7 @@
 import type { GameEvent, GameState, GameTransitionError, GameTransitionResult, GameTransitionSuccess } from '../domain/types.js';
 import { getLegalActions, getLegalTurnActions } from '../actions/legal-actions.js';
 import { getNextActivePlayerId } from '../turns/turn-rotation.js';
+import { gameEvents } from '../events/events.js';
 
 function failure(code: GameTransitionError['code'], message: string): GameTransitionError {
   return { ok: false, code, message };
@@ -80,7 +81,7 @@ export function rollDiceTransition(
   );
   const moveActions = turnActions.filter((action) => action.type === 'ENTER_PAWN' || action.type === 'MOVE_PAWN');
 
-  const diceRolledEvent: GameEvent = { type: 'diceRolled', diceValue: rolled };
+  const diceRolledEvent: GameEvent = gameEvents.diceRolled(rolled);
 
   if (moveActions.length > 0) {
     const nextState: GameState = {
@@ -103,7 +104,7 @@ export function rollDiceTransition(
     };
     return success(
       nextState,
-      [diceRolledEvent, { type: 'extraRollGranted', playerId: command.actorPlayerId }],
+      [diceRolledEvent, gameEvents.extraRollGranted(command.actorPlayerId)],
       getLegalActions(nextState, command.actorPlayerId),
     );
   }
@@ -123,7 +124,7 @@ export function rollDiceTransition(
 
   return success(
     nextState,
-    [diceRolledEvent, { type: 'turnChanged', fromPlayerId: command.actorPlayerId, toPlayerId: nextPlayerId, turnNumber: nextState.turnNumber }],
+    [diceRolledEvent, gameEvents.turnChanged(command.actorPlayerId, nextPlayerId, nextState.turnNumber)],
     getLegalActions(nextState, nextPlayerId),
   );
 }
