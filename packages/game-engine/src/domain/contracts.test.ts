@@ -9,4 +9,3 @@ describe('canonical contracts', () => {
     expectTypeOf<contracts.GameTransitionResult>().toEqualTypeOf<GameTransitionResult>();
   });
 });
-

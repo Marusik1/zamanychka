@@ -9,7 +9,9 @@ import {
 describe('perimeter mapping', () => {
   it('defines the normalized 28-cell clockwise perimeter exactly once', () => {
     expect(NORMALIZED_PERIMETER_COORDS).toHaveLength(28);
-    expect(new Set(NORMALIZED_PERIMETER_COORDS.map((coord) => `${coord.row},${coord.col}`)).size).toBe(28);
+    expect(
+      new Set(NORMALIZED_PERIMETER_COORDS.map((coord) => `${coord.row},${coord.col}`)).size,
+    ).toBe(28);
     expect(NORMALIZED_PERIMETER_COORDS).toEqual([
       { row: 0, col: 0 },
       { row: 0, col: 1 },

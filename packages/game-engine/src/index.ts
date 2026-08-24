@@ -1,36 +1,17 @@
-export {
-  createActiveGameState,
-} from './domain/create-active-game-state.js';
+export { createActiveGameState } from './domain/create-active-game-state.js';
 export {
   NORMALIZED_PERIMETER_COORDS,
   PERIMETER_OFFSETS,
   resolvePerimeterCoord,
   resolvePerimeterIndex,
 } from './board/perimeter.js';
-export {
-  getOccupancy,
-} from './board/occupancy.js';
-export {
-  HOME_COORDS,
-  resolveHomeCoord,
-  resolvePawnCoordinate,
-} from './board/home.js';
-export {
-  getNextActivePlayerId,
-} from './turns/turn-rotation.js';
-export {
-  canMovePawn,
-} from './movement/move-legality.js';
-export {
-  resolvePhysicalPath,
-} from './movement/path.js';
-export {
-  transition,
-} from './transitions/transition.js';
-export {
-  isWinningState,
-  projectTerminalState,
-} from './transitions/victory.js';
+export { getOccupancy } from './board/occupancy.js';
+export { HOME_COORDS, resolveHomeCoord, resolvePawnCoordinate } from './board/home.js';
+export { getNextActivePlayerId } from './turns/turn-rotation.js';
+export { canMovePawn } from './movement/move-legality.js';
+export { resolvePhysicalPath } from './movement/path.js';
+export { transition } from './transitions/transition.js';
+export { isWinningState, projectTerminalState } from './transitions/victory.js';
 export type {
   BoardCoord,
   CreateActiveGameStateConfig,

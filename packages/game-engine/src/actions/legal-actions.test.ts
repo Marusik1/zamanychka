@@ -43,11 +43,16 @@ describe('legal actions', () => {
       firstPlayerId: 'p1',
       seatOrder: ['p1', 'p2'],
     });
+    const firstPlayer = base.players[0];
+    const secondPlayer = base.players[1];
+    if (!firstPlayer || !secondPlayer) {
+      throw new Error('expected two players');
+    }
     const state = {
       ...base,
       players: [
-        { ...base.players[0], status: 'SURRENDERED' as const, playerId: base.players[0]!.playerId, color: base.players[0]!.color, seatIndex: base.players[0]!.seatIndex },
-        { ...base.players[1], status: 'FINISHED' as const, playerId: base.players[1]!.playerId, color: base.players[1]!.color, seatIndex: base.players[1]!.seatIndex },
+        { ...firstPlayer, status: 'SURRENDERED' as const },
+        { ...secondPlayer, status: 'FINISHED' as const },
       ],
     };
 

@@ -40,8 +40,13 @@ describe('physical path resolution', () => {
       'p1-pawn-1',
       { zone: 'PERIMETER', progress: 0 } as const,
     );
-    expect(resolvePhysicalPath(state, 'p1-pawn-1', 4)).toEqual(resolvePhysicalPath(state, 'p1-pawn-1', 4));
-    expect(state.pawns.find((pawn) => pawn.pawnId === 'p1-pawn-1')?.position).toEqual({ zone: 'PERIMETER', progress: 0 });
+    expect(resolvePhysicalPath(state, 'p1-pawn-1', 4)).toEqual(
+      resolvePhysicalPath(state, 'p1-pawn-1', 4),
+    );
+    expect(state.pawns.find((pawn) => pawn.pawnId === 'p1-pawn-1')?.position).toEqual({
+      zone: 'PERIMETER',
+      progress: 0,
+    });
   });
 
   it('walks from perimeter progress 27 into home 0 and onward without wrapping', () => {
@@ -98,8 +103,14 @@ describe('physical path resolution', () => {
       'p1-pawn-1',
       { zone: 'PERIMETER', progress: 6 } as const,
     );
-    const ownOccupant = setPawnPosition(blockedByOwn, 'p1-pawn-2', { zone: 'PERIMETER', progress: 7 } as const);
-    const opponentOccupant = setPawnPosition(ownOccupant, 'p2-pawn-1', { zone: 'PERIMETER', progress: 0 } as const);
+    const ownOccupant = setPawnPosition(blockedByOwn, 'p1-pawn-2', {
+      zone: 'PERIMETER',
+      progress: 7,
+    } as const);
+    const opponentOccupant = setPawnPosition(ownOccupant, 'p2-pawn-1', {
+      zone: 'PERIMETER',
+      progress: 0,
+    } as const);
 
     expect(resolvePhysicalPath(opponentOccupant, 'p1-pawn-1', 2)).toBeNull();
   });

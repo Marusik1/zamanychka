@@ -27,7 +27,11 @@ describe('game transition error helpers', () => {
       seatOrder: ['p1', 'p2'],
     });
     const snapshot = structuredClone(state);
-    const result = transition(state, { type: 'SURRENDER', actorPlayerId: 'p3', matchId: 'm1', expectedStateVersion: 0 }, { actorPlayerId: 'p3' });
+    const result = transition(
+      state,
+      { type: 'SURRENDER', actorPlayerId: 'p3', matchId: 'm1', expectedStateVersion: 0 },
+      { actorPlayerId: 'p3' },
+    );
 
     expect(result).toEqual({
       ok: false,
@@ -36,7 +40,11 @@ describe('game transition error helpers', () => {
     });
     expect(state).toEqual(snapshot);
     expect(
-      transition(state, { type: 'SURRENDER', actorPlayerId: 'p3', matchId: 'm1', expectedStateVersion: 0 }, { actorPlayerId: 'p3' }),
+      transition(
+        state,
+        { type: 'SURRENDER', actorPlayerId: 'p3', matchId: 'm1', expectedStateVersion: 0 },
+        { actorPlayerId: 'p3' },
+      ),
     ).toEqual(result);
   });
 
@@ -52,9 +60,27 @@ describe('game transition error helpers', () => {
     );
     const snapshot = structuredClone(state);
 
-    const stale = transition(state, { type: 'ROLL_DICE', actorPlayerId: 'p1', matchId: 'm1', expectedStateVersion: 1 }, { actorPlayerId: 'p1', diceValue: 1 });
-    const wrongPhase = transition({ ...state, turnPhase: 'WAITING_FOR_ACTION', diceValue: 1 }, { type: 'ROLL_DICE', actorPlayerId: 'p1', matchId: 'm1', expectedStateVersion: 0 }, { actorPlayerId: 'p1', diceValue: 1 });
-    const missingDice = transition({ ...state, turnPhase: 'WAITING_FOR_ACTION', diceValue: null }, { type: 'MOVE_PAWN', actorPlayerId: 'p1', matchId: 'm1', pawnId: 'p1-pawn-1', expectedStateVersion: 0 }, { actorPlayerId: 'p1' });
+    const stale = transition(
+      state,
+      { type: 'ROLL_DICE', actorPlayerId: 'p1', matchId: 'm1', expectedStateVersion: 1 },
+      { actorPlayerId: 'p1', diceValue: 1 },
+    );
+    const wrongPhase = transition(
+      { ...state, turnPhase: 'WAITING_FOR_ACTION', diceValue: 1 },
+      { type: 'ROLL_DICE', actorPlayerId: 'p1', matchId: 'm1', expectedStateVersion: 0 },
+      { actorPlayerId: 'p1', diceValue: 1 },
+    );
+    const missingDice = transition(
+      { ...state, turnPhase: 'WAITING_FOR_ACTION', diceValue: null },
+      {
+        type: 'MOVE_PAWN',
+        actorPlayerId: 'p1',
+        matchId: 'm1',
+        pawnId: 'p1-pawn-1',
+        expectedStateVersion: 0,
+      },
+      { actorPlayerId: 'p1' },
+    );
 
     expect(stale.ok).toBe(false);
     expect(wrongPhase.ok).toBe(false);

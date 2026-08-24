@@ -1,7 +1,9 @@
 import type { GameState } from '../domain/types.js';
 
 export function getNextActivePlayerId(state: GameState, fromPlayerId: string): string | null {
-  const seatOrderedPlayers = [...state.players].sort((left, right) => left.seatIndex - right.seatIndex);
+  const seatOrderedPlayers = [...state.players].sort(
+    (left, right) => left.seatIndex - right.seatIndex,
+  );
   if (seatOrderedPlayers.length === 0) {
     return null;
   }
@@ -12,7 +14,10 @@ export function getNextActivePlayerId(state: GameState, fromPlayerId: string): s
   }
 
   for (let step = 1; step <= seatOrderedPlayers.length; step += 1) {
-    const candidate = seatOrderedPlayers[(fromIndex + step) % seatOrderedPlayers.length]!;
+    const candidate = seatOrderedPlayers[(fromIndex + step) % seatOrderedPlayers.length];
+    if (!candidate) {
+      return null;
+    }
     if (candidate.status === 'ACTIVE') {
       return candidate.playerId;
     }

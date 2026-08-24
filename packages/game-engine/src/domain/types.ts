@@ -115,8 +115,19 @@ export type GameEvent =
   | Readonly<{ type: 'turnChanged'; fromPlayerId: string; toPlayerId: string; turnNumber: number }>
   | Readonly<{ type: 'pawnEntered'; pawnId: string; playerId: string }>
   | Readonly<{ type: 'pawnMoved'; pawnId: string; playerId: string }>
-  | Readonly<{ type: 'pawnEnteredHome'; pawnId: string; playerId: string; homeIndex: 0 | 1 | 2 | 3 }>
-  | Readonly<{ type: 'pawnCaptured'; pawnId: string; playerId: string; capturedPawnId: string; capturedPlayerId: string }>
+  | Readonly<{
+      type: 'pawnEnteredHome';
+      pawnId: string;
+      playerId: string;
+      homeIndex: 0 | 1 | 2 | 3;
+    }>
+  | Readonly<{
+      type: 'pawnCaptured';
+      pawnId: string;
+      playerId: string;
+      capturedPawnId: string;
+      capturedPlayerId: string;
+    }>
   | Readonly<{ type: 'pawnRemoved'; pawnId: string; playerId: string }>
   | Readonly<{ type: 'playerSurrendered'; playerId: string }>
   | Readonly<{ type: 'gameWon'; winnerPlayerId: string; reason: WinReason }>;
@@ -152,6 +163,9 @@ export type GameTransitionResult = GameTransitionSuccess | GameTransitionError;
 
 export type CreateActiveGameStateConfig = Readonly<{
   playerCount: PlayerCount;
-  seatOrder: readonly [string, string] | readonly [string, string, string] | readonly [string, string, string, string];
+  seatOrder:
+    | readonly [string, string]
+    | readonly [string, string, string]
+    | readonly [string, string, string, string];
   firstPlayerId: string;
 }>;

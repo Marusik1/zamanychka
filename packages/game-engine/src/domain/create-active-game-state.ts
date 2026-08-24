@@ -1,4 +1,10 @@
-import type { CreateActiveGameStateConfig, GameState, PawnState, PlayerColor, PlayerState } from './types.js';
+import type {
+  CreateActiveGameStateConfig,
+  GameState,
+  PawnState,
+  PlayerColor,
+  PlayerState,
+} from './types.js';
 
 const COLOR_BY_PLAYER_COUNT: Record<2 | 3 | 4, readonly PlayerColor[]> = {
   2: ['RED', 'YELLOW'],
@@ -25,8 +31,11 @@ function createPlayers(config: CreateActiveGameStateConfig): readonly PlayerStat
   const players: PlayerState[] = [];
 
   for (let index = 0; index < config.seatOrder.length; index += 1) {
-    const playerId = config.seatOrder[index]!;
-    const color = colors[index]!;
+    const playerId = config.seatOrder[index];
+    const color = colors[index];
+    if (!playerId || !color) {
+      throw new Error('invalid seat order or player color mapping');
+    }
     players.push({
       playerId,
       color,

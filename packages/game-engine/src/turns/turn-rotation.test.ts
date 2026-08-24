@@ -4,7 +4,7 @@ import { getNextActivePlayerId } from './turn-rotation.js';
 
 function withStatuses(
   state: ReturnType<typeof createActiveGameState>,
-  statuses: Array<'ACTIVE' | 'SURRENDERED' | 'FINISHED'>,
+  statuses: ('ACTIVE' | 'SURRENDERED' | 'FINISHED')[],
 ) {
   return {
     ...state,
@@ -81,7 +81,12 @@ describe('turn rotation', () => {
       }),
       ['ACTIVE', 'SURRENDERED', 'SURRENDERED', 'SURRENDERED'],
     );
-    const noneActive = withStatuses(oneActive, ['SURRENDERED', 'SURRENDERED', 'SURRENDERED', 'SURRENDERED']);
+    const noneActive = withStatuses(oneActive, [
+      'SURRENDERED',
+      'SURRENDERED',
+      'SURRENDERED',
+      'SURRENDERED',
+    ]);
 
     expect(getNextActivePlayerId(oneActive, 'p2')).toBe('p1');
     expect(getNextActivePlayerId(noneActive, 'p1')).toBeNull();

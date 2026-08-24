@@ -1,4 +1,10 @@
-import type { GameEvent, GameState, GameTransitionError, GameTransitionResult, GameTransitionSuccess } from '../domain/types.js';
+import type {
+  GameEvent,
+  GameState,
+  GameTransitionError,
+  GameTransitionResult,
+  GameTransitionSuccess,
+} from '../domain/types.js';
 import { getLegalActions, getLegalTurnActions } from '../actions/legal-actions.js';
 import { getNextActivePlayerId } from '../turns/turn-rotation.js';
 import { gameEvents } from '../events/events.js';
@@ -7,7 +13,11 @@ function failure(code: GameTransitionError['code'], message: string): GameTransi
   return { ok: false, code, message };
 }
 
-function success(state: GameState, events: GameEvent[], legalActions: ReturnType<typeof getLegalActions>): GameTransitionSuccess {
+function success(
+  state: GameState,
+  events: GameEvent[],
+  legalActions: ReturnType<typeof getLegalActions>,
+): GameTransitionSuccess {
   return {
     ok: true,
     state,
@@ -16,7 +26,11 @@ function success(state: GameState, events: GameEvent[], legalActions: ReturnType
   };
 }
 
-function validate(state: GameState, command: { actorPlayerId: string; expectedStateVersion: number }, diceValue: number | undefined): GameTransitionError | null {
+function validate(
+  state: GameState,
+  command: { actorPlayerId: string; expectedStateVersion: number },
+  diceValue: number | undefined,
+): GameTransitionError | null {
   if (state.status !== 'ACTIVE') {
     return failure('MATCH_NOT_ACTIVE', 'match is not active');
   }
@@ -79,7 +93,9 @@ export function rollDiceTransition(
     },
     command.actorPlayerId,
   );
-  const moveActions = turnActions.filter((action) => action.type === 'ENTER_PAWN' || action.type === 'MOVE_PAWN');
+  const moveActions = turnActions.filter(
+    (action) => action.type === 'ENTER_PAWN' || action.type === 'MOVE_PAWN',
+  );
 
   const diceRolledEvent: GameEvent = gameEvents.diceRolled(rolled);
 
@@ -124,7 +140,10 @@ export function rollDiceTransition(
 
   return success(
     nextState,
-    [diceRolledEvent, gameEvents.turnChanged(command.actorPlayerId, nextPlayerId, nextState.turnNumber)],
+    [
+      diceRolledEvent,
+      gameEvents.turnChanged(command.actorPlayerId, nextPlayerId, nextState.turnNumber),
+    ],
     getLegalActions(nextState, nextPlayerId),
   );
 }

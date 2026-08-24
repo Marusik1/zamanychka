@@ -46,7 +46,35 @@ type PawnPosition =
   | { zone: 'OFF_BOARD' }
   | {
       zone: 'PERIMETER';
-      progress: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 | 24 | 25 | 26 | 27;
+      progress:
+        | 0
+        | 1
+        | 2
+        | 3
+        | 4
+        | 5
+        | 6
+        | 7
+        | 8
+        | 9
+        | 10
+        | 11
+        | 12
+        | 13
+        | 14
+        | 15
+        | 16
+        | 17
+        | 18
+        | 19
+        | 20
+        | 21
+        | 22
+        | 23
+        | 24
+        | 25
+        | 26
+        | 27;
     }
   | { zone: 'HOME'; homeIndex: 0 | 1 | 2 | 3 }
   | { zone: 'REMOVED' };
@@ -130,8 +158,20 @@ The engine accepts only these commands:
 ```ts
 type GameCommand =
   | { type: 'ROLL_DICE'; matchId: string; actionId: string; expectedStateVersion: number }
-  | { type: 'ENTER_PAWN'; matchId: string; actionId: string; expectedStateVersion: number; pawnId: string }
-  | { type: 'MOVE_PAWN'; matchId: string; actionId: string; expectedStateVersion: number; pawnId: string }
+  | {
+      type: 'ENTER_PAWN';
+      matchId: string;
+      actionId: string;
+      expectedStateVersion: number;
+      pawnId: string;
+    }
+  | {
+      type: 'MOVE_PAWN';
+      matchId: string;
+      actionId: string;
+      expectedStateVersion: number;
+      pawnId: string;
+    }
   | { type: 'SURRENDER'; matchId: string; actionId: string; expectedStateVersion: number };
 ```
 
@@ -255,12 +295,12 @@ type LegalAction =
 
 The engine must apply legality by command, phase, and server actor:
 
-| Command | Required phase/state | Required actor | Additional legality |
-| --- | --- | --- | --- |
-| `ROLL_DICE` | `ACTIVE` + `WAITING_FOR_ROLL` | current active player | no stored dice |
-| `ENTER_PAWN` | `ACTIVE` + `WAITING_FOR_ACTION` | current active player | stored dice is 6 and exact legal action exists |
-| `MOVE_PAWN` | `ACTIVE` + `WAITING_FOR_ACTION` | current active player | exact legal action exists for the named pawn |
-| `SURRENDER` | `ACTIVE` | any active participant | ignores current-player/turn-phase checks |
+| Command      | Required phase/state            | Required actor         | Additional legality                            |
+| ------------ | ------------------------------- | ---------------------- | ---------------------------------------------- |
+| `ROLL_DICE`  | `ACTIVE` + `WAITING_FOR_ROLL`   | current active player  | no stored dice                                 |
+| `ENTER_PAWN` | `ACTIVE` + `WAITING_FOR_ACTION` | current active player  | stored dice is 6 and exact legal action exists |
+| `MOVE_PAWN`  | `ACTIVE` + `WAITING_FOR_ACTION` | current active player  | exact legal action exists for the named pawn   |
+| `SURRENDER`  | `ACTIVE`                        | any active participant | ignores current-player/turn-phase checks       |
 
 `actorPlayerId` is authoritative server context, not client input.
 

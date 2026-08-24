@@ -1,4 +1,11 @@
-import type { BoardCoord, GameState, LegalAction, PawnPosition, PlayerState } from '../domain/types.js';
+import type {
+  BoardCoord,
+  GameState,
+  LegalAction,
+  PawnPosition,
+  PlayerColor,
+  PlayerState,
+} from '../domain/types.js';
 import { getOccupancy } from '../board/occupancy.js';
 import { resolveHomeCoord, resolvePawnCoordinate } from '../board/home.js';
 import { canMovePawn } from '../movement/move-legality.js';
@@ -64,7 +71,9 @@ function createEnterAction(state: GameState, pawnId: string): LegalAction | null
     return null;
   }
   const occupancy = getOccupancy(state.pawns, state.players);
-  const cell = occupancy.cells.find((candidate) => candidate.coord.row === startCoord.row && candidate.coord.col === startCoord.col);
+  const cell = occupancy.cells.find(
+    (candidate) => candidate.coord.row === startCoord.row && candidate.coord.col === startCoord.col,
+  );
   if (cell && cell.occupants.length > 0) {
     return null;
   }
@@ -119,12 +128,17 @@ function createMoveAction(state: GameState, pawnId: string, distance: number): L
     return null;
   }
 
+  const fromCoord = resolvePawnCoordinate(pawn.position, owner);
+  if (!fromCoord) {
+    return null;
+  }
+
   const action: Extract<LegalAction, { type: 'MOVE_PAWN' }> = {
     type: 'MOVE_PAWN',
     pawnId,
     from: pawn.position,
     to,
-    fromCoord: resolvePawnCoordinate(pawn.position, owner)!,
+    fromCoord,
     toCoord: destination,
     physicalPath: path,
   };
@@ -143,7 +157,11 @@ function createMoveAction(state: GameState, pawnId: string, distance: number): L
   return action;
 }
 
-function nextPawnPosition(position: PawnPosition, color: import('../domain/types.js').PlayerColor, distance: number): PawnPosition | null {
+function nextPawnPosition(
+  position: PawnPosition,
+  color: PlayerColor,
+  distance: number,
+): PawnPosition | null {
   if (!Number.isInteger(distance) || distance <= 0) {
     return null;
   }

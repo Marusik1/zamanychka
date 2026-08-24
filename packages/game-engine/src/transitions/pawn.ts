@@ -32,7 +32,10 @@ function getPawn(state: GameState, pawnId: string) {
   return state.pawns.find((pawn) => pawn.pawnId === pawnId) ?? null;
 }
 
-function isCoordEqual(left: { row: number; col: number }, right: { row: number; col: number }): boolean {
+function isCoordEqual(
+  left: { row: number; col: number },
+  right: { row: number; col: number },
+): boolean {
   return left.row === right.row && left.col === right.col;
 }
 
@@ -41,28 +44,40 @@ function getOccupantsAtCoord(state: GameState, coord: { row: number; col: number
   return occupancy.cells.find((cell) => isCoordEqual(cell.coord, coord))?.occupants ?? [];
 }
 
-function getCurrentTurnAction(state: GameState, command: Extract<GameCommand, { type: 'ENTER_PAWN' | 'MOVE_PAWN' }>) {
+function getCurrentTurnAction(
+  state: GameState,
+  command: Extract<GameCommand, { type: 'ENTER_PAWN' | 'MOVE_PAWN' }>,
+) {
   return getLegalTurnActions(state, command.actorPlayerId).find(
     (action) => action.type === command.type && action.pawnId === command.pawnId,
   );
 }
 
 function hasHomeDiagonalCompleted(state: GameState, playerId: string): boolean {
-  const homePawns = state.pawns.filter((pawn) => pawn.playerId === playerId && pawn.position.zone === 'HOME');
+  const homePawns = state.pawns.filter(
+    (pawn) => pawn.playerId === playerId && pawn.position.zone === 'HOME',
+  );
   if (homePawns.length !== 4) {
     return false;
   }
 
   const homeIndices = new Set<0 | 1 | 2 | 3>(
     homePawns
-      .filter((pawn): pawn is PawnState & { position: Readonly<{ zone: 'HOME'; homeIndex: 0 | 1 | 2 | 3 }> } => pawn.position.zone === 'HOME')
+      .filter(
+        (
+          pawn,
+        ): pawn is PawnState & { position: Readonly<{ zone: 'HOME'; homeIndex: 0 | 1 | 2 | 3 }> } =>
+          pawn.position.zone === 'HOME',
+      )
       .map((pawn) => pawn.position.homeIndex),
   );
   return homeIndices.size === 4;
 }
 
 function determineWinReason(state: GameState, playerId: string): WinReason {
-  return hasHomeDiagonalCompleted(state, playerId) ? 'HOME_DIAGONAL_COMPLETED' : 'LAST_ACTIVE_PLAYER';
+  return hasHomeDiagonalCompleted(state, playerId)
+    ? 'HOME_DIAGONAL_COMPLETED'
+    : 'LAST_ACTIVE_PLAYER';
 }
 
 function incrementStateVersion(state: GameState): GameState {
@@ -72,7 +87,11 @@ function incrementStateVersion(state: GameState): GameState {
   };
 }
 
-function updatePawnPosition(state: GameState, pawnId: string, position: PawnState['position']): GameState {
+function updatePawnPosition(
+  state: GameState,
+  pawnId: string,
+  position: PawnState['position'],
+): GameState {
   return {
     ...state,
     pawns: state.pawns.map((pawn) => (pawn.pawnId === pawnId ? { ...pawn, position } : pawn)),
@@ -83,7 +102,10 @@ function moveCapturedPawnOffBoard(state: GameState, pawnId: string): GameState {
   return updatePawnPosition(state, pawnId, { zone: 'OFF_BOARD' });
 }
 
-function advancePosition(position: PawnState['position'], distance: number): PawnState['position'] | null {
+function advancePosition(
+  position: PawnState['position'],
+  distance: number,
+): PawnState['position'] | null {
   if (position.zone === 'PERIMETER') {
     const total = position.progress + distance;
     if (total <= 27) {
@@ -101,7 +123,11 @@ function advancePosition(position: PawnState['position'], distance: number): Paw
   return null;
 }
 
-function enterPawnTransition(state: GameState, command: Extract<GameCommand, { type: 'ENTER_PAWN' }>, context: { actorPlayerId: string; diceValue?: 1 | 2 | 3 | 4 | 5 | 6 }): GameTransitionResult {
+function enterPawnTransition(
+  state: GameState,
+  command: Extract<GameCommand, { type: 'ENTER_PAWN' }>,
+  context: { actorPlayerId: string; diceValue?: 1 | 2 | 3 | 4 | 5 | 6 },
+): GameTransitionResult {
   const actor = getPlayer(state, context.actorPlayerId);
   if (state.status !== 'ACTIVE') {
     return fail('MATCH_NOT_ACTIVE', 'match must be active');
@@ -174,7 +200,11 @@ function enterPawnTransition(state: GameState, command: Extract<GameCommand, { t
   };
 }
 
-function movePawnTransition(state: GameState, command: Extract<GameCommand, { type: 'MOVE_PAWN' }>, context: { actorPlayerId: string; diceValue?: 1 | 2 | 3 | 4 | 5 | 6 }): GameTransitionResult {
+function movePawnTransition(
+  state: GameState,
+  command: Extract<GameCommand, { type: 'MOVE_PAWN' }>,
+  context: { actorPlayerId: string; diceValue?: 1 | 2 | 3 | 4 | 5 | 6 },
+): GameTransitionResult {
   const actor = getPlayer(state, context.actorPlayerId);
   if (state.status !== 'ACTIVE') {
     return fail('MATCH_NOT_ACTIVE', 'match must be active');
@@ -217,13 +247,22 @@ function movePawnTransition(state: GameState, command: Extract<GameCommand, { ty
     return fail('ILLEGAL_MOVE', 'path is not legally resolvable');
   }
 
-  const destination = path[path.length - 1]!;
-  const destinationOccupants = getOccupantsAtCoord(state, destination).filter((occupant) => occupant.pawnId !== pawn.pawnId);
+  const destination = path[path.length - 1];
+  if (!destination) {
+    return fail('ILLEGAL_MOVE', 'path is not legally resolvable');
+  }
+  const destinationOccupants = getOccupantsAtCoord(state, destination).filter(
+    (occupant) => occupant.pawnId !== pawn.pawnId,
+  );
   const ownOccupant = destinationOccupants.find((occupant) => occupant.playerId === pawn.playerId);
   if (ownOccupant) {
     return fail('ILLEGAL_MOVE', 'destination is occupied by own pawn');
   }
-  if (destinationOccupants.some((occupant) => occupant.zone === 'HOME' && occupant.playerId !== pawn.playerId)) {
+  if (
+    destinationOccupants.some(
+      (occupant) => occupant.zone === 'HOME' && occupant.playerId !== pawn.playerId,
+    )
+  ) {
     return fail('ILLEGAL_MOVE', 'home occupancy blocks the route');
   }
 
@@ -233,7 +272,10 @@ function movePawnTransition(state: GameState, command: Extract<GameCommand, { ty
     return fail('ILLEGAL_MOVE', 'destination overflows home path');
   }
 
-  const capturedOccupant = destinationOccupants.find((occupant) => occupant.playerId !== pawn.playerId && occupant.zone === 'PERIMETER') ?? null;
+  const capturedOccupant =
+    destinationOccupants.find(
+      (occupant) => occupant.playerId !== pawn.playerId && occupant.zone === 'PERIMETER',
+    ) ?? null;
 
   let movedState = updatePawnPosition(state, pawn.pawnId, nextPosition);
   const events: GameEvent[] = [gameEvents.pawnMoved(pawn.pawnId, pawn.playerId)];
@@ -297,7 +339,10 @@ function movePawnTransition(state: GameState, command: Extract<GameCommand, { ty
     ok: true,
     state: incrementStateVersion(nextStateWithoutVersion),
     events,
-    legalActions: getLegalActions(nextStateWithoutVersion, nextStateWithoutVersion.currentPlayerId ?? pawn.playerId),
+    legalActions: getLegalActions(
+      nextStateWithoutVersion,
+      nextStateWithoutVersion.currentPlayerId ?? pawn.playerId,
+    ),
   };
 }
 

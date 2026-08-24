@@ -1,4 +1,4 @@
-import type { BoardCoord, PawnState } from '../domain/types.js';
+import type { BoardCoord, PawnState, PlayerColor } from '../domain/types.js';
 import { resolvePawnCoordinate } from './home.js';
 
 export type OccupancyOccupant = Readonly<{
@@ -26,7 +26,7 @@ export type OccupancyResult = Readonly<{
 
 export function getOccupancy(
   pawns: readonly PawnState[],
-  players: readonly { playerId: string; color: import('../domain/types.js').PlayerColor }[],
+  players: readonly { playerId: string; color: PlayerColor }[],
 ): OccupancyResult {
   const playersById = new Map(players.map((player) => [player.playerId, player] as const));
   const cells = new Map<string, OccupancyOccupant[]>();
@@ -45,7 +45,10 @@ export function getOccupancy(
       playerId: pawn.playerId,
       pawnId: pawn.pawnId,
       zone: pawn.position.zone,
-      semanticZone: pawn.position.zone === 'PERIMETER' && pawn.position.progress === 0 ? 'PERIMETER' : pawn.position.zone,
+      semanticZone:
+        pawn.position.zone === 'PERIMETER' && pawn.position.progress === 0
+          ? 'PERIMETER'
+          : pawn.position.zone,
       coord,
     };
     const existing = cells.get(key);
@@ -71,4 +74,3 @@ export function getOccupancy(
     conflicts: orderedCells.filter((cell) => cell.occupants.length > 1),
   };
 }
-

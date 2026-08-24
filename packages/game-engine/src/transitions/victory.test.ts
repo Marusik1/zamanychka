@@ -10,10 +10,16 @@ function setPawnPosition(state: GameState, pawnId: string, position: PawnPositio
   };
 }
 
-function setPlayerStatus(state: GameState, playerId: string, status: GameState['players'][number]['status']): GameState {
+function setPlayerStatus(
+  state: GameState,
+  playerId: string,
+  status: GameState['players'][number]['status'],
+): GameState {
   return {
     ...state,
-    players: state.players.map((player) => (player.playerId === playerId ? { ...player, status } : player)),
+    players: state.players.map((player) =>
+      player.playerId === playerId ? { ...player, status } : player,
+    ),
   };
 }
 
@@ -39,10 +45,24 @@ describe('victory helper', () => {
     );
 
     expect(isWinningState(winning, 'p1')).toBe(true);
-    expect(isWinningState(setPawnPosition(winning, 'p1-pawn-4', { zone: 'OFF_BOARD' } as const), 'p1')).toBe(false);
-    expect(isWinningState(setPawnPosition(winning, 'p1-pawn-4', { zone: 'REMOVED' } as const), 'p1')).toBe(false);
-    expect(isWinningState(setPawnPosition(winning, 'p1-pawn-4', { zone: 'HOME', homeIndex: 2 } as const), 'p1')).toBe(false);
-    expect(isWinningState(setPawnPosition(winning, 'p2-pawn-1', { zone: 'HOME', homeIndex: 3 } as const), 'p1')).toBe(true);
+    expect(
+      isWinningState(setPawnPosition(winning, 'p1-pawn-4', { zone: 'OFF_BOARD' } as const), 'p1'),
+    ).toBe(false);
+    expect(
+      isWinningState(setPawnPosition(winning, 'p1-pawn-4', { zone: 'REMOVED' } as const), 'p1'),
+    ).toBe(false);
+    expect(
+      isWinningState(
+        setPawnPosition(winning, 'p1-pawn-4', { zone: 'HOME', homeIndex: 2 } as const),
+        'p1',
+      ),
+    ).toBe(false);
+    expect(
+      isWinningState(
+        setPawnPosition(winning, 'p2-pawn-1', { zone: 'HOME', homeIndex: 3 } as const),
+        'p1',
+      ),
+    ).toBe(true);
   });
 
   it('detects LAST_ACTIVE_PLAYER only when exactly one ACTIVE participant remains', () => {
@@ -53,8 +73,22 @@ describe('victory helper', () => {
     });
 
     expect(isWinningState(state, 'p1')).toBe(false);
-    expect(isWinningState(setPlayerStatus(setPlayerStatus(state, 'p2', 'SURRENDERED'), 'p3', 'FINISHED'), 'p1')).toBe(false);
-    expect(isWinningState(setPlayerStatus(setPlayerStatus(setPlayerStatus(state, 'p2', 'SURRENDERED'), 'p3', 'FINISHED'), 'p4', 'SURRENDERED'), 'p1')).toBe(true);
+    expect(
+      isWinningState(
+        setPlayerStatus(setPlayerStatus(state, 'p2', 'SURRENDERED'), 'p3', 'FINISHED'),
+        'p1',
+      ),
+    ).toBe(false);
+    expect(
+      isWinningState(
+        setPlayerStatus(
+          setPlayerStatus(setPlayerStatus(state, 'p2', 'SURRENDERED'), 'p3', 'FINISHED'),
+          'p4',
+          'SURRENDERED',
+        ),
+        'p1',
+      ),
+    ).toBe(true);
   });
 
   it('projects terminal state without mutating the original state', () => {
@@ -100,7 +134,11 @@ describe('victory helper', () => {
       firstPlayerId: 'p1',
       seatOrder: ['p1', 'p2', 'p3', 'p4'],
     });
-    const surrendered = setPlayerStatus(setPlayerStatus(base, 'p2', 'SURRENDERED'), 'p4', 'SURRENDERED');
+    const surrendered = setPlayerStatus(
+      setPlayerStatus(base, 'p2', 'SURRENDERED'),
+      'p4',
+      'SURRENDERED',
+    );
     const projected = projectTerminalState(surrendered, 'p1', 'LAST_ACTIVE_PLAYER');
 
     expect(projected.status).toBe('FINISHED');
@@ -108,8 +146,12 @@ describe('victory helper', () => {
     expect(projected.currentPlayerId).toBeNull();
     expect(projected.turnPhase).toBeNull();
     expect(projected.diceValue).toBeNull();
-    expect(projected.players.find((player) => player.playerId === 'p2')?.status).toBe('SURRENDERED');
-    expect(projected.players.find((player) => player.playerId === 'p4')?.status).toBe('SURRENDERED');
+    expect(projected.players.find((player) => player.playerId === 'p2')?.status).toBe(
+      'SURRENDERED',
+    );
+    expect(projected.players.find((player) => player.playerId === 'p4')?.status).toBe(
+      'SURRENDERED',
+    );
     expect(projected.players.find((player) => player.playerId === 'p1')?.status).toBe('FINISHED');
     expect(projected.players.find((player) => player.playerId === 'p3')?.status).toBe('FINISHED');
   });
@@ -122,7 +164,8 @@ describe('victory helper', () => {
     });
 
     expect(isWinningState(state, 'p1')).toBe(isWinningState(state, 'p1'));
-    expect(projectTerminalState(state, 'p1', 'LAST_ACTIVE_PLAYER')).toEqual(projectTerminalState(state, 'p1', 'LAST_ACTIVE_PLAYER'));
+    expect(projectTerminalState(state, 'p1', 'LAST_ACTIVE_PLAYER')).toEqual(
+      projectTerminalState(state, 'p1', 'LAST_ACTIVE_PLAYER'),
+    );
   });
 });
-

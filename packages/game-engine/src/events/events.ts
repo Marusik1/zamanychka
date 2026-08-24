@@ -19,7 +19,12 @@ export const gameEvents = {
   pawnEnteredHome(pawnId: string, playerId: string, homeIndex: 0 | 1 | 2 | 3): GameEvent {
     return { type: 'pawnEnteredHome', pawnId, playerId, homeIndex };
   },
-  pawnCaptured(pawnId: string, playerId: string, capturedPawnId: string, capturedPlayerId: string): GameEvent {
+  pawnCaptured(
+    pawnId: string,
+    playerId: string,
+    capturedPawnId: string,
+    capturedPlayerId: string,
+  ): GameEvent {
     return { type: 'pawnCaptured', pawnId, playerId, capturedPawnId, capturedPlayerId };
   },
   pawnRemoved(pawnId: string, playerId: string): GameEvent {

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createActiveGameState } from '../domain/create-active-game-state.js';
 import type { GameState, PawnPosition } from '../domain/types.js';
-import { getLegalActions } from '../actions/legal-actions.js';
 import { transition } from './transition.js';
 
 function setPawnPosition(state: GameState, pawnId: string, position: PawnPosition): GameState {
@@ -22,7 +21,11 @@ function baseState(): GameState {
 describe('ROLL_DICE transition', () => {
   it('moves to WAITING_FOR_ACTION on six when ENTER is available', () => {
     const state = baseState();
-    const result = transition(state, { type: 'ROLL_DICE', actorPlayerId: 'p1', matchId: 'm1', expectedStateVersion: 0 }, { actorPlayerId: 'p1', diceValue: 6 });
+    const result = transition(
+      state,
+      { type: 'ROLL_DICE', actorPlayerId: 'p1', matchId: 'm1', expectedStateVersion: 0 },
+      { actorPlayerId: 'p1', diceValue: 6 },
+    );
 
     expect(result).toEqual({
       ok: true,
@@ -39,8 +42,15 @@ describe('ROLL_DICE transition', () => {
   });
 
   it('moves to WAITING_FOR_ACTION on six when MOVE is available', () => {
-    const state = setPawnPosition(baseState(), 'p1-pawn-1', { zone: 'PERIMETER', progress: 6 } as const);
-    const result = transition(state, { type: 'ROLL_DICE', actorPlayerId: 'p1', matchId: 'm1', expectedStateVersion: 0 }, { actorPlayerId: 'p1', diceValue: 6 });
+    const state = setPawnPosition(baseState(), 'p1-pawn-1', {
+      zone: 'PERIMETER',
+      progress: 6,
+    } as const);
+    const result = transition(
+      state,
+      { type: 'ROLL_DICE', actorPlayerId: 'p1', matchId: 'm1', expectedStateVersion: 0 },
+      { actorPlayerId: 'p1', diceValue: 6 },
+    );
 
     expect(result).toEqual({
       ok: true,
@@ -57,8 +67,15 @@ describe('ROLL_DICE transition', () => {
   });
 
   it('moves to WAITING_FOR_ACTION on six when ENTER and MOVE are both available', () => {
-    const state = setPawnPosition(baseState(), 'p1-pawn-1', { zone: 'PERIMETER', progress: 6 } as const);
-    const result = transition(state, { type: 'ROLL_DICE', actorPlayerId: 'p1', matchId: 'm1', expectedStateVersion: 0 }, { actorPlayerId: 'p1', diceValue: 6 });
+    const state = setPawnPosition(baseState(), 'p1-pawn-1', {
+      zone: 'PERIMETER',
+      progress: 6,
+    } as const);
+    const result = transition(
+      state,
+      { type: 'ROLL_DICE', actorPlayerId: 'p1', matchId: 'm1', expectedStateVersion: 0 },
+      { actorPlayerId: 'p1', diceValue: 6 },
+    );
 
     expect(result.ok).toBe(true);
     if (!result.ok) {
@@ -70,8 +87,15 @@ describe('ROLL_DICE transition', () => {
   });
 
   it('advances to the next active player on one-to-five no-action and emits exact events', () => {
-    const state = setPawnPosition(baseState(), 'p2-pawn-1', { zone: 'HOME', homeIndex: 3 } as const);
-    const result = transition(state, { type: 'ROLL_DICE', actorPlayerId: 'p1', matchId: 'm1', expectedStateVersion: 0 }, { actorPlayerId: 'p1', diceValue: 1 });
+    const state = setPawnPosition(baseState(), 'p2-pawn-1', {
+      zone: 'HOME',
+      homeIndex: 3,
+    } as const);
+    const result = transition(
+      state,
+      { type: 'ROLL_DICE', actorPlayerId: 'p1', matchId: 'm1', expectedStateVersion: 0 },
+      { actorPlayerId: 'p1', diceValue: 1 },
+    );
 
     expect(result).toEqual({
       ok: true,
@@ -97,11 +121,7 @@ describe('ROLL_DICE transition', () => {
     const state = setPawnPosition(
       setPawnPosition(
         setPawnPosition(
-          setPawnPosition(
-            baseState(),
-            'p1-pawn-1',
-            { zone: 'HOME', homeIndex: 3 } as const,
-          ),
+          setPawnPosition(baseState(), 'p1-pawn-1', { zone: 'HOME', homeIndex: 3 } as const),
           'p1-pawn-2',
           { zone: 'HOME', homeIndex: 3 } as const,
         ),
@@ -111,7 +131,11 @@ describe('ROLL_DICE transition', () => {
       'p1-pawn-4',
       { zone: 'HOME', homeIndex: 3 } as const,
     );
-    const result = transition(state, { type: 'ROLL_DICE', actorPlayerId: 'p1', matchId: 'm1', expectedStateVersion: 0 }, { actorPlayerId: 'p1', diceValue: 6 });
+    const result = transition(
+      state,
+      { type: 'ROLL_DICE', actorPlayerId: 'p1', matchId: 'm1', expectedStateVersion: 0 },
+      { actorPlayerId: 'p1', diceValue: 6 },
+    );
 
     expect(result).toEqual({
       ok: true,
@@ -126,21 +150,43 @@ describe('ROLL_DICE transition', () => {
         { type: 'diceRolled', diceValue: 6 },
         { type: 'extraRollGranted', playerId: 'p1' },
       ],
-      legalActions: [
-        { type: 'ROLL_DICE' },
-        { type: 'SURRENDER' },
-      ],
+      legalActions: [{ type: 'ROLL_DICE' }, { type: 'SURRENDER' }],
     });
   });
 
   it('rejects stale version, wrong actor, inactive actor, wrong phase, and missing dice context without mutation', () => {
     const base = baseState();
     const scenarios = [
-      transition(base, { type: 'ROLL_DICE', actorPlayerId: 'p2', matchId: 'm1', expectedStateVersion: 0 }, { actorPlayerId: 'p2', diceValue: 1 }),
-      transition({ ...base, currentPlayerId: 'p2' }, { type: 'ROLL_DICE', actorPlayerId: 'p1', matchId: 'm1', expectedStateVersion: 0 }, { actorPlayerId: 'p1', diceValue: 1 }),
-      transition({ ...base, players: base.players.map((player) => (player.playerId === 'p1' ? { ...player, status: 'SURRENDERED' as const } : player)) }, { type: 'ROLL_DICE', actorPlayerId: 'p1', matchId: 'm1', expectedStateVersion: 0 }, { actorPlayerId: 'p1', diceValue: 1 }),
-      transition({ ...base, turnPhase: 'WAITING_FOR_ACTION', diceValue: 1 }, { type: 'ROLL_DICE', actorPlayerId: 'p1', matchId: 'm1', expectedStateVersion: 0 }, { actorPlayerId: 'p1', diceValue: 1 }),
-      transition(base, { type: 'ROLL_DICE', actorPlayerId: 'p1', matchId: 'm1', expectedStateVersion: 0 }, { actorPlayerId: 'p1' }),
+      transition(
+        base,
+        { type: 'ROLL_DICE', actorPlayerId: 'p2', matchId: 'm1', expectedStateVersion: 0 },
+        { actorPlayerId: 'p2', diceValue: 1 },
+      ),
+      transition(
+        { ...base, currentPlayerId: 'p2' },
+        { type: 'ROLL_DICE', actorPlayerId: 'p1', matchId: 'm1', expectedStateVersion: 0 },
+        { actorPlayerId: 'p1', diceValue: 1 },
+      ),
+      transition(
+        {
+          ...base,
+          players: base.players.map((player) =>
+            player.playerId === 'p1' ? { ...player, status: 'SURRENDERED' as const } : player,
+          ),
+        },
+        { type: 'ROLL_DICE', actorPlayerId: 'p1', matchId: 'm1', expectedStateVersion: 0 },
+        { actorPlayerId: 'p1', diceValue: 1 },
+      ),
+      transition(
+        { ...base, turnPhase: 'WAITING_FOR_ACTION', diceValue: 1 },
+        { type: 'ROLL_DICE', actorPlayerId: 'p1', matchId: 'm1', expectedStateVersion: 0 },
+        { actorPlayerId: 'p1', diceValue: 1 },
+      ),
+      transition(
+        base,
+        { type: 'ROLL_DICE', actorPlayerId: 'p1', matchId: 'm1', expectedStateVersion: 0 },
+        { actorPlayerId: 'p1' },
+      ),
     ];
 
     for (const result of scenarios) {

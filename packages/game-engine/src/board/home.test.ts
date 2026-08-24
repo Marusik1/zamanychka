@@ -25,8 +25,14 @@ describe('home coordinates', () => {
   });
 
   it('keeps HOME(0) distinct but physically aligned with the owner corner', () => {
-    expect(resolvePawnCoordinate({ zone: 'HOME', homeIndex: 0 }, { color: 'RED' })).toEqual({ row: 0, col: 0 });
-    expect(resolvePawnCoordinate({ zone: 'PERIMETER', progress: 0 }, { color: 'RED' })).toEqual({ row: 0, col: 0 });
+    expect(resolvePawnCoordinate({ zone: 'HOME', homeIndex: 0 }, { color: 'RED' })).toEqual({
+      row: 0,
+      col: 0,
+    });
+    expect(resolvePawnCoordinate({ zone: 'PERIMETER', progress: 0 }, { color: 'RED' })).toEqual({
+      row: 0,
+      col: 0,
+    });
   });
 
   it('excludes off-board and removed pawns from physical coordinates', () => {
@@ -34,4 +40,3 @@ describe('home coordinates', () => {
     expect(resolvePawnCoordinate({ zone: 'REMOVED' }, { color: 'RED' })).toBeNull();
   });
 });
-

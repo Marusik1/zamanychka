@@ -1,7 +1,10 @@
 import type { BoardCoord, PlayerColor, PawnPosition } from '../domain/types.js';
 import { resolvePerimeterCoord } from './perimeter.js';
 
-export const HOME_COORDS: Record<PlayerColor, readonly [BoardCoord, BoardCoord, BoardCoord, BoardCoord]> = {
+export const HOME_COORDS: Record<
+  PlayerColor,
+  readonly [BoardCoord, BoardCoord, BoardCoord, BoardCoord]
+> = {
   RED: [
     { row: 0, col: 0 },
     { row: 1, col: 1 },

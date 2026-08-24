@@ -13,6 +13,7 @@
 ### Task 1: Canonical domain contracts and active-state factory
 
 **Files:**
+
 - Create: `packages/game-engine/src/domain/types.ts`
 - Create: `packages/game-engine/src/domain/contracts.ts`
 - Create: `packages/game-engine/src/domain/create-active-game-state.ts`
@@ -83,6 +84,7 @@ git commit -m "feat(game-engine): add canonical domain types"
 ### Task 2: Perimeter coordinates and player-relative mapping
 
 **Files:**
+
 - Create: `packages/game-engine/src/board/perimeter.ts`
 - Modify: `packages/game-engine/src/domain/types.ts`
 - Test: `packages/game-engine/src/board/perimeter.test.ts`
@@ -122,6 +124,7 @@ git commit -m "feat(game-engine): add perimeter coordinate mapping"
 ### Task 3: Physical occupancy and HOME coordinate resolution
 
 **Files:**
+
 - Create: `packages/game-engine/src/board/occupancy.ts`
 - Create: `packages/game-engine/src/board/home.ts`
 - Test: `packages/game-engine/src/board/occupancy.test.ts`
@@ -160,6 +163,7 @@ git commit -m "feat(game-engine): add occupancy and home resolution"
 ### Task 4: Turn rotation helper and player selection
 
 **Files:**
+
 - Create: `packages/game-engine/src/turns/turn-rotation.ts`
 - Test: `packages/game-engine/src/turns/turn-rotation.test.ts`
 
@@ -196,6 +200,7 @@ git commit -m "feat(game-engine): add turn rotation helper"
 ### Task 5: Physical path and movement legality
 
 **Files:**
+
 - Create: `packages/game-engine/src/movement/path.ts`
 - Create: `packages/game-engine/src/movement/move-legality.ts`
 - Test: `packages/game-engine/src/movement/path.test.ts`
@@ -234,6 +239,7 @@ git commit -m "feat(game-engine): add physical path resolution"
 ### Task 6: Legal-action generation
 
 **Files:**
+
 - Create: `packages/game-engine/src/actions/legal-actions.ts`
 - Test: `packages/game-engine/src/actions/legal-actions.test.ts`
 
@@ -273,6 +279,7 @@ git commit -m "feat(game-engine): add legal action generation"
 ### Task 7: ROLL_DICE transition, no-action semantics, and victory precheck
 
 **Files:**
+
 - Create: `packages/game-engine/src/transitions/roll-dice.ts`
 - Modify: `packages/game-engine/src/transitions/transition.ts`
 - Test: `packages/game-engine/src/transitions/roll-dice.test.ts`
@@ -326,6 +333,7 @@ git commit -m "feat(game-engine): add roll dice transition"
 ### Task 8: Victory helper and terminal detection
 
 **Files:**
+
 - Create: `packages/game-engine/src/transitions/victory.ts`
 - Create: `packages/game-engine/src/transitions/victory.test.ts`
 
@@ -361,6 +369,7 @@ git commit -m "feat(game-engine): add victory helper"
 ### Task 9: ENTER_PAWN / MOVE_PAWN / capture / HOME transitions and victory completion
 
 **Files:**
+
 - Create: `packages/game-engine/src/transitions/pawn-actions.ts`
 - Test: `packages/game-engine/src/transitions/pawn-actions.test.ts`
 
@@ -412,6 +421,7 @@ git commit -m "feat(game-engine): add pawn transitions"
 ### Task 10: Surrender, turn rotation, and terminal victory
 
 **Files:**
+
 - Create: `packages/game-engine/src/transitions/surrender.ts`
 - Create: `packages/game-engine/src/transitions/victory.ts`
 - Test: `packages/game-engine/src/transitions/surrender.test.ts`
@@ -468,6 +478,7 @@ git commit -m "feat(game-engine): add surrender and victory"
 ### Task 11: Deterministic runtime event/error helpers
 
 **Files:**
+
 - Create: `packages/game-engine/src/events/events.ts`
 - Create: `packages/game-engine/src/errors/errors.ts`
 - Test: `packages/game-engine/src/events/events.test.ts`
@@ -513,6 +524,7 @@ git commit -m "feat(game-engine): add events and errors"
 ### Task 12: Property-based hardening and final engine verification
 
 **Files:**
+
 - Modify: `packages/game-engine/src/**/*.ts`
 - Test: `packages/game-engine/src/**/*.test.ts`
 - Potentially modify shared contracts in `packages/shared` if engine-facing types need to be exported

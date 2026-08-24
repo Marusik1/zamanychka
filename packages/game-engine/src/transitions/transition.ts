@@ -3,7 +3,11 @@ import { enterOrMovePawnTransition } from './pawn.js';
 import { rollDiceTransition } from './roll-dice.js';
 import { surrenderTransition } from './surrender.js';
 
-export function transition(state: GameState, command: GameCommand, context: { actorPlayerId: string; diceValue?: 1 | 2 | 3 | 4 | 5 | 6 }): GameTransitionResult {
+export function transition(
+  state: GameState,
+  command: GameCommand,
+  context: { actorPlayerId: string; diceValue?: 1 | 2 | 3 | 4 | 5 | 6 },
+): GameTransitionResult {
   switch (command.type) {
     case 'ROLL_DICE':
       return rollDiceTransition(state, command, context);

@@ -1,9 +1,15 @@
-import type { GameCommand, GameEvent, GameState, GameTransitionErrorCode, GameTransitionResult, PawnState, PlayerState } from '../domain/types.js';
+import type {
+  GameCommand,
+  GameEvent,
+  GameState,
+  GameTransitionErrorCode,
+  GameTransitionResult,
+  PlayerState,
+} from '../domain/types.js';
 import { getLegalActions } from '../actions/legal-actions.js';
-import { getOccupancy } from '../board/occupancy.js';
 import { gameEvents } from '../events/events.js';
 import { getNextActivePlayerId } from '../turns/turn-rotation.js';
-import { isWinningState, projectTerminalState } from './victory.js';
+import { projectTerminalState } from './victory.js';
 
 function fail(code: GameTransitionErrorCode, message: string): GameTransitionResult {
   return { ok: false, code, message };
@@ -30,7 +36,9 @@ function removePlayerPawns(state: GameState, playerId: string): GameState {
     nextState = {
       ...nextState,
       pawns: nextState.pawns.map((candidate) =>
-        candidate.pawnId === pawn.pawnId ? { ...candidate, position: { zone: 'REMOVED' } } : candidate,
+        candidate.pawnId === pawn.pawnId
+          ? { ...candidate, position: { zone: 'REMOVED' } }
+          : candidate,
       ),
     };
   }
@@ -52,7 +60,11 @@ function terminalizeIfNeeded(state: GameState): GameState | null {
   return projectTerminalState(state, winner, 'LAST_ACTIVE_PLAYER');
 }
 
-export function surrenderTransition(state: GameState, command: Extract<GameCommand, { type: 'SURRENDER' }>, context: { actorPlayerId: string; diceValue?: 1 | 2 | 3 | 4 | 5 | 6 }): GameTransitionResult {
+export function surrenderTransition(
+  state: GameState,
+  command: Extract<GameCommand, { type: 'SURRENDER' }>,
+  context: { actorPlayerId: string; diceValue?: 1 | 2 | 3 | 4 | 5 | 6 },
+): GameTransitionResult {
   if (state.status !== 'ACTIVE') {
     return fail('MATCH_NOT_ACTIVE', 'match must be active');
   }
@@ -86,15 +98,22 @@ export function surrenderTransition(state: GameState, command: Extract<GameComma
 
   const terminal = terminalizeIfNeeded(removedState);
   if (terminal) {
+    const winner = terminal.players.find((player) => player.status === 'FINISHED');
+    if (!winner) {
+      return fail('MATCH_NOT_ACTIVE', 'terminal state must have a winner');
+    }
     return {
       ok: true,
       state: incrementStateVersion(terminal),
-      events: [...events, gameEvents.gameWon(terminal.winnerPlayerId!, 'LAST_ACTIVE_PLAYER')],
+      events: [...events, gameEvents.gameWon(winner.playerId, 'LAST_ACTIVE_PLAYER')],
       legalActions: [],
     };
   }
 
-  const nextCurrentPlayerId = state.currentPlayerId === context.actorPlayerId ? getNextActivePlayerId(removedState, context.actorPlayerId) : state.currentPlayerId;
+  const nextCurrentPlayerId =
+    state.currentPlayerId === context.actorPlayerId
+      ? getNextActivePlayerId(removedState, context.actorPlayerId)
+      : state.currentPlayerId;
   const nextState: GameState =
     state.currentPlayerId === context.actorPlayerId
       ? {
@@ -116,9 +135,7 @@ export function surrenderTransition(state: GameState, command: Extract<GameComma
   const additionalEvents =
     state.currentPlayerId === context.actorPlayerId
       ? nextCurrentPlayerId
-        ? [
-            gameEvents.turnChanged(context.actorPlayerId, nextCurrentPlayerId, nextState.turnNumber),
-          ]
+        ? [gameEvents.turnChanged(context.actorPlayerId, nextCurrentPlayerId, nextState.turnNumber)]
         : []
       : [];
 
@@ -126,6 +143,8 @@ export function surrenderTransition(state: GameState, command: Extract<GameComma
     ok: true,
     state: finalState,
     events: [...events, ...additionalEvents],
-    legalActions: getLegalActions(nextState, nextState.currentPlayerId ?? ''),
+    legalActions: nextState.currentPlayerId
+      ? getLegalActions(nextState, nextState.currentPlayerId)
+      : [],
   };
 }

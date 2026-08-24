@@ -28,7 +28,7 @@ function activePawnState() {
       pawn.pawnId === 'p2-pawn-1' ||
       pawn.pawnId === 'p3-pawn-1' ||
       pawn.pawnId === 'p4-pawn-1'
-        ? ({ ...pawn, position: { zone: 'PERIMETER', progress: 0 } as const })
+        ? { ...pawn, position: { zone: 'PERIMETER', progress: 0 } as const }
         : pawn,
     ),
   };
@@ -51,8 +51,20 @@ describe('movement legality', () => {
       seatOrder: ['p1', 'p2'],
     });
 
-    expect(canMovePawn(setPawnPosition(state, 'p1-pawn-1', { zone: 'OFF_BOARD' } as const), 'p1-pawn-1', 1)).toBe(false);
-    expect(canMovePawn(setPawnPosition(state, 'p1-pawn-1', { zone: 'REMOVED' } as const), 'p1-pawn-1', 1)).toBe(false);
+    expect(
+      canMovePawn(
+        setPawnPosition(state, 'p1-pawn-1', { zone: 'OFF_BOARD' } as const),
+        'p1-pawn-1',
+        1,
+      ),
+    ).toBe(false);
+    expect(
+      canMovePawn(
+        setPawnPosition(state, 'p1-pawn-1', { zone: 'REMOVED' } as const),
+        'p1-pawn-1',
+        1,
+      ),
+    ).toBe(false);
   });
 
   it('rejects own intermediate blockers and own destination blockers', () => {
@@ -132,8 +144,19 @@ describe('movement legality', () => {
     });
     const snapshot = structuredClone(state);
 
-    expect(canMovePawn(setPawnPosition(state, 'p1-pawn-1', { zone: 'PERIMETER', progress: 0 } as const), 'p1-pawn-1', 3))
-      .toBe(canMovePawn(setPawnPosition(state, 'p1-pawn-1', { zone: 'PERIMETER', progress: 0 } as const), 'p1-pawn-1', 3));
+    expect(
+      canMovePawn(
+        setPawnPosition(state, 'p1-pawn-1', { zone: 'PERIMETER', progress: 0 } as const),
+        'p1-pawn-1',
+        3,
+      ),
+    ).toBe(
+      canMovePawn(
+        setPawnPosition(state, 'p1-pawn-1', { zone: 'PERIMETER', progress: 0 } as const),
+        'p1-pawn-1',
+        3,
+      ),
+    );
     expect(state).toEqual(snapshot);
   });
 });

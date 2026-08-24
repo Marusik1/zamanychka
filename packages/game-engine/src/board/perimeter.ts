@@ -49,5 +49,9 @@ export function resolvePerimeterIndex(color: PlayerColor, progress: number): num
 }
 
 export function resolvePerimeterCoord(color: PlayerColor, progress: number): BoardCoord {
-  return NORMALIZED_PERIMETER_COORDS[resolvePerimeterIndex(color, progress)]!;
+  const coord = NORMALIZED_PERIMETER_COORDS[resolvePerimeterIndex(color, progress)];
+  if (!coord) {
+    throw new RangeError(`unable to resolve perimeter coord for ${color} progress ${progress}`);
+  }
+  return coord;
 }

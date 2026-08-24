@@ -10,7 +10,9 @@ export function isWinningState(state: GameState, playerId: string): boolean {
     return false;
   }
 
-  const homePawns = state.pawns.filter((pawn) => pawn.playerId === playerId && pawn.position.zone === 'HOME');
+  const homePawns = state.pawns.filter(
+    (pawn) => pawn.playerId === playerId && pawn.position.zone === 'HOME',
+  );
   const allHomeIndices = new Set(
     state.pawns
       .filter((pawn) => pawn.playerId === playerId && pawn.position.zone === 'HOME')
@@ -25,7 +27,11 @@ export function isWinningState(state: GameState, playerId: string): boolean {
   return activePlayers.length === 1 && activePlayers[0]?.playerId === playerId;
 }
 
-export function projectTerminalState(state: GameState, winnerPlayerId: string, reason: WinReason): GameState {
+export function projectTerminalState(
+  state: GameState,
+  winnerPlayerId: string,
+  reason: WinReason,
+): GameState {
   return {
     ...state,
     status: 'FINISHED',
@@ -37,7 +43,13 @@ export function projectTerminalState(state: GameState, winnerPlayerId: string, r
     players: state.players.map((player) =>
       player.status === 'SURRENDERED'
         ? player
-        : { ...player, status: player.playerId === winnerPlayerId || player.status === 'ACTIVE' ? 'FINISHED' : player.status },
+        : {
+            ...player,
+            status:
+              player.playerId === winnerPlayerId || player.status === 'ACTIVE'
+                ? 'FINISHED'
+                : player.status,
+          },
     ),
   };
 }

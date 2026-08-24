@@ -44,4 +44,3 @@ export function canMovePawn(state: GameState, pawnId: string, distance: number):
 
   return true;
 }
-

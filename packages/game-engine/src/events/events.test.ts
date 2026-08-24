@@ -11,8 +11,16 @@ describe('game event helpers', () => {
       toPlayerId: 'p2',
       turnNumber: 2,
     });
-    expect(gameEvents.pawnEntered('p1-pawn-1', 'p1')).toEqual({ type: 'pawnEntered', pawnId: 'p1-pawn-1', playerId: 'p1' });
-    expect(gameEvents.pawnMoved('p1-pawn-1', 'p1')).toEqual({ type: 'pawnMoved', pawnId: 'p1-pawn-1', playerId: 'p1' });
+    expect(gameEvents.pawnEntered('p1-pawn-1', 'p1')).toEqual({
+      type: 'pawnEntered',
+      pawnId: 'p1-pawn-1',
+      playerId: 'p1',
+    });
+    expect(gameEvents.pawnMoved('p1-pawn-1', 'p1')).toEqual({
+      type: 'pawnMoved',
+      pawnId: 'p1-pawn-1',
+      playerId: 'p1',
+    });
     expect(gameEvents.pawnEnteredHome('p1-pawn-1', 'p1', 0)).toEqual({
       type: 'pawnEnteredHome',
       pawnId: 'p1-pawn-1',
@@ -26,8 +34,15 @@ describe('game event helpers', () => {
       capturedPawnId: 'p2-pawn-1',
       capturedPlayerId: 'p2',
     });
-    expect(gameEvents.pawnRemoved('p2-pawn-1', 'p2')).toEqual({ type: 'pawnRemoved', pawnId: 'p2-pawn-1', playerId: 'p2' });
-    expect(gameEvents.playerSurrendered('p2')).toEqual({ type: 'playerSurrendered', playerId: 'p2' });
+    expect(gameEvents.pawnRemoved('p2-pawn-1', 'p2')).toEqual({
+      type: 'pawnRemoved',
+      pawnId: 'p2-pawn-1',
+      playerId: 'p2',
+    });
+    expect(gameEvents.playerSurrendered('p2')).toEqual({
+      type: 'playerSurrendered',
+      playerId: 'p2',
+    });
     expect(gameEvents.gameWon('p1', 'HOME_DIAGONAL_COMPLETED')).toEqual({
       type: 'gameWon',
       winnerPlayerId: 'p1',

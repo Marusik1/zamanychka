@@ -20,7 +20,9 @@ export function coordinateOf(position: PawnPosition, color: PlayerColor): BoardC
       if (!Number.isInteger(position.progress) || position.progress < 0 || position.progress > 27) {
         return null;
       }
-      return position.progress === 0 ? resolveHomeCoord(color, 0) : resolvePerimeterCoord(color, position.progress);
+      return position.progress === 0
+        ? resolveHomeCoord(color, 0)
+        : resolvePerimeterCoord(color, position.progress);
     case 'HOME':
       return resolveHomeCoord(color, position.homeIndex);
   }
@@ -80,7 +82,11 @@ function buildPath(state: GameState, pawnId: string, distance: number): BoardCoo
   return path;
 }
 
-export function resolvePhysicalPath(state: GameState, pawnId: string, distance: number): BoardCoord[] | null {
+export function resolvePhysicalPath(
+  state: GameState,
+  pawnId: string,
+  distance: number,
+): BoardCoord[] | null {
   const pawn = getPawn(state, pawnId);
   if (!pawn) {
     return null;
@@ -101,9 +107,14 @@ export function resolvePhysicalPath(state: GameState, pawnId: string, distance: 
   const occupancy = getOccupancy(state.pawns, state.players);
 
   for (let index = 0; index < path.length; index += 1) {
-    const coord = path[index]!;
+    const coord = path[index];
+    if (!coord) {
+      return null;
+    }
     const isDestination = index === path.length - 1;
-    const cell = occupancy.cells.find((candidate) => candidate.coord.row === coord.row && candidate.coord.col === coord.col);
+    const cell = occupancy.cells.find(
+      (candidate) => candidate.coord.row === coord.row && candidate.coord.col === coord.col,
+    );
     if (!cell) {
       continue;
     }
@@ -115,7 +126,11 @@ export function resolvePhysicalPath(state: GameState, pawnId: string, distance: 
       if (ownOccupant) {
         return null;
       }
-      if (cell.occupants.some((occupant) => occupant.semanticZone === 'HOME' && occupant.playerId !== pawn.playerId)) {
+      if (
+        cell.occupants.some(
+          (occupant) => occupant.semanticZone === 'HOME' && occupant.playerId !== pawn.playerId,
+        )
+      ) {
         return null;
       }
     }

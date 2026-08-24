@@ -43,4 +43,3 @@ describe('createActiveGameState', () => {
     ).toThrow(/firstPlayerId/);
   });
 });
-
