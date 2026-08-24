@@ -15,6 +15,9 @@ export {
   resolveHomeCoord,
   resolvePawnCoordinate,
 } from './board/home.js';
+export {
+  getNextActivePlayerId,
+} from './turns/turn-rotation.js';
 export type {
   BoardCoord,
   CreateActiveGameStateConfig,
