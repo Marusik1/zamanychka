@@ -98,6 +98,11 @@ export type LegalAction =
         pawnId: string;
         occupantZone: 'PERIMETER' | 'HOME';
       }>;
+      capturePreview?: Readonly<{
+        playerId: string;
+        pawnId: string;
+        occupantZone: 'PERIMETER' | 'HOME';
+      }>;
     }>;
 
 export type GameEvent =
@@ -146,4 +151,3 @@ export type CreateActiveGameStateConfig = Readonly<{
   seatOrder: readonly [string, string] | readonly [string, string, string] | readonly [string, string, string, string];
   firstPlayerId: string;
 }>;
-
