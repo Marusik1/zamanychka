@@ -119,6 +119,13 @@ export function createMatchRepository(prisma: AppPrismaClient) {
       return tx.processedAction.create({ data: input });
     },
 
+    async findProcessedAction(tx: TxClient, input: { matchId: string; actionId: string }) {
+      assertLockedMatch(tx, input.matchId);
+      return tx.processedAction.findUnique({
+        where: { matchId_actionId: input },
+      });
+    },
+
     async insertOutboxRow(
       tx: TxClient,
       input: { matchId: string; resultingStateVersion: number; payload: Json },
