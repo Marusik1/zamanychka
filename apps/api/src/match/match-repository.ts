@@ -10,6 +10,12 @@ export interface OrderedMatchEventInput {
   payload: Json;
 }
 
+export interface MatchSyncEventInput {
+  sequence: number;
+  stateVersion: number;
+  payload: Json;
+}
+
 export function createMatchRepository(prisma: AppPrismaClient) {
   const lockedMatchIds = new WeakMap<object, string>();
 
@@ -132,6 +138,26 @@ export function createMatchRepository(prisma: AppPrismaClient) {
     ) {
       assertLockedMatch(tx, input.matchId);
       return tx.outboxRow.create({ data: input });
+    },
+
+    async loadSyncMaterial(matchId: string, afterSequence: number) {
+      const match = await prisma.match.findUnique({
+        where: { id: matchId },
+        select: {
+          id: true,
+          status: true,
+          stateVersion: true,
+          lastSequence: true,
+          snapshot: true,
+          seatOrder: true,
+        },
+      });
+      if (!match) return null;
+      const events = await prisma.matchEvent.findMany({
+        where: { matchId, sequence: { gt: afterSequence } },
+        orderBy: { sequence: 'asc' },
+      });
+      return { match, events };
     },
   };
 }
