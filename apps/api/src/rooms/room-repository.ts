@@ -55,6 +55,20 @@ async function loadRoom(tx: TxClient): Promise<PersistedRoom | null> {
   return room ? toDomain(room) : null;
 }
 
+export async function lockSingletonRoomInTransaction(tx: TxClient): Promise<PersistedRoom> {
+  await tx.$queryRaw`
+    SELECT "key"
+    FROM "Room"
+    WHERE "key" = ${SINGLETON_ROOM_KEY}
+    FOR UPDATE
+  `;
+  const room = await loadRoom(tx);
+  if (!room) {
+    throw new Error('singleton room lock failed');
+  }
+  return room;
+}
+
 export async function persistSingletonRoom(
   tx: TxClient,
   room: PersistedRoom,
@@ -124,17 +138,7 @@ export function createRoomRepository(prisma: AppPrismaClient) {
     ): Promise<T> {
       return prisma.$transaction(async (tx) => {
         await ensureSingletonRoom(tx);
-        await tx.$queryRaw`
-          SELECT "key"
-          FROM "Room"
-          WHERE "key" = ${SINGLETON_ROOM_KEY}
-          FOR UPDATE
-        `;
-        const room = await loadRoom(tx);
-        if (!room) {
-          throw new Error('singleton room lock failed');
-        }
-        return handler(tx, room);
+        return handler(tx, await lockSingletonRoomInTransaction(tx));
       });
     },
   };

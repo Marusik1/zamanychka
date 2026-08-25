@@ -2,7 +2,7 @@ import type { RoomState } from '@zamanushka/shared';
 
 import type { Prisma } from '../generated/prisma/client.js';
 import type { PersistedRoom } from './domain.js';
-import { persistSingletonRoom } from './room-repository.js';
+import { lockSingletonRoomInTransaction, persistSingletonRoom } from './room-repository.js';
 import type { createRoomRepository } from './room-repository.js';
 
 type RoomRepository = ReturnType<typeof createRoomRepository>;
@@ -64,23 +64,24 @@ export function createMatchCompletionService(options: { repository: RoomReposito
     });
   }
 
+  async function completeLockedTerminalMatch(tx: TxClient, room: PersistedRoom, completedMatchId: string): Promise<MatchCompletionResult> {
+    const match = await loadMatch(tx, completedMatchId);
+    if (!match) return completionError('MATCH_NOT_FOUND');
+    if (match.status !== 'FINISHED') return completionError('MATCH_NOT_TERMINAL');
+    if (room.currentMatchId !== completedMatchId) return completionError('MATCH_NOT_CURRENT');
+
+    const nextRoom = toWaitingRoom(room);
+    await persistSingletonRoom(tx, nextRoom);
+    return { ok: true, matchId: completedMatchId, room: toRoomState(nextRoom) };
+  }
+
   return {
+    async completeTerminalMatchInTransaction(tx: TxClient, completedMatchId: string): Promise<MatchCompletionResult> {
+      return completeLockedTerminalMatch(tx, await lockSingletonRoomInTransaction(tx), completedMatchId);
+    },
+
     async completeTerminalMatch(completedMatchId: string): Promise<MatchCompletionResult> {
-      return options.repository.withLockedSingletonRoom(async (tx, room) => {
-        const match = await loadMatch(tx, completedMatchId);
-        if (!match) return completionError('MATCH_NOT_FOUND');
-        if (match.status !== 'FINISHED') return completionError('MATCH_NOT_TERMINAL');
-        if (room.currentMatchId !== completedMatchId) return completionError('MATCH_NOT_CURRENT');
-
-        const nextRoom = toWaitingRoom(room);
-        await persistSingletonRoom(tx, nextRoom);
-
-        return {
-          ok: true,
-          matchId: completedMatchId,
-          room: toRoomState(nextRoom),
-        };
-      });
+      return options.repository.withLockedSingletonRoom((tx, room) => completeLockedTerminalMatch(tx, room, completedMatchId));
     },
   };
 }

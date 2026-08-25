@@ -8,7 +8,7 @@ type Json = Prisma.InputJsonValue;
 type Transition = (state: GameState, command: EngineCommand, context: { actorPlayerId: string; diceValue?: 1 | 2 | 3 | 4 | 5 | 6 }) => GameTransitionResult;
 
 export interface TerminalMatchHook {
-  (input: { matchId: string }): Promise<void> | void;
+  (input: { tx: Prisma.TransactionClient; matchId: string }): Promise<void> | void;
 }
 
 function canonicalize(value: unknown): unknown {
@@ -97,9 +97,9 @@ function snapshot(state: GameState, lastSequence: number): MatchSnapshot {
 
 export function createCommandProcessor(options: {
   repository: MatchRepository;
+  onTerminalMatch: TerminalMatchHook;
   rollDice?: () => 1 | 2 | 3 | 4 | 5 | 6;
   transition?: Transition;
-  onTerminalMatch?: TerminalMatchHook;
 }) {
   const rollDice = options.rollDice ?? (() => (Math.floor(Math.random() * 6) + 1) as 1 | 2 | 3 | 4 | 5 | 6);
   const transition = options.transition ?? defaultTransition;
@@ -142,12 +142,16 @@ export function createCommandProcessor(options: {
         await options.repository.updateCurrentSnapshot(tx, { matchId: command.matchId, snapshot: json(engineResult.state), stateVersion: engineResult.state.stateVersion, ...(engineResult.state.status === 'FINISHED' ? { terminalResult: json({ winnerPlayerId: engineResult.state.winnerPlayerId, reason: engineResult.state.winReason }) } : {}) });
         await options.repository.appendOrderedEvents(tx, { matchId: command.matchId, events: events.map(({ sequence, stateVersion, ...event }) => ({ sequence, stateVersion, payload: json(event) })) });
         await options.repository.recordProcessedAction(tx, { matchId: command.matchId, actionId: command.actionId, requestFingerprint: fingerprint, result: json(result) });
+        await options.repository.insertOutboxRow(tx, {
+          matchId: command.matchId,
+          resultingStateVersion: engineResult.state.stateVersion,
+          payload: json({ matchId: command.matchId, stateVersion: engineResult.state.stateVersion, lastSequence, events }),
+        });
+        if (engineResult.state.status === 'FINISHED') {
+          await options.onTerminalMatch({ tx, matchId: command.matchId });
+        }
         return result;
       });
-
-      if (result.ok && result.snapshot.status === 'FINISHED') {
-        await options.onTerminalMatch?.({ matchId: command.matchId });
-      }
       return result;
     },
   };
