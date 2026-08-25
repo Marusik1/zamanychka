@@ -1,8 +1,9 @@
-import { resolvePawnCoordinate, resolvePhysicalPath, transition as defaultTransition } from '@zamanushka/game-engine';
-import type { GameCommand as EngineCommand, GameEvent, GameState, GameTransitionResult } from '@zamanushka/game-engine';
-import type { GameCommandErrorCode, GameCommandRequest, GameCommandResult, GameEventEnvelope, MatchSnapshot } from '@zamanushka/shared';
+import { transition as defaultTransition } from '@zamanushka/game-engine';
+import type { GameCommand as EngineCommand, GameState, GameTransitionResult } from '@zamanushka/game-engine';
+import type { GameCommandErrorCode, GameCommandRequest, GameCommandResult, MatchSnapshot } from '@zamanushka/shared';
 import type { Prisma } from '../generated/prisma/client.js';
 import type { MatchRepository } from '../match/match-repository.js';
+import { createEventJournal } from './event-journal.js';
 
 type Json = Prisma.InputJsonValue;
 type Transition = (state: GameState, command: EngineCommand, context: { actorPlayerId: string; diceValue?: 1 | 2 | 3 | 4 | 5 | 6 }) => GameTransitionResult;
@@ -43,49 +44,6 @@ function mapEngineFailure(code: Extract<GameTransitionResult, { ok: false }>['co
   }
 }
 
-function pawnCoordinate(state: GameState, pawnId: string) {
-  const pawn = state.pawns.find((candidate) => candidate.pawnId === pawnId);
-  const player = pawn && state.players.find((candidate) => candidate.playerId === pawn.playerId);
-  if (!pawn || !player) throw new Error(`cannot resolve coordinate for pawn ${pawnId}`);
-  const coordinate = resolvePawnCoordinate(pawn.position, player);
-  if (!coordinate) throw new Error(`pawn ${pawnId} is not on the board`);
-  return coordinate;
-}
-
-function eventPayload(event: GameEvent, actorPlayerId: string, before: GameState, after: GameState): Record<string, unknown> {
-  switch (event.type) {
-    case 'diceRolled': return { playerId: actorPlayerId, diceValue: event.diceValue };
-    case 'extraRollGranted': return { playerId: event.playerId };
-    case 'turnChanged': return { fromPlayerId: event.fromPlayerId, toPlayerId: event.toPlayerId };
-    case 'pawnEntered': return { pawnId: event.pawnId, playerId: event.playerId, toCoord: pawnCoordinate(after, event.pawnId) };
-    case 'pawnMoved': return {
-      pawnId: event.pawnId,
-      playerId: event.playerId,
-      fromCoord: pawnCoordinate(before, event.pawnId),
-      toCoord: pawnCoordinate(after, event.pawnId),
-      physicalPath: resolvePhysicalPath(before, event.pawnId, before.diceValue ?? 0) ?? [],
-      capture: null,
-    };
-    case 'pawnEnteredHome': return { pawnId: event.pawnId, playerId: event.playerId, homeIndex: event.homeIndex, fromCoord: pawnCoordinate(before, event.pawnId), toCoord: pawnCoordinate(after, event.pawnId) };
-    case 'pawnCaptured': return { byPawnId: event.pawnId, byPlayerId: event.playerId, capturedPawnId: event.capturedPawnId, capturedPlayerId: event.capturedPlayerId, atCoord: pawnCoordinate(after, event.pawnId) };
-    case 'pawnRemoved': return { pawnId: event.pawnId, playerId: event.playerId, reason: 'SURRENDERED' };
-    case 'playerSurrendered': return { playerId: event.playerId };
-    case 'gameWon': return { winnerPlayerId: event.winnerPlayerId, reason: event.reason };
-  }
-}
-
-function toEventEnvelopes(input: { matchId: string; stateVersion: number; firstSequence: number; events: readonly GameEvent[]; actorPlayerId: string; before: GameState; after: GameState }): GameEventEnvelope[] {
-  return input.events.map((event, index) => ({
-    matchId: input.matchId,
-    eventId: `${input.matchId}:${input.firstSequence + index}`,
-    sequence: input.firstSequence + index,
-    stateVersion: input.stateVersion,
-    type: event.type,
-    payload: eventPayload(event, input.actorPlayerId, input.before, input.after),
-    createdAt: new Date().toISOString(),
-  })) as GameEventEnvelope[];
-}
-
 function snapshot(state: GameState, lastSequence: number): MatchSnapshot {
   return {
     ...state,
@@ -103,6 +61,7 @@ export function createCommandProcessor(options: {
 }) {
   const rollDice = options.rollDice ?? (() => (Math.floor(Math.random() * 6) + 1) as 1 | 2 | 3 | 4 | 5 | 6);
   const transition = options.transition ?? defaultTransition;
+  const journal = createEventJournal();
 
   return {
     async process(input: { authenticatedUserId: string | null | undefined; command: GameCommandRequest }): Promise<GameCommandResult> {
@@ -130,9 +89,8 @@ export function createCommandProcessor(options: {
         });
         if (!engineResult.ok) return failure(command, mapEngineFailure(engineResult.code), engineResult.message, match.stateVersion, current);
 
-        const firstSequence = match.lastSequence + 1;
-        const lastSequence = firstSequence + engineResult.events.length - 1;
-        const events = toEventEnvelopes({ matchId: command.matchId, stateVersion: engineResult.state.stateVersion, firstSequence, events: engineResult.events, actorPlayerId: authenticatedUserId, before: currentSnapshot, after: engineResult.state });
+        const events = journal.envelopes({ matchId: command.matchId, stateVersion: engineResult.state.stateVersion, lastSequence: match.lastSequence, events: engineResult.events, actorPlayerId: authenticatedUserId, before: currentSnapshot, after: engineResult.state });
+        const lastSequence = events.at(-1)?.sequence ?? match.lastSequence;
         const nextSnapshot = snapshot(engineResult.state, lastSequence);
         const result: GameCommandResult = {
           ok: true, matchId: command.matchId, actionId: command.actionId,

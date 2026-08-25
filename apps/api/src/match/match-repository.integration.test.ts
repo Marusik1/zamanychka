@@ -2,6 +2,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { createTestDatabase } from '../test/test-database.js';
 import { createMatchRepository } from './match-repository.js';
+import { createPostgresOutboxLeaseStore } from '../realtime/outbox.js';
 
 const database = createTestDatabase();
 const repository = createMatchRepository(database.prisma);
@@ -27,6 +28,35 @@ afterAll(async () => {
 });
 
 describe('match persistence repository', () => {
+  it('leases an unpublished outbox row to only one worker and permits reclaim after expiry', async () => {
+    const match = await createMatch();
+    await repository.withLockedMatch(match.id, async (tx) => {
+      await repository.insertOutboxRow(tx, {
+        matchId: match.id,
+        resultingStateVersion: 1,
+        payload: { matchId: match.id, stateVersion: 1, lastSequence: 1, events: [] },
+      });
+    });
+    const now = new Date('2026-08-25T00:00:00.000Z');
+    const outbox = createPostgresOutboxLeaseStore(database.prisma, { now: () => now, leaseDurationMs: 10_000 });
+
+    const [first, second] = await Promise.all([
+      outbox.claim({ leaseToken: 'worker-a' }),
+      outbox.claim({ leaseToken: 'worker-b' }),
+    ]);
+    const reclaimed = await createPostgresOutboxLeaseStore(database.prisma, {
+      now: () => new Date('2026-08-25T00:00:11.000Z'),
+      leaseDurationMs: 10_000,
+    }).claim({ leaseToken: 'worker-b' });
+
+    const claimed = first ?? second;
+    const originalWorker = first ? 'worker-a' : 'worker-b';
+    expect(claimed).toMatchObject({ matchId: match.id });
+    expect(first && second).toBeNull();
+    expect(reclaimed).toMatchObject({ id: claimed?.id, matchId: match.id });
+    await expect(outbox.markPublished({ outboxId: claimed!.id, leaseToken: originalWorker })).resolves.toBe(false);
+  });
+
   it('keeps only the latest authoritative snapshot and version on a match', async () => {
     const match = await createMatch();
 
