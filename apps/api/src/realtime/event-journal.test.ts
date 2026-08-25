@@ -18,7 +18,9 @@ describe('ordered event journal writer', () => {
       ],
     });
 
-    expect(events.map(({ eventId, sequence, createdAt }) => ({ eventId, sequence, createdAt }))).toEqual([
+    expect(
+      events.map(({ eventId, sequence, createdAt }) => ({ eventId, sequence, createdAt })),
+    ).toEqual([
       { eventId: 'match-1:13', sequence: 13, createdAt: '2026-08-25T00:00:00.000Z' },
       { eventId: 'match-1:14', sequence: 14, createdAt: '2026-08-25T00:00:00.000Z' },
     ]);
@@ -35,7 +37,14 @@ function state() {
     diceValue: null,
     winnerPlayerId: null,
     winReason: null,
-    players: [{ playerId: 'user-1', color: 'RED' as const, seatIndex: 0 as const, status: 'ACTIVE' as const }],
+    players: [
+      {
+        playerId: 'user-1',
+        color: 'RED' as const,
+        seatIndex: 0 as const,
+        status: 'ACTIVE' as const,
+      },
+    ],
     pawns: [],
   };
 }

@@ -4,15 +4,19 @@ import { createVersionWatchdog } from './watchdog.js';
 
 describe('version watchdog', () => {
   it('periodically detects missed-broadcast divergence for subscribed clients', async () => {
-    const alerts: Array<{ matchId: string; lastSequence: number }> = [];
+    const alerts: { matchId: string; lastSequence: number }[] = [];
     const watchdog = createVersionWatchdog({
       intervalMs: 1000,
       now: () => new Date('2026-08-25T00:00:00.000Z'),
-      loadMatches: vi.fn(async () => [
-        { matchId: 'match-1', stateVersion: 2, lastSequence: 5 },
-      ]),
+      loadMatches: vi.fn(async () => [{ matchId: 'match-1', stateVersion: 2, lastSequence: 5 }]),
       loadClients: vi.fn(async () => [
-        { socketId: 'socket-1', matchId: 'match-1', stateVersion: 2, lastSequence: 3, syncInProgress: false },
+        {
+          socketId: 'socket-1',
+          matchId: 'match-1',
+          stateVersion: 2,
+          lastSequence: 3,
+          syncInProgress: false,
+        },
       ]),
       onDivergence: async (input) => {
         alerts.push(input);
@@ -31,7 +35,13 @@ describe('version watchdog', () => {
       now: () => new Date('2026-08-25T00:00:00.000Z'),
       loadMatches: vi.fn(async () => [{ matchId: 'match-1', stateVersion: 2, lastSequence: 5 }]),
       loadClients: vi.fn(async () => [
-        { socketId: 'socket-1', matchId: 'match-1', stateVersion: 2, lastSequence: 3, syncInProgress: true },
+        {
+          socketId: 'socket-1',
+          matchId: 'match-1',
+          stateVersion: 2,
+          lastSequence: 3,
+          syncInProgress: true,
+        },
       ]),
       onDivergence,
     });

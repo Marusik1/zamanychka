@@ -38,7 +38,10 @@ describe('match persistence repository', () => {
       });
     });
     const now = new Date('2026-08-25T00:00:00.000Z');
-    const outbox = createPostgresOutboxLeaseStore(database.prisma, { now: () => now, leaseDurationMs: 10_000 });
+    const outbox = createPostgresOutboxLeaseStore(database.prisma, {
+      now: () => now,
+      leaseDurationMs: 10_000,
+    });
 
     const [first, second] = await Promise.all([
       outbox.claim({ leaseToken: 'worker-a' }),
@@ -51,10 +54,15 @@ describe('match persistence repository', () => {
 
     const claimed = first ?? second;
     const originalWorker = first ? 'worker-a' : 'worker-b';
+    if (!claimed) {
+      throw new Error('expected one worker to claim the row');
+    }
     expect(claimed).toMatchObject({ matchId: match.id });
     expect(first && second).toBeNull();
     expect(reclaimed).toMatchObject({ id: claimed?.id, matchId: match.id });
-    await expect(outbox.markPublished({ outboxId: claimed!.id, leaseToken: originalWorker })).resolves.toBe(false);
+    await expect(
+      outbox.markPublished({ outboxId: claimed.id, leaseToken: originalWorker }),
+    ).resolves.toBe(false);
   });
 
   it('keeps only the latest authoritative snapshot and version on a match', async () => {
@@ -144,7 +152,9 @@ describe('match persistence repository', () => {
         }),
       ),
     ).rejects.toThrow('does not match the locked match');
-    await expect(repository.loadCurrentMatch(second.id)).resolves.toMatchObject({ stateVersion: 0 });
+    await expect(repository.loadCurrentMatch(second.id)).resolves.toMatchObject({
+      stateVersion: 0,
+    });
   });
 
   it('stores processed actions durably with a match-scoped action identity', async () => {

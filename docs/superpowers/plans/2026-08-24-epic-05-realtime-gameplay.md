@@ -13,6 +13,7 @@
 ### Task 1: Canonical realtime contracts and shared envelope types
 
 **Files:**
+
 - Modify: `packages/shared/src/*` or the existing shared contract module(s)
 - Modify: `apps/api/src/realtime/*` domain types if the repository keeps some transport-specific contracts private
 - Test: `packages/shared/src/**/*.test.ts` or the existing shared contract tests
@@ -20,6 +21,7 @@
 - [ ] **Step 1: Write the failing tests**
 
 Cover:
+
 - command envelope shape for `ROLL_DICE`, `ENTER_PAWN`, `MOVE_PAWN`, `SURRENDER`, and `game:sync`;
 - discriminated success/error result contract;
 - durable command identity fields (`matchId`, `actionId`, `expectedStateVersion`);
@@ -34,6 +36,7 @@ Expected: fail until the contracts exist.
 - [ ] **Step 3: Implement the minimal contracts**
 
 Add or extend the canonical shared schemas/types for:
+
 - command envelopes;
 - command results;
 - event envelopes;
@@ -59,6 +62,7 @@ git commit -m "feat: add EPIC-05 realtime contracts"
 ### Task 2: Match persistence model for snapshots, events, actions, and outbox rows
 
 **Files:**
+
 - Modify: `apps/api/prisma/schema.prisma`
 - Modify: `apps/api/src/match/*` or the existing match persistence module(s)
 - Modify: `apps/api/src/realtime/*` persistence adapters if needed
@@ -67,6 +71,7 @@ git commit -m "feat: add EPIC-05 realtime contracts"
 - [ ] **Step 1: Write the failing tests**
 
 Cover:
+
 - current authoritative match snapshot is stored as the latest version only;
 - ordered per-match events are append-only;
 - processed actions are durable and unique by `matchId + actionId`;
@@ -81,6 +86,7 @@ Expected: fail until the schema/repository exists.
 - [ ] **Step 3: Implement the minimal schema/repository changes**
 
 Add the smallest persistence shape needed for:
+
 - current match snapshot;
 - ordered event journal;
 - processed action records;
@@ -111,6 +117,7 @@ git commit -m "feat: add EPIC-05 match persistence model"
 ### Task 3: Transactional command processor and idempotency
 
 **Files:**
+
 - Modify: `apps/api/src/realtime/command-processor.ts` or equivalent
 - Modify: `apps/api/src/realtime/idempotency.ts` or equivalent
 - Modify: `apps/api/src/realtime/command-guards.ts` or equivalent
@@ -119,6 +126,7 @@ git commit -m "feat: add EPIC-05 match persistence model"
 - [ ] **Step 1: Write the failing tests**
 
 Cover:
+
 - exact retry returns original committed success;
 - conflicting fingerprint fails with the dedicated conflict error;
 - stale `expectedStateVersion` fails without mutation;
@@ -133,6 +141,7 @@ Expected: fail until processor logic exists.
 - [ ] **Step 3: Implement the transactional pipeline**
 
 Implement:
+
 - session-authenticated actor identity;
 - PostgreSQL row lock on the authoritative match;
 - `ProcessedAction` lookup before terminal/state validation for exact retry replay;
@@ -159,6 +168,7 @@ git commit -m "feat: add EPIC-05 transactional command processor"
 ### Task 4: Terminal transaction integration with EPIC-04 room reset
 
 **Files:**
+
 - Modify: `apps/api/src/rooms/*` integration boundary
 - Modify: `apps/api/src/realtime/command-processor.ts`
 - Modify: `apps/api/src/rooms/room-repository.ts` or equivalent
@@ -167,6 +177,7 @@ git commit -m "feat: add EPIC-05 transactional command processor"
 - [ ] **Step 1: Write the failing tests**
 
 Cover:
+
 - terminal command persists match snapshot/result/events/action/outbox and resets the matching room in one PostgreSQL transaction;
 - stale terminal completion cannot clear a newer match;
 - exact retry of the winning terminal command returns the original success;
@@ -199,6 +210,7 @@ git commit -m "feat: integrate EPIC-05 terminal room reset"
 ### Task 5: Ordered event journal and outbox publishing
 
 **Files:**
+
 - Modify: `apps/api/src/realtime/event-journal.ts` or equivalent
 - Modify: `apps/api/src/realtime/outbox.ts` or equivalent
 - Modify: `apps/api/src/realtime/outbox-dispatcher.ts` or equivalent
@@ -207,6 +219,7 @@ git commit -m "feat: integrate EPIC-05 terminal room reset"
 - [ ] **Step 1: Write the failing tests**
 
 Cover:
+
 - deterministic per-match sequence assignment;
 - append-only ordered event journal;
 - outbox row persisted in the same transaction;
@@ -222,6 +235,7 @@ Expected: fail until journal/outbox dispatch exists.
 - [ ] **Step 3: Implement the journal/outbox writer and dispatcher**
 
 Add:
+
 - deterministic event ordering metadata;
 - outbox claim/lease handling with a safe retry path;
 - post-commit publish payloads for ACK and broadcast channels;
@@ -246,6 +260,7 @@ git commit -m "feat: add EPIC-05 ordered event journal and outbox"
 ### Task 6: Socket.IO publication and match subscriptions
 
 **Files:**
+
 - Modify: `apps/api/src/realtime/socketio/*` or equivalent
 - Modify: `apps/api/src/realtime/publication/*` or equivalent
 - Test: `apps/api/src/realtime/*.test.ts`
@@ -253,6 +268,7 @@ git commit -m "feat: add EPIC-05 ordered event journal and outbox"
 - [ ] **Step 1: Write the failing tests**
 
 Cover:
+
 - authenticated match subscription;
 - duplicate Socket.IO envelopes are tolerated;
 - out-of-order delivery does not mutate state;
@@ -286,6 +302,7 @@ git commit -m "feat: add EPIC-05 Socket.IO publication"
 ### Task 7: Reconnect, game:sync, gap detection, and version watchdog
 
 **Files:**
+
 - Modify: `apps/api/src/realtime/sync/*` or equivalent
 - Modify: `apps/api/src/realtime/watchdog/*` or equivalent
 - Modify: client-facing replay metadata only if the repository already has a narrow surface for it
@@ -294,6 +311,7 @@ git commit -m "feat: add EPIC-05 Socket.IO publication"
 - [ ] **Step 1: Write the failing tests**
 
 Cover:
+
 - `game:sync` returns ordered continuous transition envelopes when the range is available;
 - `game:sync` falls back to the authoritative snapshot when the range is unsafe or missing;
 - reconnect tolerates broadcast arriving while sync is in progress;
@@ -308,6 +326,7 @@ Expected: fail until sync/watchdog exists.
 - [ ] **Step 3: Implement sync and watchdog behavior**
 
 Add:
+
 - durable client watermark handling;
 - sync decision logic;
 - snapshot fallback;
@@ -330,12 +349,14 @@ git commit -m "feat: add EPIC-05 sync and watchdog recovery"
 ### Task 8: Final EPIC-05 verification and hardening
 
 **Files:**
+
 - Modify only files required by real failures surfaced in this task
 - Test: repository-wide and package-level tests
 
 - [ ] **Step 1: Run the focused package gates**
 
 Run:
+
 - `pnpm -C apps/api test`
 - `pnpm -C apps/api typecheck`
 - `pnpm -C packages/shared test`
@@ -348,6 +369,7 @@ Expected: PASS
 - [ ] **Step 2: Run the full repository gates**
 
 Run:
+
 - `pnpm format:check`
 - `pnpm lint`
 - `pnpm typecheck`
@@ -360,6 +382,7 @@ Expected: PASS
 - [ ] **Step 3: Run final independent reviews**
 
 Review against:
+
 - `docs/superpowers/specs/2026-08-24-epic-05-realtime-gameplay.md`
 - `docs/GAME_ENGINE.md`
 - `docs/MATCH_STATE_MACHINE.md`
@@ -367,6 +390,7 @@ Review against:
 - `docs/ARCHITECTURE.md`
 
 Focus on:
+
 - terminal transaction atomicity;
 - exact retry behavior after terminal success;
 - idempotency fingerprint semantics;

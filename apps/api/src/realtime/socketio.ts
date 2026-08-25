@@ -24,27 +24,28 @@ interface SocketData {
   userId: string;
 }
 
-type SocketCommandAck = (result: GameCommandResult | { ok: false; code: string; message: string }) => void;
+type SocketCommandAck = (
+  result: GameCommandResult | { ok: false; code: string; message: string },
+) => void;
 
 export interface RealtimeRuntime {
   io: Server;
   ready: Promise<void>;
-  publishCommittedTransition(input: {
-    matchId: string;
-    payload: unknown;
-  }): Promise<void>;
-  dispatchOutboxOnce(): Promise<{ dispatched: true } | { dispatched: false; reason: 'EMPTY' | 'PUBLISH_FAILED' }>;
+  publishCommittedTransition(input: { matchId: string; payload: unknown }): Promise<void>;
+  dispatchOutboxOnce(): Promise<
+    { dispatched: true } | { dispatched: false; reason: 'EMPTY' | 'PUBLISH_FAILED' }
+  >;
   close(): Promise<void>;
 }
 
-type TransitionSeed = {
+interface TransitionSeed {
   matchId: string;
   transitionId: string;
   stateVersion: number;
   fromSequence: number;
   toSequence: number;
   events: unknown[];
-};
+}
 
 function parseCookies(header: string | undefined): Record<string, string> {
   if (!header) return {};
@@ -96,9 +97,16 @@ export function createRealtimeRuntime(options: {
   auth: AuthService;
   matchRepository: MatchRepository;
   outbox: OutboxLeaseStore;
-  loadCommittedTransitions?: (input: { matchId: string; stateVersion: number; lastSequence: number }) => Promise<TransitionEnvelope[]>;
+  loadCommittedTransitions?: (input: {
+    matchId: string;
+    stateVersion: number;
+    lastSequence: number;
+  }) => Promise<TransitionEnvelope[]>;
   commandProcessor: {
-    process(input: { authenticatedUserId: string | null | undefined; command: GameCommandRequest }): Promise<GameCommandResult>;
+    process(input: {
+      authenticatedUserId: string | null | undefined;
+      command: GameCommandRequest;
+    }): Promise<GameCommandResult>;
   };
   allowedOrigins: string[];
   redisUrl?: string;
@@ -160,26 +168,33 @@ export function createRealtimeRuntime(options: {
   });
 
   io.on('connection', (socket) => {
-    socket.on('match:join', async (input: unknown, ack?: (result: { ok: true } | { ok: false; code: string }) => void) => {
-      const parsed = matchSubscriptionRequestSchema.safeParse(input);
-      if (!parsed.success) {
-        ack?.({ ok: false, code: 'VALIDATION_ERROR' });
-        return;
-      }
-      const match = await options.matchRepository.loadCurrentMatch(parsed.data.matchId);
-      if (!match) {
-        ack?.({ ok: false, code: 'MATCH_NOT_FOUND' });
-        return;
-      }
-      const participants = match.seatOrder as unknown;
-      const allowed = Array.isArray(participants) && participants.includes((socket.data as SocketData).userId);
-      if (!allowed) {
-        ack?.({ ok: false, code: 'MATCH_ACCESS_DENIED' });
-        return;
-      }
-      await socket.join(roomName(parsed.data.matchId));
-      ack?.({ ok: true });
-    });
+    socket.on(
+      'match:join',
+      async (
+        input: unknown,
+        ack?: (result: { ok: true } | { ok: false; code: string }) => void,
+      ) => {
+        const parsed = matchSubscriptionRequestSchema.safeParse(input);
+        if (!parsed.success) {
+          ack?.({ ok: false, code: 'VALIDATION_ERROR' });
+          return;
+        }
+        const match = await options.matchRepository.loadCurrentMatch(parsed.data.matchId);
+        if (!match) {
+          ack?.({ ok: false, code: 'MATCH_NOT_FOUND' });
+          return;
+        }
+        const participants = match.seatOrder as unknown;
+        const allowed =
+          Array.isArray(participants) && participants.includes((socket.data as SocketData).userId);
+        if (!allowed) {
+          ack?.({ ok: false, code: 'MATCH_ACCESS_DENIED' });
+          return;
+        }
+        await socket.join(roomName(parsed.data.matchId));
+        ack?.({ ok: true });
+      },
+    );
 
     socket.on('game:command', async (input: unknown, ack?: SocketCommandAck) => {
       const parsed = gameCommandRequestSchema.safeParse(input);
@@ -204,36 +219,80 @@ export function createRealtimeRuntime(options: {
     socket.on('game:sync', async (input: unknown, ack?: (result: unknown) => void) => {
       const parsed = gameSyncRequestSchema.safeParse(input);
       if (!parsed.success) {
-        ack?.(gameSyncResponseSchema.parse({ mode: 'snapshot', snapshot: emptySnapshot, watermark: { stateVersion: 0, lastSequence: 0 } }));
+        ack?.(
+          gameSyncResponseSchema.parse({
+            mode: 'snapshot',
+            snapshot: emptySnapshot,
+            watermark: { stateVersion: 0, lastSequence: 0 },
+          }),
+        );
         return;
       }
       const match = await options.matchRepository.loadCurrentMatch(parsed.data.matchId);
       if (!match) {
-        ack?.(gameSyncResponseSchema.parse({ mode: 'snapshot', snapshot: emptySnapshot, watermark: { stateVersion: 0, lastSequence: 0 } }));
+        ack?.(
+          gameSyncResponseSchema.parse({
+            mode: 'snapshot',
+            snapshot: emptySnapshot,
+            watermark: { stateVersion: 0, lastSequence: 0 },
+          }),
+        );
         return;
       }
       if (!options.loadCommittedTransitions) {
-        ack?.(gameSyncResponseSchema.parse({ mode: 'snapshot', snapshot: match.snapshot, watermark: { stateVersion: match.stateVersion ?? 0, lastSequence: match.lastSequence ?? 0 } }));
+        ack?.(
+          gameSyncResponseSchema.parse({
+            mode: 'snapshot',
+            snapshot: match.snapshot,
+            watermark: {
+              stateVersion: match.stateVersion ?? 0,
+              lastSequence: match.lastSequence ?? 0,
+            },
+          }),
+        );
         return;
       }
-      const transitions = await options.loadCommittedTransitions({ matchId: parsed.data.matchId, stateVersion: parsed.data.stateVersion, lastSequence: parsed.data.lastSequence });
+      const transitions = await options.loadCommittedTransitions({
+        matchId: parsed.data.matchId,
+        stateVersion: parsed.data.stateVersion,
+        lastSequence: parsed.data.lastSequence,
+      });
       if (Array.isArray(transitions) && transitions.length > 0) {
+        const lastTransition = transitions[transitions.length - 1];
+        if (!lastTransition) {
+          ack?.(
+            gameSyncResponseSchema.parse({
+              mode: 'snapshot',
+              snapshot: match.snapshot,
+              watermark: {
+                stateVersion: match.stateVersion ?? 0,
+                lastSequence: match.lastSequence ?? 0,
+              },
+            }),
+          );
+          return;
+        }
         const response = gameSyncResponseSchema.parse({
           mode: 'events',
           transitions,
           watermark: {
-            stateVersion: transitions.at(-1)!.stateVersion,
-            lastSequence: transitions.at(-1)!.toSequence,
+            stateVersion: lastTransition.stateVersion,
+            lastSequence: lastTransition.toSequence,
           },
         });
         ack?.(response);
         return;
       }
-      ack?.(gameSyncResponseSchema.parse({
-        mode: 'snapshot',
-        snapshot: match.snapshot,
-        watermark: { stateVersion: match.stateVersion ?? 0, lastSequence: match.lastSequence ?? 0 },
-      }));
+      ack?.(
+        gameSyncResponseSchema.parse({
+          mode: 'snapshot',
+          snapshot: match.snapshot,
+          watermark: {
+            stateVersion: match.stateVersion ?? 0,
+            lastSequence: match.lastSequence ?? 0,
+          },
+        }),
+      );
     });
   });
 

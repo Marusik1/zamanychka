@@ -7,6 +7,34 @@ import { createActiveGameState } from '@zamanushka/game-engine';
 
 import { createRealtimeRuntime } from './socketio.js';
 
+interface AuthServiceLike {
+  me(token?: string): Promise<{ user: { id: string } }>;
+}
+
+interface MatchRepositoryLike {
+  loadCurrentMatch(matchId: string): Promise<{
+    id: string;
+    seatOrder: string[];
+    snapshot: ReturnType<typeof matchSnapshot>;
+    status: string;
+    stateVersion?: number;
+    lastSequence?: number;
+  } | null>;
+}
+
+interface OutboxStoreLike {
+  claim(input: { leaseToken: string }): Promise<{ id: string } | null>;
+  markPublished(input: { outboxId: string; leaseToken: string }): Promise<boolean>;
+  release(input: { outboxId: string; leaseToken: string }): Promise<void>;
+}
+
+interface CommandProcessorLike {
+  process(input: {
+    authenticatedUserId: string | null | undefined;
+    command: unknown;
+  }): Promise<unknown>;
+}
+
 function sessionHeader(token?: string) {
   return token ? { cookie: `__Host-zamanushka-session=${encodeURIComponent(token)}` } : {};
 }
@@ -27,7 +55,7 @@ function createAuthService() {
       if (token === 'session-c') return { user: { id: 'user-c' } } as never;
       throw new Error('AUTH_REQUIRED');
     },
-  } as any;
+  } satisfies AuthServiceLike;
 }
 
 function createMatchRepository(current = matchSnapshot()) {
@@ -38,34 +66,53 @@ function createMatchRepository(current = matchSnapshot()) {
     status: 'ACTIVE',
   };
   return {
-    loadCurrentMatch: vi.fn(async (matchId: string) => (matchId === match.id ? structuredClone(match) : null)),
-  } as any;
+    loadCurrentMatch: vi.fn(async (matchId: string) =>
+      matchId === match.id ? structuredClone(match) : null,
+    ),
+  } satisfies MatchRepositoryLike;
 }
 
-function createOutboxStore(row?: { id: string; matchId: string; resultingStateVersion: number; payload: unknown }) {
+function createOutboxStore(row?: {
+  id: string;
+  matchId: string;
+  resultingStateVersion: number;
+  payload: unknown;
+}) {
   const queue = row ? [structuredClone(row)] : [];
   return {
     claim: vi.fn(async () => queue.shift() ?? null),
     markPublished: vi.fn(async () => true),
     release: vi.fn(async () => undefined),
-  } as any;
+  } satisfies OutboxStoreLike;
 }
 
 async function startRuntime(options?: {
-  auth?: any;
-  matchRepository?: ReturnType<typeof createMatchRepository>;
-  outbox?: ReturnType<typeof createOutboxStore>;
-  loadCommittedTransitions?: (...args: any[]) => Promise<any>;
-  commandProcessor?: { process: (...args: any[]) => Promise<any> };
+  auth?: AuthServiceLike;
+  matchRepository?: MatchRepositoryLike;
+  outbox?: OutboxStoreLike;
+  loadCommittedTransitions?: (input: {
+    matchId: string;
+    stateVersion: number;
+    lastSequence: number;
+  }) => Promise<unknown[]>;
+  commandProcessor?: CommandProcessorLike;
   redisUrl?: string;
 }) {
   const app = Fastify();
-  const runtime = createRealtimeRuntime({
+  const runtimeOptions = {
     httpServer: app.server,
-    auth: options?.auth ?? createAuthService(),
-    matchRepository: options?.matchRepository ?? createMatchRepository(),
-    outbox: options?.outbox ?? createOutboxStore(),
-    ...(options?.loadCommittedTransitions ? { loadCommittedTransitions: options.loadCommittedTransitions } : {}),
+    auth: (options?.auth ?? createAuthService()) as unknown as Parameters<
+      typeof createRealtimeRuntime
+    >[0]['auth'],
+    matchRepository: (options?.matchRepository ?? createMatchRepository()) as unknown as Parameters<
+      typeof createRealtimeRuntime
+    >[0]['matchRepository'],
+    outbox: (options?.outbox ?? createOutboxStore()) as unknown as Parameters<
+      typeof createRealtimeRuntime
+    >[0]['outbox'],
+    ...(options?.loadCommittedTransitions
+      ? { loadCommittedTransitions: options.loadCommittedTransitions }
+      : {}),
     commandProcessor:
       options?.commandProcessor ??
       ({
@@ -79,10 +126,11 @@ async function startRuntime(options?: {
           events: [],
           ack: { actionId: 'action-1', stateVersion: 1, lastSequence: 1 },
         })),
-      } as any),
+      } as unknown as Parameters<typeof createRealtimeRuntime>[0]['commandProcessor']),
     allowedOrigins: ['http://127.0.0.1'],
     ...(options?.redisUrl ? { redisUrl: options.redisUrl } : {}),
-  });
+  } as unknown as Parameters<typeof createRealtimeRuntime>[0];
+  const runtime = createRealtimeRuntime(runtimeOptions);
   await runtime.ready;
   await app.listen({ host: '127.0.0.1', port: 0 });
   const address = app.server.address();
@@ -112,7 +160,7 @@ async function waitForEvent<T>(socket: Socket, event: string): Promise<T> {
 }
 
 describe('Socket.IO realtime publication and subscriptions', () => {
-  let servers: Array<Awaited<ReturnType<typeof startRuntime>>>;
+  let servers: Awaited<ReturnType<typeof startRuntime>>[];
 
   beforeEach(() => {
     servers = [];
@@ -176,7 +224,9 @@ describe('Socket.IO realtime publication and subscriptions', () => {
           : null,
       ),
     };
-    const server = await startRuntime({ matchRepository: finishedMatchRepository as any });
+    const server = await startRuntime({
+      matchRepository: finishedMatchRepository as MatchRepositoryLike,
+    });
     servers.push(server);
 
     const socket = connectClient(server.url, sessionHeader('session-a').cookie);
@@ -190,50 +240,74 @@ describe('Socket.IO realtime publication and subscriptions', () => {
   });
 
   it('derives command actor identity from the server session and ignores client-supplied extras', async () => {
-    const processor = { process: vi.fn(async (input) => ({ ok: true, ...input.command, stateVersion: 1, lastSequence: 1, snapshot: matchSnapshot(), events: [], ack: { actionId: input.command.actionId, stateVersion: 1, lastSequence: 1 } })) };
+    const processor = {
+      process: vi.fn(async (input) => ({
+        ok: true,
+        ...input.command,
+        stateVersion: 1,
+        lastSequence: 1,
+        snapshot: matchSnapshot(),
+        events: [],
+        ack: { actionId: input.command.actionId, stateVersion: 1, lastSequence: 1 },
+      })),
+    };
     const server = await startRuntime({ commandProcessor: processor });
     servers.push(server);
 
     const socket = connectClient(server.url, sessionHeader('session-b').cookie);
     await waitForEvent(socket, 'connect');
     const response = await new Promise<{ ok: boolean; code?: string }>((resolve) => {
-      socket.emit('game:command', {
-        type: 'SURRENDER',
-        matchId: 'match-1',
-        actionId: 'action-1',
-        expectedStateVersion: 0,
-        actorPlayerId: 'attacker',
-      } as never, resolve);
+      socket.emit(
+        'game:command',
+        {
+          type: 'SURRENDER',
+          matchId: 'match-1',
+          actionId: 'action-1',
+          expectedStateVersion: 0,
+          actorPlayerId: 'attacker',
+        } as never,
+        resolve,
+      );
     });
 
-    expect(response).toMatchObject({ ok: false, code: 'INVALID_ACTION', message: 'Request validation failed' });
+    expect(response).toMatchObject({
+      ok: false,
+      code: 'INVALID_ACTION',
+      message: 'Request validation failed',
+    });
     expect(processor.process).not.toHaveBeenCalled();
     socket.disconnect();
   });
 
   it('uses the authenticated session user as the command actor', async () => {
-    const processor = { process: vi.fn(async () => ({
-      ok: true,
-      matchId: 'match-1',
-      actionId: 'action-1',
-      stateVersion: 1,
-      lastSequence: 1,
-      snapshot: matchSnapshot(),
-      events: [],
-      ack: { actionId: 'action-1', stateVersion: 1, lastSequence: 1 },
-    })) };
+    const processor = {
+      process: vi.fn(async () => ({
+        ok: true,
+        matchId: 'match-1',
+        actionId: 'action-1',
+        stateVersion: 1,
+        lastSequence: 1,
+        snapshot: matchSnapshot(),
+        events: [],
+        ack: { actionId: 'action-1', stateVersion: 1, lastSequence: 1 },
+      })),
+    };
     const server = await startRuntime({ commandProcessor: processor });
     servers.push(server);
 
     const socket = connectClient(server.url, sessionHeader('session-b').cookie);
     await waitForEvent(socket, 'connect');
     const response = await new Promise<Record<string, unknown>>((resolve) => {
-      socket.emit('game:command', {
-        type: 'SURRENDER',
-        matchId: 'match-1',
-        actionId: 'action-2',
-        expectedStateVersion: 0,
-      }, resolve);
+      socket.emit(
+        'game:command',
+        {
+          type: 'SURRENDER',
+          matchId: 'match-1',
+          actionId: 'action-2',
+          expectedStateVersion: 0,
+        },
+        resolve,
+      );
     });
 
     expect(response).toMatchObject({ ok: true, actionId: 'action-1' });
@@ -366,7 +440,7 @@ describe('Socket.IO realtime publication and subscriptions', () => {
       ),
     };
     const server = await startRuntime({
-      matchRepository: matchRepository as any,
+      matchRepository: matchRepository as MatchRepositoryLike,
       loadCommittedTransitions: vi.fn(async () => [
         {
           matchId: 'match-1',
@@ -403,7 +477,10 @@ describe('Socket.IO realtime publication and subscriptions', () => {
 
     const socket = connectClient(server.url, sessionHeader('session-a').cookie);
     await waitForEvent(socket, 'connect');
-    const result = await new Promise<{ mode: string; watermark: { stateVersion: number; lastSequence: number } }>((resolve) => {
+    const result = await new Promise<{
+      mode: string;
+      watermark: { stateVersion: number; lastSequence: number };
+    }>((resolve) => {
       socket.emit('game:sync', { matchId: 'match-1', stateVersion: 0, lastSequence: 0 }, resolve);
     });
 

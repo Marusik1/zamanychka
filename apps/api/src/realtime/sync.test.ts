@@ -22,14 +22,21 @@ function createService() {
     },
   };
   const repository = {
-    loadCurrentMatch: vi.fn(async (matchId: string) => (matchId === match.id ? structuredClone(match) : null)),
+    loadCurrentMatch: vi.fn(async (matchId: string) =>
+      matchId === match.id ? structuredClone(match) : null,
+    ),
   } as const;
   const prisma: { outboxRow: { findMany: (args?: unknown) => Promise<unknown[]> } } = {
     outboxRow: {
       findMany: vi.fn(async () => []),
     },
   };
-  return { service: createGameSyncService({ repository: repository as never, prisma: prisma as never }), repository, prisma, match };
+  return {
+    service: createGameSyncService({ repository: repository as never, prisma: prisma as never }),
+    repository,
+    prisma,
+    match,
+  };
 }
 
 describe('game sync recovery', () => {
@@ -44,8 +51,24 @@ describe('game sync recovery', () => {
           fromSequence: 1,
           toSequence: 2,
           events: [
-            { matchId: match.id, eventId: `${match.id}:1`, sequence: 1, stateVersion: 1, type: 'diceRolled', payload: { playerId: 'user-1', diceValue: 6 }, createdAt: '2026-08-25T00:00:00.000Z' },
-            { matchId: match.id, eventId: `${match.id}:2`, sequence: 2, stateVersion: 1, type: 'turnChanged', payload: { fromPlayerId: 'user-1', toPlayerId: 'user-2' }, createdAt: '2026-08-25T00:00:00.000Z' },
+            {
+              matchId: match.id,
+              eventId: `${match.id}:1`,
+              sequence: 1,
+              stateVersion: 1,
+              type: 'diceRolled',
+              payload: { playerId: 'user-1', diceValue: 6 },
+              createdAt: '2026-08-25T00:00:00.000Z',
+            },
+            {
+              matchId: match.id,
+              eventId: `${match.id}:2`,
+              sequence: 2,
+              stateVersion: 1,
+              type: 'turnChanged',
+              payload: { fromPlayerId: 'user-1', toPlayerId: 'user-2' },
+              createdAt: '2026-08-25T00:00:00.000Z',
+            },
           ],
         },
       },
@@ -57,7 +80,15 @@ describe('game sync recovery', () => {
           fromSequence: 3,
           toSequence: 3,
           events: [
-            { matchId: match.id, eventId: `${match.id}:3`, sequence: 3, stateVersion: 2, type: 'extraRollGranted', payload: { playerId: 'user-2' }, createdAt: '2026-08-25T00:00:00.000Z' },
+            {
+              matchId: match.id,
+              eventId: `${match.id}:3`,
+              sequence: 3,
+              stateVersion: 2,
+              type: 'extraRollGranted',
+              payload: { playerId: 'user-2' },
+              createdAt: '2026-08-25T00:00:00.000Z',
+            },
           ],
         },
       },
@@ -70,7 +101,10 @@ describe('game sync recovery', () => {
       watermark: { stateVersion: 2, lastSequence: 3 },
     });
     if (response.mode === 'events') {
-      expect(response.transitions.map((transition) => transition.transitionId)).toEqual(['action-1', 'action-2']);
+      expect(response.transitions.map((transition) => transition.transitionId)).toEqual([
+        'action-1',
+        'action-2',
+      ]);
     }
   });
 
@@ -94,7 +128,15 @@ describe('game sync recovery', () => {
           fromSequence: 3,
           toSequence: 3,
           events: [
-            { matchId: match.id, eventId: `${match.id}:3`, sequence: 3, stateVersion: 2, type: 'extraRollGranted', payload: { playerId: 'user-2' }, createdAt: '2026-08-25T00:00:00.000Z' },
+            {
+              matchId: match.id,
+              eventId: `${match.id}:3`,
+              sequence: 3,
+              stateVersion: 2,
+              type: 'extraRollGranted',
+              payload: { playerId: 'user-2' },
+              createdAt: '2026-08-25T00:00:00.000Z',
+            },
           ],
         },
       },
@@ -106,7 +148,11 @@ describe('game sync recovery', () => {
 
   it('buffers reconnect divergence while sync is in progress and deduplicates repeated broadcasts', async () => {
     const { service } = createService();
-    const socket = service.createClientState({ matchId: 'match-1', stateVersion: 0, lastSequence: 0 });
+    const socket = service.createClientState({
+      matchId: 'match-1',
+      stateVersion: 0,
+      lastSequence: 0,
+    });
     socket.beginSync();
     socket.receiveBroadcast({ matchId: 'match-1', stateVersion: 1, lastSequence: 1 });
     socket.receiveBroadcast({ matchId: 'match-1', stateVersion: 1, lastSequence: 1 });

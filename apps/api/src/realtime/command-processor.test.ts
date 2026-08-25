@@ -45,7 +45,10 @@ async function createMatch() {
       snapshot,
     },
   });
-  await database.prisma.room.update({ where: { key: 'single-room' }, data: { currentMatchId: match.id } });
+  await database.prisma.room.update({
+    where: { key: 'single-room' },
+    data: { currentMatchId: match.id },
+  });
   return match;
 }
 
@@ -57,17 +60,23 @@ async function prepareHomeDiagonalWin(matchId: string) {
     diceValue: 1 as const,
     turnPhase: 'WAITING_FOR_ACTION' as const,
     pawns: state.pawns.map((pawn) => {
-      if (pawn.pawnId === 'user-1-pawn-1') return { ...pawn, position: { zone: 'HOME' as const, homeIndex: 1 as const } };
-      if (pawn.pawnId === 'user-1-pawn-2') return { ...pawn, position: { zone: 'HOME' as const, homeIndex: 2 as const } };
-      if (pawn.pawnId === 'user-1-pawn-3') return { ...pawn, position: { zone: 'HOME' as const, homeIndex: 3 as const } };
-      if (pawn.pawnId === 'user-1-pawn-4') return { ...pawn, position: { zone: 'PERIMETER' as const, progress: 27 } };
+      if (pawn.pawnId === 'user-1-pawn-1')
+        return { ...pawn, position: { zone: 'HOME' as const, homeIndex: 1 as const } };
+      if (pawn.pawnId === 'user-1-pawn-2')
+        return { ...pawn, position: { zone: 'HOME' as const, homeIndex: 2 as const } };
+      if (pawn.pawnId === 'user-1-pawn-3')
+        return { ...pawn, position: { zone: 'HOME' as const, homeIndex: 3 as const } };
+      if (pawn.pawnId === 'user-1-pawn-4')
+        return { ...pawn, position: { zone: 'PERIMETER' as const, progress: 27 } };
       return pawn;
     }),
   };
   await database.prisma.match.update({ where: { id: matchId }, data: { snapshot } });
 }
 
-function createProcessor(options?: { onTerminalMatch?: Parameters<typeof createCommandProcessor>[0]['onTerminalMatch'] }) {
+function createProcessor(options?: {
+  onTerminalMatch?: Parameters<typeof createCommandProcessor>[0]['onTerminalMatch'];
+}) {
   const dice = vi.fn(() => 6 as const);
   const transition = vi.fn(engineTransition);
   const completion = createMatchCompletionService({ repository: roomRepository });
@@ -78,9 +87,11 @@ function createProcessor(options?: { onTerminalMatch?: Parameters<typeof createC
       repository,
       rollDice: dice,
       transition,
-      onTerminalMatch: options?.onTerminalMatch ?? (async ({ tx, matchId }) => {
-        await completion.completeTerminalMatchInTransaction(tx, matchId);
-      }),
+      onTerminalMatch:
+        options?.onTerminalMatch ??
+        (async ({ tx, matchId }) => {
+          await completion.completeTerminalMatchInTransaction(tx, matchId);
+        }),
     }),
   };
 }
@@ -98,16 +109,31 @@ describe('transactional realtime command processor', () => {
     const match = await createMatch();
     await prepareHomeDiagonalWin(match.id);
     const completion = createMatchCompletionService({ repository: roomRepository });
-    const { processor } = createProcessor({ onTerminalMatch: async ({ tx, matchId }) => {
-      await completion.completeTerminalMatchInTransaction(tx, matchId);
-    } });
+    const { processor } = createProcessor({
+      onTerminalMatch: async ({ tx, matchId }) => {
+        await completion.completeTerminalMatchInTransaction(tx, matchId);
+      },
+    });
 
-    await expect(processor.process({
-      authenticatedUserId: 'user-1',
-      command: { type: 'MOVE_PAWN', matchId: match.id, actionId: 'home-win', expectedStateVersion: 0, pawnId: 'user-1-pawn-4' },
-    })).resolves.toMatchObject({ ok: true, snapshot: { status: 'FINISHED', winReason: 'HOME_DIAGONAL_COMPLETED' } });
+    await expect(
+      processor.process({
+        authenticatedUserId: 'user-1',
+        command: {
+          type: 'MOVE_PAWN',
+          matchId: match.id,
+          actionId: 'home-win',
+          expectedStateVersion: 0,
+          pawnId: 'user-1-pawn-4',
+        },
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      snapshot: { status: 'FINISHED', winReason: 'HOME_DIAGONAL_COMPLETED' },
+    });
 
-    await expect(database.prisma.match.findUniqueOrThrow({ where: { id: match.id } })).resolves.toMatchObject({
+    await expect(
+      database.prisma.match.findUniqueOrThrow({ where: { id: match.id } }),
+    ).resolves.toMatchObject({
       status: 'FINISHED',
       terminalResult: { winnerPlayerId: 'user-1', reason: 'HOME_DIAGONAL_COMPLETED' },
     });
@@ -139,16 +165,28 @@ describe('transactional realtime command processor', () => {
     const { processor } = createProcessor();
     await processor.process({
       authenticatedUserId: 'user-1',
-      command: { type: 'ROLL_DICE', matchId: match.id, actionId: 'action-1', expectedStateVersion: 0 },
+      command: {
+        type: 'ROLL_DICE',
+        matchId: match.id,
+        actionId: 'action-1',
+        expectedStateVersion: 0,
+      },
     });
 
     const result = await processor.process({
       authenticatedUserId: 'user-1',
-      command: { type: 'SURRENDER', matchId: match.id, actionId: 'action-1', expectedStateVersion: 1 },
+      command: {
+        type: 'SURRENDER',
+        matchId: match.id,
+        actionId: 'action-1',
+        expectedStateVersion: 1,
+      },
     });
 
     expect(result).toMatchObject({ ok: false, code: 'ACTION_ID_CONFLICT' });
-    expect(await database.prisma.match.findUniqueOrThrow({ where: { id: match.id } })).toMatchObject({
+    expect(
+      await database.prisma.match.findUniqueOrThrow({ where: { id: match.id } }),
+    ).toMatchObject({
       stateVersion: 1,
     });
   });
@@ -160,11 +198,18 @@ describe('transactional realtime command processor', () => {
 
     const result = await processor.process({
       authenticatedUserId: 'user-1',
-      command: { type: 'ROLL_DICE', matchId: match.id, actionId: 'action-1', expectedStateVersion: 9 },
+      command: {
+        type: 'ROLL_DICE',
+        matchId: match.id,
+        actionId: 'action-1',
+        expectedStateVersion: 9,
+      },
     });
 
     expect(result).toMatchObject({ ok: false, code: 'STALE_STATE_VERSION', stateVersion: 0 });
-    expect(await database.prisma.match.findUniqueOrThrow({ where: { id: match.id } })).toEqual(before);
+    expect(await database.prisma.match.findUniqueOrThrow({ where: { id: match.id } })).toEqual(
+      before,
+    );
     expect(await database.prisma.processedAction.count()).toBe(0);
   });
 
@@ -175,11 +220,18 @@ describe('transactional realtime command processor', () => {
 
     const result = await processor.process({
       authenticatedUserId: 'user-2',
-      command: { type: 'ROLL_DICE', matchId: match.id, actionId: 'action-1', expectedStateVersion: 0 },
+      command: {
+        type: 'ROLL_DICE',
+        matchId: match.id,
+        actionId: 'action-1',
+        expectedStateVersion: 0,
+      },
     });
 
     expect(result).toMatchObject({ ok: false, code: 'NOT_YOUR_TURN' });
-    expect(await database.prisma.match.findUniqueOrThrow({ where: { id: match.id } })).toEqual(before);
+    expect(await database.prisma.match.findUniqueOrThrow({ where: { id: match.id } })).toEqual(
+      before,
+    );
     expect(await database.prisma.matchEvent.count()).toBe(0);
     expect(await database.prisma.processedAction.count()).toBe(0);
     expect(await database.prisma.outboxRow.count()).toBe(0);
@@ -188,9 +240,14 @@ describe('transactional realtime command processor', () => {
   it('persists a terminal surrender, outbox, and matching EPIC-04 room reset atomically', async () => {
     const match = await createMatch();
     const completion = createMatchCompletionService({ repository: roomRepository });
-    const onTerminalMatch = vi.fn(async (input: { tx: Parameters<typeof completion.completeTerminalMatchInTransaction>[0]; matchId: string }) => {
-      await completion.completeTerminalMatchInTransaction(input.tx, input.matchId);
-    });
+    const onTerminalMatch = vi.fn(
+      async (input: {
+        tx: Parameters<typeof completion.completeTerminalMatchInTransaction>[0];
+        matchId: string;
+      }) => {
+        await completion.completeTerminalMatchInTransaction(input.tx, input.matchId);
+      },
+    );
     const { processor } = createProcessor({ onTerminalMatch });
     const command = {
       type: 'SURRENDER' as const,
@@ -204,11 +261,15 @@ describe('transactional realtime command processor', () => {
       ok: true,
       stateVersion: 1,
     });
-    expect(await database.prisma.match.findUniqueOrThrow({ where: { id: match.id } })).toMatchObject({
+    expect(
+      await database.prisma.match.findUniqueOrThrow({ where: { id: match.id } }),
+    ).toMatchObject({
       status: 'FINISHED',
       terminalResult: { winnerPlayerId: 'user-2', reason: 'LAST_ACTIVE_PLAYER' },
     });
-    expect(await database.prisma.matchEvent.count({ where: { matchId: match.id } })).toBeGreaterThan(0);
+    expect(
+      await database.prisma.matchEvent.count({ where: { matchId: match.id } }),
+    ).toBeGreaterThan(0);
     expect(await database.prisma.processedAction.count({ where: { matchId: match.id } })).toBe(1);
     expect(await database.prisma.outboxRow.count({ where: { matchId: match.id } })).toBe(1);
     expect(await roomRepository.loadSingletonRoom()).toMatchObject({
@@ -221,21 +282,36 @@ describe('transactional realtime command processor', () => {
       ],
     });
 
-    await expect(processor.process({ authenticatedUserId: 'user-1', command })).resolves.toEqual(first);
+    await expect(processor.process({ authenticatedUserId: 'user-1', command })).resolves.toEqual(
+      first,
+    );
     expect(onTerminalMatch).toHaveBeenCalledTimes(1);
     expect(await database.prisma.processedAction.count()).toBe(1);
   });
 
   it('rolls back terminal match, events, action, outbox, and room when reset fails', async () => {
     const match = await createMatch();
-    const { processor } = createProcessor({ onTerminalMatch: () => { throw new Error('room reset failed'); } });
+    const { processor } = createProcessor({
+      onTerminalMatch: () => {
+        throw new Error('room reset failed');
+      },
+    });
 
-    await expect(processor.process({
-      authenticatedUserId: 'user-1',
-      command: { type: 'SURRENDER', matchId: match.id, actionId: 'terminal-action', expectedStateVersion: 0 },
-    })).rejects.toThrow('room reset failed');
+    await expect(
+      processor.process({
+        authenticatedUserId: 'user-1',
+        command: {
+          type: 'SURRENDER',
+          matchId: match.id,
+          actionId: 'terminal-action',
+          expectedStateVersion: 0,
+        },
+      }),
+    ).rejects.toThrow('room reset failed');
 
-    await expect(database.prisma.match.findUniqueOrThrow({ where: { id: match.id } })).resolves.toMatchObject({ status: 'ACTIVE', stateVersion: 0 });
+    await expect(
+      database.prisma.match.findUniqueOrThrow({ where: { id: match.id } }),
+    ).resolves.toMatchObject({ status: 'ACTIVE', stateVersion: 0 });
     expect(await database.prisma.matchEvent.count()).toBe(0);
     expect(await database.prisma.processedAction.count()).toBe(0);
     expect(await database.prisma.outboxRow.count()).toBe(0);
@@ -245,18 +321,31 @@ describe('transactional realtime command processor', () => {
   it('rolls back a terminal transition and room reset when outbox persistence fails', async () => {
     const match = await createMatch();
     const completion = createMatchCompletionService({ repository: roomRepository });
-    const insertOutboxRow = vi.spyOn(repository, 'insertOutboxRow').mockRejectedValueOnce(new Error('outbox failed'));
-    const { processor } = createProcessor({ onTerminalMatch: async ({ tx, matchId }) => {
-      await completion.completeTerminalMatchInTransaction(tx, matchId);
-    } });
+    const insertOutboxRow = vi
+      .spyOn(repository, 'insertOutboxRow')
+      .mockRejectedValueOnce(new Error('outbox failed'));
+    const { processor } = createProcessor({
+      onTerminalMatch: async ({ tx, matchId }) => {
+        await completion.completeTerminalMatchInTransaction(tx, matchId);
+      },
+    });
 
-    await expect(processor.process({
-      authenticatedUserId: 'user-1',
-      command: { type: 'SURRENDER', matchId: match.id, actionId: 'terminal-action', expectedStateVersion: 0 },
-    })).rejects.toThrow('outbox failed');
+    await expect(
+      processor.process({
+        authenticatedUserId: 'user-1',
+        command: {
+          type: 'SURRENDER',
+          matchId: match.id,
+          actionId: 'terminal-action',
+          expectedStateVersion: 0,
+        },
+      }),
+    ).rejects.toThrow('outbox failed');
 
     expect(insertOutboxRow).toHaveBeenCalledTimes(1);
-    await expect(database.prisma.match.findUniqueOrThrow({ where: { id: match.id } })).resolves.toMatchObject({ status: 'ACTIVE', stateVersion: 0 });
+    await expect(
+      database.prisma.match.findUniqueOrThrow({ where: { id: match.id } }),
+    ).resolves.toMatchObject({ status: 'ACTIVE', stateVersion: 0 });
     expect(await database.prisma.matchEvent.count()).toBe(0);
     expect(await database.prisma.processedAction.count()).toBe(0);
     expect(await database.prisma.outboxRow.count()).toBe(0);
@@ -273,18 +362,32 @@ describe('transactional realtime command processor', () => {
         snapshot: matchA.snapshot as Prisma.InputJsonValue,
       },
     });
-    await database.prisma.room.update({ where: { key: 'single-room' }, data: { currentMatchId: matchB.id } });
+    await database.prisma.room.update({
+      where: { key: 'single-room' },
+      data: { currentMatchId: matchB.id },
+    });
     const completion = createMatchCompletionService({ repository: roomRepository });
-    const { processor } = createProcessor({ onTerminalMatch: async ({ tx, matchId }) => {
-      await completion.completeTerminalMatchInTransaction(tx, matchId);
-    } });
+    const { processor } = createProcessor({
+      onTerminalMatch: async ({ tx, matchId }) => {
+        await completion.completeTerminalMatchInTransaction(tx, matchId);
+      },
+    });
 
-    await expect(processor.process({
-      authenticatedUserId: 'user-1',
-      command: { type: 'SURRENDER', matchId: matchA.id, actionId: 'terminal-action', expectedStateVersion: 0 },
-    })).resolves.toMatchObject({ ok: true, snapshot: { status: 'FINISHED' } });
+    await expect(
+      processor.process({
+        authenticatedUserId: 'user-1',
+        command: {
+          type: 'SURRENDER',
+          matchId: matchA.id,
+          actionId: 'terminal-action',
+          expectedStateVersion: 0,
+        },
+      }),
+    ).resolves.toMatchObject({ ok: true, snapshot: { status: 'FINISHED' } });
 
-    await expect(database.prisma.match.findUniqueOrThrow({ where: { id: matchA.id } })).resolves.toMatchObject({ status: 'FINISHED' });
+    await expect(
+      database.prisma.match.findUniqueOrThrow({ where: { id: matchA.id } }),
+    ).resolves.toMatchObject({ status: 'FINISHED' });
     expect(await database.prisma.outboxRow.count({ where: { matchId: matchA.id } })).toBe(1);
     expect(await roomRepository.loadSingletonRoom()).toMatchObject({
       currentMatchId: matchB.id,

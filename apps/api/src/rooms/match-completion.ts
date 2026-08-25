@@ -64,7 +64,11 @@ export function createMatchCompletionService(options: { repository: RoomReposito
     });
   }
 
-  async function completeLockedTerminalMatch(tx: TxClient, room: PersistedRoom, completedMatchId: string): Promise<MatchCompletionResult> {
+  async function completeLockedTerminalMatch(
+    tx: TxClient,
+    room: PersistedRoom,
+    completedMatchId: string,
+  ): Promise<MatchCompletionResult> {
     const match = await loadMatch(tx, completedMatchId);
     if (!match) return completionError('MATCH_NOT_FOUND');
     if (match.status !== 'FINISHED') return completionError('MATCH_NOT_TERMINAL');
@@ -76,12 +80,21 @@ export function createMatchCompletionService(options: { repository: RoomReposito
   }
 
   return {
-    async completeTerminalMatchInTransaction(tx: TxClient, completedMatchId: string): Promise<MatchCompletionResult> {
-      return completeLockedTerminalMatch(tx, await lockSingletonRoomInTransaction(tx), completedMatchId);
+    async completeTerminalMatchInTransaction(
+      tx: TxClient,
+      completedMatchId: string,
+    ): Promise<MatchCompletionResult> {
+      return completeLockedTerminalMatch(
+        tx,
+        await lockSingletonRoomInTransaction(tx),
+        completedMatchId,
+      );
     },
 
     async completeTerminalMatch(completedMatchId: string): Promise<MatchCompletionResult> {
-      return options.repository.withLockedSingletonRoom((tx, room) => completeLockedTerminalMatch(tx, room, completedMatchId));
+      return options.repository.withLockedSingletonRoom((tx, room) =>
+        completeLockedTerminalMatch(tx, room, completedMatchId),
+      );
     },
   };
 }

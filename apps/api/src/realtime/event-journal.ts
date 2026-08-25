@@ -11,18 +11,56 @@ function pawnCoordinate(state: GameState, pawnId: string) {
   return coordinate;
 }
 
-function payload(event: GameEvent, actorPlayerId: string, before: GameState, after: GameState): Record<string, unknown> {
+function payload(
+  event: GameEvent,
+  actorPlayerId: string,
+  before: GameState,
+  after: GameState,
+): Record<string, unknown> {
   switch (event.type) {
-    case 'diceRolled': return { playerId: actorPlayerId, diceValue: event.diceValue };
-    case 'extraRollGranted': return { playerId: event.playerId };
-    case 'turnChanged': return { fromPlayerId: event.fromPlayerId, toPlayerId: event.toPlayerId };
-    case 'pawnEntered': return { pawnId: event.pawnId, playerId: event.playerId, toCoord: pawnCoordinate(after, event.pawnId) };
-    case 'pawnMoved': return { pawnId: event.pawnId, playerId: event.playerId, fromCoord: pawnCoordinate(before, event.pawnId), toCoord: pawnCoordinate(after, event.pawnId), physicalPath: resolvePhysicalPath(before, event.pawnId, before.diceValue ?? 0) ?? [], capture: null };
-    case 'pawnEnteredHome': return { pawnId: event.pawnId, playerId: event.playerId, homeIndex: event.homeIndex, fromCoord: pawnCoordinate(before, event.pawnId), toCoord: pawnCoordinate(after, event.pawnId) };
-    case 'pawnCaptured': return { byPawnId: event.pawnId, byPlayerId: event.playerId, capturedPawnId: event.capturedPawnId, capturedPlayerId: event.capturedPlayerId, atCoord: pawnCoordinate(after, event.pawnId) };
-    case 'pawnRemoved': return { pawnId: event.pawnId, playerId: event.playerId, reason: 'SURRENDERED' };
-    case 'playerSurrendered': return { playerId: event.playerId };
-    case 'gameWon': return { winnerPlayerId: event.winnerPlayerId, reason: event.reason };
+    case 'diceRolled':
+      return { playerId: actorPlayerId, diceValue: event.diceValue };
+    case 'extraRollGranted':
+      return { playerId: event.playerId };
+    case 'turnChanged':
+      return { fromPlayerId: event.fromPlayerId, toPlayerId: event.toPlayerId };
+    case 'pawnEntered':
+      return {
+        pawnId: event.pawnId,
+        playerId: event.playerId,
+        toCoord: pawnCoordinate(after, event.pawnId),
+      };
+    case 'pawnMoved':
+      return {
+        pawnId: event.pawnId,
+        playerId: event.playerId,
+        fromCoord: pawnCoordinate(before, event.pawnId),
+        toCoord: pawnCoordinate(after, event.pawnId),
+        physicalPath: resolvePhysicalPath(before, event.pawnId, before.diceValue ?? 0) ?? [],
+        capture: null,
+      };
+    case 'pawnEnteredHome':
+      return {
+        pawnId: event.pawnId,
+        playerId: event.playerId,
+        homeIndex: event.homeIndex,
+        fromCoord: pawnCoordinate(before, event.pawnId),
+        toCoord: pawnCoordinate(after, event.pawnId),
+      };
+    case 'pawnCaptured':
+      return {
+        byPawnId: event.pawnId,
+        byPlayerId: event.playerId,
+        capturedPawnId: event.capturedPawnId,
+        capturedPlayerId: event.capturedPlayerId,
+        atCoord: pawnCoordinate(after, event.pawnId),
+      };
+    case 'pawnRemoved':
+      return { pawnId: event.pawnId, playerId: event.playerId, reason: 'SURRENDERED' };
+    case 'playerSurrendered':
+      return { playerId: event.playerId };
+    case 'gameWon':
+      return { winnerPlayerId: event.winnerPlayerId, reason: event.reason };
   }
 }
 
@@ -30,7 +68,15 @@ export function createEventJournal(options: { now?: () => Date } = {}) {
   const now = options.now ?? (() => new Date());
 
   return {
-    envelopes(input: { matchId: string; stateVersion: number; lastSequence: number; events: readonly GameEvent[]; actorPlayerId: string; before: GameState; after: GameState }): GameEventEnvelope[] {
+    envelopes(input: {
+      matchId: string;
+      stateVersion: number;
+      lastSequence: number;
+      events: readonly GameEvent[];
+      actorPlayerId: string;
+      before: GameState;
+      after: GameState;
+    }): GameEventEnvelope[] {
       const createdAt = now().toISOString();
       return input.events.map((event, index) => {
         const sequence = input.lastSequence + index + 1;

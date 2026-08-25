@@ -91,11 +91,7 @@ export function createMatchRepository(prisma: AppPrismaClient) {
         select: { lastSequence: true },
       });
       const expectedFirstSequence = match.lastSequence + 1;
-      if (
-        input.events.some(
-          (event, index) => event.sequence !== expectedFirstSequence + index,
-        )
-      ) {
+      if (input.events.some((event, index) => event.sequence !== expectedFirstSequence + index)) {
         throw new Error(`match events must begin at ${expectedFirstSequence} and be contiguous`);
       }
       const created = await Promise.all(

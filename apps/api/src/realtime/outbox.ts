@@ -13,7 +13,7 @@ export function createPostgresOutboxLeaseStore(
       const claimedAt = now();
       const leaseExpiresAt = new Date(claimedAt.getTime() + leaseDurationMs);
       return prisma.$transaction(async (tx) => {
-        const candidates = await tx.$queryRaw<Array<{ id: string }>>`
+        const candidates = await tx.$queryRaw<{ id: string }[]>`
           SELECT "id"
           FROM "OutboxRow"
           WHERE "publishedAt" IS NULL

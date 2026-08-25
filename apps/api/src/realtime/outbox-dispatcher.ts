@@ -17,7 +17,9 @@ export function createOutboxDispatcher(options: {
   publish: (payload: unknown) => Promise<void>;
 }) {
   return {
-    async dispatchOne(): Promise<{ dispatched: true } | { dispatched: false; reason: 'EMPTY' | 'PUBLISH_FAILED' }> {
+    async dispatchOne(): Promise<
+      { dispatched: true } | { dispatched: false; reason: 'EMPTY' | 'PUBLISH_FAILED' }
+    > {
       const row = await options.outbox.claim({ leaseToken: options.workerId });
       if (!row) return { dispatched: false, reason: 'EMPTY' };
       try {

@@ -8,7 +8,13 @@ import {
   type GameSyncResponse,
   type TransitionEnvelope,
 } from '@zamanushka/shared';
-type ClientWatermark = { matchId: string; stateVersion: number; lastSequence: number; syncInProgress: boolean };
+interface OutboxTransitionPayload {
+  transitionId?: string;
+  stateVersion?: number;
+  fromSequence?: number;
+  toSequence?: number;
+  events?: unknown[];
+}
 
 function roomlessTransitionEnvelope(input: {
   matchId: string;
@@ -35,32 +41,48 @@ export function createGameSyncService(options: {
   repository: MatchRepository;
   prisma: {
     outboxRow: {
-      findMany(args: { where: { matchId: string; resultingStateVersion?: { gt?: number; lte?: number } }; orderBy: { resultingStateVersion: 'asc' } }): Promise<Array<{ payload: unknown; resultingStateVersion: number }>>;
+      findMany(args: {
+        where: { matchId: string; resultingStateVersion?: { gt?: number; lte?: number } };
+        orderBy: { resultingStateVersion: 'asc' };
+      }): Promise<{ payload: unknown; resultingStateVersion: number }[]>;
     };
   };
   now?: () => Date;
 }) {
   const now = options.now ?? (() => new Date());
-  const clients = new Map<string, ClientWatermark>();
-
   async function sync(input: GameSyncRequest): Promise<GameSyncResponse> {
     const request = gameSyncRequestSchema.parse(input);
     const match = await options.repository.loadCurrentMatch(request.matchId);
     if (!match) {
       return gameSyncResponseSchema.parse({
         mode: 'snapshot',
-        snapshot: { status: 'ABANDONED', stateVersion: 0, turnNumber: 1, turnPhase: null, currentPlayerId: null, diceValue: null, winnerPlayerId: null, winReason: null, players: [], pawns: [], lastSequence: 0 },
+        snapshot: {
+          status: 'ABANDONED',
+          stateVersion: 0,
+          turnNumber: 1,
+          turnPhase: null,
+          currentPlayerId: null,
+          diceValue: null,
+          winnerPlayerId: null,
+          winReason: null,
+          players: [],
+          pawns: [],
+          lastSequence: 0,
+        },
         watermark: { stateVersion: 0, lastSequence: 0 },
       });
     }
 
     const rows = await options.prisma.outboxRow.findMany({
-      where: { matchId: request.matchId, resultingStateVersion: { gt: request.stateVersion, lte: match.stateVersion } },
+      where: {
+        matchId: request.matchId,
+        resultingStateVersion: { gt: request.stateVersion, lte: match.stateVersion },
+      },
       orderBy: { resultingStateVersion: 'asc' },
     });
     const snapshotState = match.snapshot as Prisma.InputJsonObject;
     const transitions = rows.map((row, index) => {
-      const payload = row.payload as any;
+      const payload = row.payload as OutboxTransitionPayload;
       return roomlessTransitionEnvelope({
         matchId: request.matchId,
         transitionId: payload.transitionId ?? `${request.matchId}:${index + 1}`,
@@ -73,12 +95,34 @@ export function createGameSyncService(options: {
     });
 
     const expectedFirstSequence = request.lastSequence + 1;
-    const continuous = transitions.length > 0
-      && transitions[0]!.fromSequence === expectedFirstSequence
-      && transitions.every((transition, index) => transition.fromSequence === expectedFirstSequence + transitions.slice(0, index).reduce((count, prior) => count + (prior.toSequence - prior.fromSequence + 1), 0));
+    const firstTransition = transitions[0];
+    const lastTransition = transitions.at(-1);
+    const continuous =
+      transitions.length > 0 &&
+      firstTransition !== undefined &&
+      firstTransition.fromSequence === expectedFirstSequence &&
+      transitions.every((transition, index) => {
+        const precedingRangeLength = transitions
+          .slice(0, index)
+          .reduce((count, prior) => count + (prior.toSequence - prior.fromSequence + 1), 0);
+        return transition.fromSequence === expectedFirstSequence + precedingRangeLength;
+      });
     if (continuous) {
-      const last = transitions.at(-1)!;
-      return gameSyncResponseSchema.parse({ mode: 'events', transitions, watermark: { stateVersion: last.stateVersion, lastSequence: last.toSequence } });
+      if (!lastTransition) {
+        return gameSyncResponseSchema.parse({
+          mode: 'snapshot',
+          snapshot: snapshotState,
+          watermark: { stateVersion: match.stateVersion, lastSequence: match.lastSequence },
+        });
+      }
+      return gameSyncResponseSchema.parse({
+        mode: 'events',
+        transitions,
+        watermark: {
+          stateVersion: lastTransition.stateVersion,
+          lastSequence: lastTransition.toSequence,
+        },
+      });
     }
 
     return gameSyncResponseSchema.parse({
@@ -88,21 +132,49 @@ export function createGameSyncService(options: {
     });
   }
 
-  function createClientState(input: { matchId: string; stateVersion: number; lastSequence: number }) {
-    const state = { ...input, syncInProgress: false, pendingBroadcasts: [] as Array<{ matchId: string; stateVersion: number; lastSequence: number }> };
+  function createClientState(input: {
+    matchId: string;
+    stateVersion: number;
+    lastSequence: number;
+  }) {
+    const state = {
+      ...input,
+      syncInProgress: false,
+      pendingBroadcasts: [] as {
+        matchId: string;
+        stateVersion: number;
+        lastSequence: number;
+      }[],
+    };
     return {
-      beginSync() { state.syncInProgress = true; },
+      beginSync() {
+        state.syncInProgress = true;
+      },
       receiveBroadcast(event: { matchId: string; stateVersion: number; lastSequence: number }) {
         if (event.matchId !== state.matchId) return;
-        if (state.pendingBroadcasts.some((candidate) => candidate.lastSequence === event.lastSequence && candidate.stateVersion === event.stateVersion)) return;
+        if (
+          state.pendingBroadcasts.some(
+            (candidate) =>
+              candidate.lastSequence === event.lastSequence &&
+              candidate.stateVersion === event.stateVersion,
+          )
+        )
+          return;
         state.pendingBroadcasts.push(event);
         if (!state.syncInProgress) {
           state.stateVersion = event.stateVersion;
           state.lastSequence = event.lastSequence;
         }
       },
-      get pendingBroadcasts() { return state.pendingBroadcasts; },
-      get needsSync() { return state.syncInProgress || state.pendingBroadcasts.some((event) => event.lastSequence > state.lastSequence + 1); },
+      get pendingBroadcasts() {
+        return state.pendingBroadcasts;
+      },
+      get needsSync() {
+        return (
+          state.syncInProgress ||
+          state.pendingBroadcasts.some((event) => event.lastSequence > state.lastSequence + 1)
+        );
+      },
     };
   }
 

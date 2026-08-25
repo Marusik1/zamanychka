@@ -349,8 +349,11 @@ export const transitionEnvelopeSchema = z
     }
 
     const eventSequences = value.events.map((event) => event.sequence);
-    const firstSequence = value.events[0]!.sequence;
-    const lastSequence = value.events[value.events.length - 1]!.sequence;
+    const firstEvent = value.events[0];
+    const lastEvent = value.events[value.events.length - 1];
+    if (!firstEvent || !lastEvent) return;
+    const firstSequence = firstEvent.sequence;
+    const lastSequence = lastEvent.sequence;
 
     if (firstSequence !== value.fromSequence || lastSequence !== value.toSequence) {
       ctx.addIssue({
@@ -360,7 +363,11 @@ export const transitionEnvelopeSchema = z
     }
 
     for (let index = 1; index < eventSequences.length; index += 1) {
-      if (eventSequences[index] !== eventSequences[index - 1]! + 1) {
+      const previousSequence = eventSequences[index - 1];
+      if (previousSequence === undefined) {
+        break;
+      }
+      if (eventSequences[index] !== previousSequence + 1) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: 'events must be strictly contiguous and ordered',

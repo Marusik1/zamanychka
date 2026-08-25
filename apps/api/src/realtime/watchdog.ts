@@ -1,8 +1,16 @@
 export function createVersionWatchdog(options: {
   intervalMs: number;
   now?: () => Date;
-  loadMatches: () => Promise<Array<{ matchId: string; stateVersion: number; lastSequence: number }>>;
-  loadClients: () => Promise<Array<{ socketId: string; matchId: string; stateVersion: number; lastSequence: number; syncInProgress: boolean }>>;
+  loadMatches: () => Promise<{ matchId: string; stateVersion: number; lastSequence: number }[]>;
+  loadClients: () => Promise<
+    {
+      socketId: string;
+      matchId: string;
+      stateVersion: number;
+      lastSequence: number;
+      syncInProgress: boolean;
+    }[]
+  >;
   onDivergence: (input: { matchId: string; lastSequence: number }) => Promise<void> | void;
 }) {
   const now = options.now ?? (() => new Date());
@@ -15,14 +23,18 @@ export function createVersionWatchdog(options: {
         const match = matches.find((candidate) => candidate.matchId === client.matchId);
         if (!match) continue;
         if (client.stateVersion < match.stateVersion || client.lastSequence < match.lastSequence) {
-          await options.onDivergence({ matchId: client.matchId, lastSequence: client.lastSequence });
+          await options.onDivergence({
+            matchId: client.matchId,
+            lastSequence: client.lastSequence,
+          });
         }
       }
     },
     start() {
-      const handle = setInterval(() => { void this.scanOnce(); }, options.intervalMs);
+      const handle = setInterval(() => {
+        void this.scanOnce();
+      }, options.intervalMs);
       return () => clearInterval(handle);
     },
   };
 }
-
