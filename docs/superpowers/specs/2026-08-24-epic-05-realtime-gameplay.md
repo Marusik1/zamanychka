@@ -71,16 +71,19 @@ Every gameplay command follows the same authoritative pipeline:
 2. validate request shape and command-specific preconditions;
 3. begin a PostgreSQL transaction;
 4. lock the target match row with `SELECT ... FOR UPDATE` or an equivalent durable serialization boundary;
-5. verify match existence and terminal state;
-6. verify idempotency using `matchId + actionId`;
-7. verify `expectedStateVersion`;
-8. generate a server-side dice value only for `ROLL_DICE`;
-9. call the pure game engine transition with server-authoritative context;
-10. persist the new match snapshot, ordered events, processed action, and result metadata;
-11. persist an outbox row describing the committed transition;
-12. commit;
-13. return ACK to the sender;
-14. dispatch outbox rows to Socket.IO subscribers independently.
+5. load any existing `ProcessedAction(matchId, actionId)` record;
+6. if an exact canonical fingerprint match is found, return the original committed result immediately without rerunning RNG or the game engine;
+7. if a conflicting fingerprint is found, fail with `ACTION_ID_CONFLICT`;
+8. verify match existence and terminal state for non-duplicate commands;
+9. verify `expectedStateVersion`;
+10. generate a server-side dice value only for `ROLL_DICE`;
+11. call the pure game engine transition with server-authoritative context;
+12. persist the new match snapshot, ordered events, processed action, and result metadata;
+13. if the transition is terminal, invoke the EPIC-04 room reset boundary inside the same PostgreSQL transaction while verifying `room.currentMatchId == terminalMatchId` and clearing the matching room seats/READY state;
+14. persist an outbox row describing the committed transition;
+15. commit;
+16. return ACK to the sender;
+17. dispatch outbox rows to Socket.IO subscribers independently.
 
 If a transaction fails, nothing is published and the original durable state remains unchanged.
 
@@ -146,6 +149,24 @@ Idempotency is durable and match-scoped.
 
 `matchId + actionId` is the durable transition identity for command processing. Each journaled event also has its own durable identity within the same match, derived from the committed per-match sequence.
 
+Canonical command fingerprint:
+
+- match identity;
+- action identity;
+- authenticated actor identity;
+- command type;
+- command payload fields relevant to that command;
+- `expectedStateVersion`.
+
+The fingerprint does not include server-generated `diceValue`.
+
+Failure idempotency is deliberate:
+
+- commands rejected before commit do not persist a successful transition;
+- a rejected command may still persist a conflict/guard outcome under the same action identity if the implementation needs to remember the rejection for deterministic replay;
+- if rejection is persisted, exact retries of the same rejected fingerprint must return the same rejection;
+- an `actionId` used by a rejected command must not become available for a different command fingerprint within the same match.
+
 `expectedStateVersion` is a concurrency guard:
 
 - if it matches the current authoritative version, the command may proceed subject to rule checks;
@@ -156,14 +177,14 @@ Version checking happens inside the locked transaction, after loading the author
 
 ## Snapshot persistence
 
-Each successful gameplay command persists an immutable authoritative match snapshot.
+Match owns exactly the current authoritative versioned snapshot.
 
-Snapshot invariants:
+Successful transition:
 
-- snapshots are versioned;
-- snapshots are write-once authoritative facts;
-- a later snapshot never mutates an earlier snapshot in place;
-- terminal snapshots remain durable and queryable after room reset and after later matches start.
+- the engine returns stateVersion N+1;
+- the current match snapshot is atomically replaced with that authoritative state;
+- the event journal remains append-only durable transition history;
+- the terminal current snapshot remains durable with the completed match.
 
 The match record owns:
 
@@ -172,7 +193,7 @@ The match record owns:
 - current players and pawns;
 - winner and result fields;
 - terminal status;
-- current snapshot pointer or embedded snapshot as supported by the repository design.
+- current authoritative snapshot, stored as the latest durable version.
 
 The room layer never duplicates gameplay state. It only points at the active match and is later reset by the approved EPIC-04 lifecycle.
 
@@ -200,7 +221,7 @@ Outbox requirements:
 - created only after the transition is durable inside the same transaction;
 - published asynchronously after commit;
 - safe under retry and duplicate dispatch;
-- able to represent both ACK-adjacent and subscriber broadcast payloads;
+- claim/retry uses a safe multi-worker pattern such as `SELECT ... FOR UPDATE SKIP LOCKED` plus a claim or lease field;
 - durable across API restart and worker restart;
 - independent of Socket.IO delivery success.
 
@@ -225,6 +246,7 @@ Protocol requirements:
 - publications are post-commit only;
 - subscribers may receive duplicate envelopes and must deduplicate by durable identity and sequence;
 - network ACK is not a durability signal.
+- cross-instance fan-out may use Redis or an equivalent distributed adapter, but only as ephemeral transport/fan-out infrastructure.
 
 ## Reconnect and game:sync
 
@@ -238,10 +260,12 @@ When a client reconnects:
 
 `game:sync` response modes:
 
-- `events` when the missing range is available and continuous;
+- `events` when the missing range is available and continuous; each response contains ordered committed transition envelopes grouped by stateVersion and sequence range, plus the current authoritative watermark;
 - `snapshot` when events are missing, stale, or unsafe to replay.
 
 The client must prefer authoritative snapshot over attempting to infer missing history.
+
+Subscriptions and reconnect must tolerate broadcasts arriving while `game:sync` is running by buffering, deduplicating, and reconciling against durable sequence/stateVersion data.
 
 ## Gap detection and snapshot fallback
 
@@ -289,7 +313,7 @@ If divergence is detected:
 - the server returns either missing events or a snapshot;
 - the client reconciles to the authoritative state before continuing.
 
-The watchdog closes the commit-before-publication crash window when no later gameplay traffic exists to trigger a natural resync.
+The watchdog is independently periodic and does not rely solely on future gameplay traffic. It closes the commit-before-publication crash window when no later gameplay traffic exists to trigger a natural resync.
 
 ## Crash recovery
 
@@ -327,17 +351,20 @@ Redis may help coordinate ephemeral concerns such as presence or fan-out optimiz
 
 Terminal transitions are fully authoritative.
 
-On terminal success:
+On terminal success, the full transaction is:
 
-1. persist the terminal match snapshot and result;
-2. persist the terminal event journal entries;
-3. persist the processed action record;
-4. persist the outbox row;
-5. commit;
-6. publish the terminal result post-commit;
-7. let EPIC-04 room completion/reset clear the singleton room state for the matching completed match.
+1. begin and lock the authoritative match row;
+2. validate idempotency and expected version;
+3. execute the EPIC-03 transition;
+4. persist the terminal match snapshot and result;
+5. persist the terminal event journal entries;
+6. persist the processed action record;
+7. invoke the EPIC-04 room completion/reset boundary inside the same PostgreSQL transaction, verifying `room.currentMatchId == terminalMatchId`, then clear the matching room seats and READY state;
+8. persist the outbox row;
+9. commit;
+10. publish the terminal result post-commit.
 
-The room reset must reuse EPIC-04 behavior rather than duplicate it.
+The room reset must reuse EPIC-04 behavior rather than duplicate it. If the repository architecture cannot execute match persistence and matching room reset in one PostgreSQL transaction, that is a blocker, not an implementation detail.
 
 Required terminal invariants:
 
@@ -359,6 +386,8 @@ EPIC-05 integrates with EPIC-04 as follows:
 - EPIC-05 owns match command processing, match persistence, event ordering, and publication;
 - EPIC-04 may call into EPIC-05 results when a match is terminal;
 - EPIC-05 may not reimplement room lifecycle rules.
+
+Match authorization and subscription authorization use immutable match participant membership, not current EPIC-04 room seats, so terminal room resets do not break retries or sync for the completed match.
 
 The single persistent room is a lobby/table container, not a gameplay authority.
 
@@ -420,7 +449,7 @@ The single persistent room is a lobby/table container, not a gameplay authority.
 
 - The repository must support one PostgreSQL transaction boundary for terminal match persistence and matching room reset. If the current architecture cannot do that safely, it is a blocker and not an implementation detail.
 - The exact shape of the outbox payload and Socket.IO envelope should remain narrow and transport-neutral until implementation, but the durable identity and ordering requirements are fixed.
-- Whether the version watchdog is timer-based or piggybacked on gameplay traffic is an implementation detail; the contract is only that stale clients detect divergence and sync.
+- The version watchdog is independently periodic; gameplay traffic may additionally trigger reconciliation, but it cannot replace the periodic watchdog.
 
 ## Preserved implementation notes
 
