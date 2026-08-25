@@ -55,6 +55,7 @@ async function startRuntime(options?: {
   auth?: any;
   matchRepository?: ReturnType<typeof createMatchRepository>;
   outbox?: ReturnType<typeof createOutboxStore>;
+  loadCommittedTransitions?: (...args: any[]) => Promise<any>;
   commandProcessor?: { process: (...args: any[]) => Promise<any> };
   redisUrl?: string;
 }) {
@@ -64,6 +65,7 @@ async function startRuntime(options?: {
     auth: options?.auth ?? createAuthService(),
     matchRepository: options?.matchRepository ?? createMatchRepository(),
     outbox: options?.outbox ?? createOutboxStore(),
+    ...(options?.loadCommittedTransitions ? { loadCommittedTransitions: options.loadCommittedTransitions } : {}),
     commandProcessor:
       options?.commandProcessor ??
       ({
@@ -347,4 +349,66 @@ describe('Socket.IO realtime publication and subscriptions', () => {
     });
     socket.disconnect();
   }, 10_000);
+
+  it('serves game sync from committed transition ranges when the client watermark is contiguous', async () => {
+    const matchRepository = {
+      loadCurrentMatch: vi.fn(async (matchId: string) =>
+        matchId === 'match-1'
+          ? {
+              id: 'match-1',
+              seatOrder: ['user-a', 'user-b'],
+              stateVersion: 2,
+              lastSequence: 3,
+              snapshot: matchSnapshot(),
+              status: 'ACTIVE',
+            }
+          : null,
+      ),
+    };
+    const server = await startRuntime({
+      matchRepository: matchRepository as any,
+      loadCommittedTransitions: vi.fn(async () => [
+        {
+          matchId: 'match-1',
+          transitionId: 'transition-1',
+          stateVersion: 1,
+          fromSequence: 1,
+          toSequence: 2,
+          events: [
+            {
+              matchId: 'match-1',
+              eventId: 'match-1:1',
+              sequence: 1,
+              stateVersion: 1,
+              type: 'turnChanged',
+              payload: { fromPlayerId: 'user-a', toPlayerId: 'user-b' },
+              createdAt: '2026-08-25T00:00:00.000Z',
+            },
+            {
+              matchId: 'match-1',
+              eventId: 'match-1:2',
+              sequence: 2,
+              stateVersion: 1,
+              type: 'extraRollGranted',
+              payload: { playerId: 'user-b' },
+              createdAt: '2026-08-25T00:00:00.000Z',
+            },
+          ],
+          watermark: { stateVersion: 1, lastSequence: 2 },
+          snapshot: { ...matchSnapshot(), lastSequence: 2 },
+        },
+      ]),
+    });
+    servers.push(server);
+
+    const socket = connectClient(server.url, sessionHeader('session-a').cookie);
+    await waitForEvent(socket, 'connect');
+    const result = await new Promise<{ mode: string; watermark: { stateVersion: number; lastSequence: number } }>((resolve) => {
+      socket.emit('game:sync', { matchId: 'match-1', stateVersion: 0, lastSequence: 0 }, resolve);
+    });
+
+    expect(result.mode).toBe('events');
+    expect(result.watermark).toEqual({ stateVersion: 1, lastSequence: 2 });
+    socket.disconnect();
+  });
 });

@@ -5,6 +5,8 @@ import { Server } from 'socket.io';
 import {
   gameCommandRequestSchema,
   gameEventEnvelopeSchema,
+  gameSyncRequestSchema,
+  gameSyncResponseSchema,
   matchSubscriptionRequestSchema,
   transitionEnvelopeSchema,
   type GameCommandRequest,
@@ -94,6 +96,7 @@ export function createRealtimeRuntime(options: {
   auth: AuthService;
   matchRepository: MatchRepository;
   outbox: OutboxLeaseStore;
+  loadCommittedTransitions?: (input: { matchId: string; stateVersion: number; lastSequence: number }) => Promise<TransitionEnvelope[]>;
   commandProcessor: {
     process(input: { authenticatedUserId: string | null | undefined; command: GameCommandRequest }): Promise<GameCommandResult>;
   };
@@ -129,6 +132,20 @@ export function createRealtimeRuntime(options: {
       io.to(roomName(envelope.matchId)).emit('game:event', envelope);
     },
   });
+
+  const emptySnapshot = {
+    status: 'ABANDONED',
+    stateVersion: 0,
+    turnNumber: 1,
+    turnPhase: null,
+    currentPlayerId: null,
+    diceValue: null,
+    winnerPlayerId: null,
+    winReason: null,
+    players: [],
+    pawns: [],
+    lastSequence: 0,
+  } as const;
 
   io.use(async (socket, next) => {
     try {
@@ -182,6 +199,41 @@ export function createRealtimeRuntime(options: {
         command: parsed.data,
       });
       ack?.(result);
+    });
+
+    socket.on('game:sync', async (input: unknown, ack?: (result: unknown) => void) => {
+      const parsed = gameSyncRequestSchema.safeParse(input);
+      if (!parsed.success) {
+        ack?.(gameSyncResponseSchema.parse({ mode: 'snapshot', snapshot: emptySnapshot, watermark: { stateVersion: 0, lastSequence: 0 } }));
+        return;
+      }
+      const match = await options.matchRepository.loadCurrentMatch(parsed.data.matchId);
+      if (!match) {
+        ack?.(gameSyncResponseSchema.parse({ mode: 'snapshot', snapshot: emptySnapshot, watermark: { stateVersion: 0, lastSequence: 0 } }));
+        return;
+      }
+      if (!options.loadCommittedTransitions) {
+        ack?.(gameSyncResponseSchema.parse({ mode: 'snapshot', snapshot: match.snapshot, watermark: { stateVersion: match.stateVersion ?? 0, lastSequence: match.lastSequence ?? 0 } }));
+        return;
+      }
+      const transitions = await options.loadCommittedTransitions({ matchId: parsed.data.matchId, stateVersion: parsed.data.stateVersion, lastSequence: parsed.data.lastSequence });
+      if (Array.isArray(transitions) && transitions.length > 0) {
+        const response = gameSyncResponseSchema.parse({
+          mode: 'events',
+          transitions,
+          watermark: {
+            stateVersion: transitions.at(-1)!.stateVersion,
+            lastSequence: transitions.at(-1)!.toSequence,
+          },
+        });
+        ack?.(response);
+        return;
+      }
+      ack?.(gameSyncResponseSchema.parse({
+        mode: 'snapshot',
+        snapshot: match.snapshot,
+        watermark: { stateVersion: match.stateVersion ?? 0, lastSequence: match.lastSequence ?? 0 },
+      }));
     });
   });
 
