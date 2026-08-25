@@ -25,13 +25,13 @@ async function createMatch() {
   });
 }
 
-function createProcessor() {
+function createProcessor(options?: { onTerminalMatch?: (input: { matchId: string }) => Promise<void> | void }) {
   const dice = vi.fn(() => 6 as const);
   const transition = vi.fn(engineTransition);
   return {
     dice,
     transition,
-    processor: createCommandProcessor({ repository, rollDice: dice, transition }),
+    processor: createCommandProcessor({ repository, rollDice: dice, transition, ...options }),
   };
 }
 
@@ -112,5 +112,28 @@ describe('transactional realtime command processor', () => {
     expect(await database.prisma.matchEvent.count()).toBe(0);
     expect(await database.prisma.processedAction.count()).toBe(0);
     expect(await database.prisma.outboxRow.count()).toBe(0);
+  });
+
+  it('retries the terminal boundary hook when a committed terminal action is replayed', async () => {
+    const match = await createMatch();
+    const onTerminalMatch = vi.fn().mockRejectedValueOnce(new Error('room reset unavailable'));
+    const { processor } = createProcessor({ onTerminalMatch });
+    const command = {
+      type: 'SURRENDER' as const,
+      matchId: match.id,
+      actionId: 'terminal-action',
+      expectedStateVersion: 0,
+    };
+
+    await expect(processor.process({ authenticatedUserId: 'user-1', command })).rejects.toThrow(
+      'room reset unavailable',
+    );
+    await expect(processor.process({ authenticatedUserId: 'user-1', command })).resolves.toMatchObject({
+      ok: true,
+      stateVersion: 1,
+    });
+
+    expect(onTerminalMatch).toHaveBeenCalledTimes(2);
+    expect(await database.prisma.processedAction.count()).toBe(1);
   });
 });

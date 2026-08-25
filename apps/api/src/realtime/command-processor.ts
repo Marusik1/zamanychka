@@ -110,8 +110,6 @@ export function createCommandProcessor(options: {
       if (!input.authenticatedUserId) return failure(command, 'UNAUTHORIZED', 'Authenticated session is required', 0);
       const authenticatedUserId = input.authenticatedUserId;
       const fingerprint = commandFingerprint({ authenticatedUserId, command });
-      let terminal = false;
-
       const result = await options.repository.withLockedMatch(command.matchId, async (tx, match) => {
         if (!match) return failure(command, 'MATCH_NOT_FOUND', 'Match was not found', 0);
         const prior = await options.repository.findProcessedAction(tx, { matchId: command.matchId, actionId: command.actionId });
@@ -144,11 +142,12 @@ export function createCommandProcessor(options: {
         await options.repository.updateCurrentSnapshot(tx, { matchId: command.matchId, snapshot: json(engineResult.state), stateVersion: engineResult.state.stateVersion, ...(engineResult.state.status === 'FINISHED' ? { terminalResult: json({ winnerPlayerId: engineResult.state.winnerPlayerId, reason: engineResult.state.winReason }) } : {}) });
         await options.repository.appendOrderedEvents(tx, { matchId: command.matchId, events: events.map(({ sequence, stateVersion, ...event }) => ({ sequence, stateVersion, payload: json(event) })) });
         await options.repository.recordProcessedAction(tx, { matchId: command.matchId, actionId: command.actionId, requestFingerprint: fingerprint, result: json(result) });
-        terminal = engineResult.state.status === 'FINISHED';
         return result;
       });
 
-      if (terminal && result.ok) await options.onTerminalMatch?.({ matchId: command.matchId });
+      if (result.ok && result.snapshot.status === 'FINISHED') {
+        await options.onTerminalMatch?.({ matchId: command.matchId });
+      }
       return result;
     },
   };
