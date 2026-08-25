@@ -17,17 +17,20 @@
     "@fastify/cookie": "^11.1.2",
     "@prisma/adapter-pg": "latest",
     "@prisma/client": "latest",
+    "@socket.io/redis-adapter": "^8.3.0",
     "@zamanushka/game-engine": "workspace:*",
     "@zamanushka/shared": "workspace:*",
     "dotenv": "latest",
     "fastify": "^5.0.0",
     "pg": "latest",
     "redis": "latest",
+    "socket.io": "^4.8.3",
     "zod": "latest"
   },
   "devDependencies": {
     "@types/pg": "latest",
     "prisma": "latest",
+    "socket.io-client": "^4.8.3",
     "tsx": "latest"
   }
 }

@@ -74,6 +74,12 @@ export const gameSyncRequestSchema = z
   })
   .strict();
 
+export const matchSubscriptionRequestSchema = z
+  .object({
+    matchId: id,
+  })
+  .strict();
+
 export const gameWatermarkSchema = z
   .object({
     stateVersion: version,
@@ -449,6 +455,7 @@ export type GameCommandErrorCode = z.infer<typeof gameCommandErrorCodeSchema>;
 export type GameCommandRequest = z.infer<typeof gameCommandRequestSchema>;
 export type GameCommand = GameCommandRequest;
 export type GameSyncRequest = z.infer<typeof gameSyncRequestSchema>;
+export type MatchSubscriptionRequest = z.infer<typeof matchSubscriptionRequestSchema>;
 export type GameWatermark = z.infer<typeof gameWatermarkSchema>;
 export type MatchSnapshot = z.infer<typeof matchSnapshotSchema>;
 export type GameEventEnvelope = z.infer<typeof gameEventEnvelopeSchema>;

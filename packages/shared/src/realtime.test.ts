@@ -5,6 +5,7 @@ import {
   gameCommandResultSchema,
   gameSyncRequestSchema,
   gameSyncResponseSchema,
+  matchSubscriptionRequestSchema,
   transitionEnvelopeSchema,
 } from './realtime.js';
 
@@ -51,6 +52,7 @@ describe('realtime contracts', () => {
     expect(gameSyncRequestSchema.parse({ matchId: 'm1', stateVersion: 2, lastSequence: 3 })).toEqual({
       matchId: 'm1', stateVersion: 2, lastSequence: 3,
     });
+    expect(matchSubscriptionRequestSchema.parse({ matchId: 'm1' })).toEqual({ matchId: 'm1' });
   });
 
   it('rejects client-controlled authority fields', () => {

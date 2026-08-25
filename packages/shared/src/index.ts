@@ -66,6 +66,7 @@ export {
   gameSnapshotSchema,
   gameSyncRequestSchema,
   gameSyncResponseSchema,
+  matchSubscriptionRequestSchema,
   gameWatermarkSchema,
   matchSnapshotSchema,
   transitionEnvelopeSchema,
@@ -80,5 +81,6 @@ export {
   type GameSyncResponse,
   type GameWatermark,
   type MatchSnapshot,
+  type MatchSubscriptionRequest,
   type TransitionEnvelope,
 } from './realtime.js';

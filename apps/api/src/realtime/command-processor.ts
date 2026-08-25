@@ -90,6 +90,7 @@ export function createCommandProcessor(options: {
         if (!engineResult.ok) return failure(command, mapEngineFailure(engineResult.code), engineResult.message, match.stateVersion, current);
 
         const events = journal.envelopes({ matchId: command.matchId, stateVersion: engineResult.state.stateVersion, lastSequence: match.lastSequence, events: engineResult.events, actorPlayerId: authenticatedUserId, before: currentSnapshot, after: engineResult.state });
+        const firstSequence = events[0]?.sequence ?? match.lastSequence + 1;
         const lastSequence = events.at(-1)?.sequence ?? match.lastSequence;
         const nextSnapshot = snapshot(engineResult.state, lastSequence);
         const result: GameCommandResult = {
@@ -103,7 +104,14 @@ export function createCommandProcessor(options: {
         await options.repository.insertOutboxRow(tx, {
           matchId: command.matchId,
           resultingStateVersion: engineResult.state.stateVersion,
-          payload: json({ matchId: command.matchId, stateVersion: engineResult.state.stateVersion, lastSequence, events }),
+          payload: json({
+            matchId: command.matchId,
+            transitionId: command.actionId,
+            stateVersion: engineResult.state.stateVersion,
+            fromSequence: firstSequence,
+            toSequence: lastSequence,
+            events,
+          }),
         });
         if (engineResult.state.status === 'FINISHED') {
           await options.onTerminalMatch({ tx, matchId: command.matchId });
