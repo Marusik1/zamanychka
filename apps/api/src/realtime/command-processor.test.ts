@@ -137,8 +137,46 @@ describe('transactional realtime command processor', () => {
       status: 'FINISHED',
       terminalResult: { winnerPlayerId: 'user-1', reason: 'HOME_DIAGONAL_COMPLETED' },
     });
+    await expect(
+      database.prisma.matchResult.findUniqueOrThrow({
+        where: { matchId: match.id },
+        include: { participants: { orderBy: { userId: 'asc' } } },
+      }),
+    ).resolves.toMatchObject({
+      roomKey: 'single-room',
+      winnerUserId: 'user-1',
+      victoryReason: 'HOME_DIAGONAL_COMPLETED',
+      participantCount: 2,
+      participants: [
+        { userId: 'user-1', displayName: 'User 1', color: 'RED', outcome: 'WIN' },
+        { userId: 'user-2', displayName: 'User 2', color: 'YELLOW', outcome: 'LOSS' },
+      ],
+    });
     expect(await database.prisma.outboxRow.count({ where: { matchId: match.id } })).toBe(1);
     expect(await roomRepository.loadSingletonRoom()).toMatchObject({ currentMatchId: null });
+  });
+
+  it('does not create a match result for a non-terminal command', async () => {
+    const match = await createMatch();
+    const { processor } = createProcessor();
+
+    await expect(
+      processor.process({
+        authenticatedUserId: 'user-1',
+        command: {
+          type: 'ROLL_DICE',
+          matchId: match.id,
+          actionId: 'roll-1',
+          expectedStateVersion: 0,
+        },
+      }),
+    ).resolves.toMatchObject({ ok: true, snapshot: { status: 'ACTIVE' } });
+
+    await expect(
+      database.prisma.matchResult.findUnique({
+        where: { matchId: match.id },
+      }),
+    ).resolves.toBeNull();
   });
 
   it('replays an exact committed retry without rerunning RNG or the game engine', async () => {
@@ -267,6 +305,20 @@ describe('transactional realtime command processor', () => {
       status: 'FINISHED',
       terminalResult: { winnerPlayerId: 'user-2', reason: 'LAST_ACTIVE_PLAYER' },
     });
+    await expect(
+      database.prisma.matchResult.findUniqueOrThrow({
+        where: { matchId: match.id },
+        include: { participants: { orderBy: { userId: 'asc' } } },
+      }),
+    ).resolves.toMatchObject({
+      winnerUserId: 'user-2',
+      victoryReason: 'LAST_ACTIVE_PLAYER',
+      participantCount: 2,
+      participants: [
+        { userId: 'user-1', displayName: 'User 1', color: 'RED', outcome: 'SURRENDERED' },
+        { userId: 'user-2', displayName: 'User 2', color: 'YELLOW', outcome: 'WIN' },
+      ],
+    });
     expect(
       await database.prisma.matchEvent.count({ where: { matchId: match.id } }),
     ).toBeGreaterThan(0);
@@ -287,6 +339,12 @@ describe('transactional realtime command processor', () => {
     );
     expect(onTerminalMatch).toHaveBeenCalledTimes(1);
     expect(await database.prisma.processedAction.count()).toBe(1);
+    expect(await database.prisma.matchResult.count({ where: { matchId: match.id } })).toBe(1);
+    expect(
+      await database.prisma.matchParticipantResult.count({
+        where: { matchResult: { matchId: match.id } },
+      }),
+    ).toBe(2);
   });
 
   it('rolls back terminal match, events, action, outbox, and room when reset fails', async () => {
@@ -315,6 +373,8 @@ describe('transactional realtime command processor', () => {
     expect(await database.prisma.matchEvent.count()).toBe(0);
     expect(await database.prisma.processedAction.count()).toBe(0);
     expect(await database.prisma.outboxRow.count()).toBe(0);
+    expect(await database.prisma.matchResult.count()).toBe(0);
+    expect(await database.prisma.matchParticipantResult.count()).toBe(0);
     expect(await roomRepository.loadSingletonRoom()).toMatchObject({ currentMatchId: match.id });
   });
 

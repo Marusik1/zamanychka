@@ -16,6 +16,21 @@ export interface MatchSyncEventInput {
   payload: Json;
 }
 
+export interface MatchResultPersistenceInput {
+  roomKey: string;
+  winnerUserId: string;
+  victoryReason: string;
+  startedAt: Date;
+  finishedAt: Date;
+  participantCount: number;
+  participants: ReadonlyArray<{
+    userId: string;
+    displayName: string;
+    color: string;
+    outcome: string;
+  }>;
+}
+
 export function createMatchRepository(prisma: AppPrismaClient) {
   const lockedMatchIds = new WeakMap<object, string>();
 
@@ -134,6 +149,60 @@ export function createMatchRepository(prisma: AppPrismaClient) {
     ) {
       assertLockedMatch(tx, input.matchId);
       return tx.outboxRow.create({ data: input });
+    },
+
+    async loadMatchUsers(tx: TxClient, input: { matchId: string; userIds: readonly string[] }) {
+      assertLockedMatch(tx, input.matchId);
+      return tx.user.findMany({
+        where: {
+          id: {
+            in: [...input.userIds],
+          },
+        },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+        },
+      });
+    },
+
+    async persistMatchResult(
+      tx: TxClient,
+      input: { matchId: string; result: MatchResultPersistenceInput },
+    ) {
+      assertLockedMatch(tx, input.matchId);
+      return tx.matchResult.create({
+        data: {
+          matchId: input.matchId,
+          roomKey: input.result.roomKey,
+          winnerUserId: input.result.winnerUserId,
+          victoryReason: input.result.victoryReason,
+          startedAt: input.result.startedAt,
+          finishedAt: input.result.finishedAt,
+          participantCount: input.result.participantCount,
+          participants: {
+            create: input.result.participants.map((participant) => ({
+              userId: participant.userId,
+              displayName: participant.displayName,
+              color: participant.color,
+              outcome: participant.outcome,
+            })),
+          },
+        },
+      });
+    },
+
+    async findMatchResult(tx: TxClient, input: { matchId: string }) {
+      assertLockedMatch(tx, input.matchId);
+      return tx.matchResult.findUnique({
+        where: { matchId: input.matchId },
+        include: {
+          participants: {
+            orderBy: { userId: 'asc' },
+          },
+        },
+      });
     },
 
     async loadSyncMaterial(matchId: string, afterSequence: number) {

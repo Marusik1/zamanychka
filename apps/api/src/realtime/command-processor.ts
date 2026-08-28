@@ -12,6 +12,7 @@ import type {
 } from '@zamanushka/shared';
 import type { Prisma } from '../generated/prisma/client.js';
 import type { MatchRepository } from '../match/match-repository.js';
+import { buildMatchResultDraft } from '../profile/result-draft.js';
 import { createEventJournal } from './event-journal.js';
 
 type Json = Prisma.InputJsonValue;
@@ -49,6 +50,14 @@ export function commandFingerprint(input: {
 
 function json(value: unknown): Json {
   return JSON.parse(JSON.stringify(value)) as Json;
+}
+
+function isUniqueConstraintError(error: unknown): error is { code: string } {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002';
+}
+
+function displayNameFromUser(user: { firstName: string; lastName: string | null }): string {
+  return [user.firstName, user.lastName].filter(Boolean).join(' ');
 }
 
 function failure(
@@ -204,7 +213,7 @@ export function createCommandProcessor(options: {
               lastSequence,
             },
           };
-          await options.repository.updateCurrentSnapshot(tx, {
+          const persistedMatch = await options.repository.updateCurrentSnapshot(tx, {
             matchId: command.matchId,
             snapshot: json(engineResult.state),
             stateVersion: engineResult.state.stateVersion,
@@ -217,6 +226,65 @@ export function createCommandProcessor(options: {
                 }
               : {}),
           });
+          if (engineResult.state.status === 'FINISHED') {
+            if (!persistedMatch?.finishedAt) {
+              throw new Error('terminal match finishedAt was not persisted');
+            }
+            const users = await options.repository.loadMatchUsers(tx, {
+              matchId: command.matchId,
+              userIds: engineResult.state.players.map((player) => player.playerId),
+            });
+            const usersById = new Map(
+              users.map((user) => [user.id, displayNameFromUser(user)]),
+            );
+            const resultDraft = buildMatchResultDraft({
+              matchId: command.matchId,
+              roomId: persistedMatch.roomKey,
+              status: persistedMatch.status,
+              winnerUserId: persistedMatch.terminalResult
+                ? (persistedMatch.terminalResult as { winnerPlayerId: string | null }).winnerPlayerId
+                : null,
+              victoryReason: persistedMatch.terminalResult
+                ? ((persistedMatch.terminalResult as { reason: 'HOME_DIAGONAL_COMPLETED' | 'LAST_ACTIVE_PLAYER' | null }).reason)
+                : null,
+              startedAt: persistedMatch.createdAt,
+              finishedAt: persistedMatch.finishedAt,
+              participants: engineResult.state.players.map((player) => {
+                const displayName = usersById.get(player.playerId);
+                if (!displayName) {
+                  throw new Error(`MATCH_RESULT_USER_NOT_FOUND:${player.playerId}`);
+                }
+                return {
+                  userId: player.playerId,
+                  displayName,
+                  color: player.color,
+                  surrendered: player.status === 'SURRENDERED',
+                };
+              }),
+            });
+            if (resultDraft) {
+              try {
+                await options.repository.persistMatchResult(tx, {
+                  matchId: command.matchId,
+                  result: {
+                    roomKey: resultDraft.roomId,
+                    winnerUserId: resultDraft.winnerUserId,
+                    victoryReason: resultDraft.victoryReason,
+                    startedAt: resultDraft.startedAt,
+                    finishedAt: resultDraft.finishedAt,
+                    participantCount: resultDraft.participantCount,
+                    participants: resultDraft.participants,
+                  },
+                });
+              } catch (error) {
+                if (!isUniqueConstraintError(error)) throw error;
+                const existing = await options.repository.findMatchResult(tx, {
+                  matchId: command.matchId,
+                });
+                if (!existing) throw error;
+              }
+            }
+          }
           await options.repository.appendOrderedEvents(tx, {
             matchId: command.matchId,
             events: events.map(({ sequence, stateVersion, ...event }) => ({
