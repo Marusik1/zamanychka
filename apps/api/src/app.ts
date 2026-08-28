@@ -5,7 +5,9 @@ import type { AuthRuntimeConfig } from './config/env.js';
 import type { AuthService } from './auth/auth-service.js';
 import { registerAuthRoutes } from './auth/routes.js';
 import { registerOperationalRoutes } from './health/routes.js';
+import { registerProfileRoutes } from './profile/routes.js';
 import { registerRoomRoutes } from './rooms/routes.js';
+import type { ProfileService } from './profile/profile-service.js';
 import type { RoomService } from './rooms/room-service.js';
 
 export type DependencyName = 'postgres' | 'redis';
@@ -20,6 +22,7 @@ export interface BuildAppOptions {
   logger?: boolean;
   auth?: { config: AuthRuntimeConfig; service: AuthService };
   rooms?: { service: RoomService };
+  profile?: { service: ProfileService };
 }
 
 export function buildApp({
@@ -27,6 +30,7 @@ export function buildApp({
   probes,
   auth,
   rooms,
+  profile,
 }: BuildAppOptions): FastifyInstance {
   const app = Fastify({
     logger: logger
@@ -49,6 +53,11 @@ export function buildApp({
           service: rooms.service,
           auth: auth.service,
           allowedOrigins: auth.config.allowedOrigins,
+        });
+      if (profile)
+        registerProfileRoutes(scope, {
+          service: profile.service,
+          auth: auth.service,
         });
     });
   return app;

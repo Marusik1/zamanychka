@@ -85,12 +85,20 @@ export {
   type TransitionEnvelope,
 } from './realtime.js';
 export {
+  matchHistoryPageSchema,
   matchResultCardSchema,
   matchResultParticipantSummarySchema,
   playerMatchOutcomeSchema,
+  profileResponseSchema,
+  profileStatsSchema,
+  profileUserSchema,
   victoryReasonSchema,
+  type MatchHistoryPageDto,
   type MatchResultCardDto,
   type MatchResultParticipantSummaryDto,
   type PlayerMatchOutcome,
+  type ProfileResponseDto,
+  type ProfileStatsDto,
+  type ProfileUserDto,
   type VictoryReason,
 } from './profile-history.js';

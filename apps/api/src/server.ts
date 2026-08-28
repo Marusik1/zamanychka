@@ -7,6 +7,8 @@ import { verifyTelegramInitData } from './auth/telegram-init-data.js';
 import { parseEnv } from './config/env.js';
 import { createLiveDependencies } from './health/dependency-probes.js';
 import { createMatchRepository } from './match/match-repository.js';
+import { createProfileRepository } from './profile/profile-repository.js';
+import { createProfileService } from './profile/profile-service.js';
 import { createMatchCompletionService } from './rooms/match-completion.js';
 import { createRoomRepository } from './rooms/room-repository.js';
 import { createRoomService } from './rooms/room-service.js';
@@ -22,6 +24,9 @@ const dependencies = createLiveDependencies(env);
 const repository = createAuthRepository(dependencies.prisma);
 const roomRepository = createRoomRepository(dependencies.prisma);
 const matchRepository = createMatchRepository(dependencies.prisma);
+const profileService = createProfileService({
+  repository: createProfileRepository(dependencies.prisma),
+});
 const roomService = createRoomService({
   repository: roomRepository,
   presenceStore: createInMemoryRoomPresenceStore(),
@@ -54,6 +59,7 @@ const app = buildApp({
   logger: true,
   auth: { config: env.auth, service: authService },
   rooms: { service: roomService },
+  profile: { service: profileService },
 });
 const completion = createMatchCompletionService({ repository: roomRepository });
 const commandProcessor = createCommandProcessor({
