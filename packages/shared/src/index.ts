@@ -84,3 +84,13 @@ export {
   type MatchSubscriptionRequest,
   type TransitionEnvelope,
 } from './realtime.js';
+export {
+  matchResultCardSchema,
+  matchResultParticipantSummarySchema,
+  playerMatchOutcomeSchema,
+  victoryReasonSchema,
+  type MatchResultCardDto,
+  type MatchResultParticipantSummaryDto,
+  type PlayerMatchOutcome,
+  type VictoryReason,
+} from './profile-history.js';

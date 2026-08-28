@@ -69,8 +69,41 @@ model Match {
   events         MatchEvent[]
   actions        ProcessedAction[]
   outboxRows     OutboxRow[]
+  result         MatchResult?
 
   @@index([roomKey])
+}
+
+model MatchResult {
+  id               String                   @id @default(cuid())
+  matchId          String                   @unique
+  roomKey          String
+  winnerUserId     String
+  victoryReason    String
+  startedAt        DateTime
+  finishedAt       DateTime
+  participantCount Int
+  createdAt        DateTime                 @default(now())
+  match            Match                     @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  participants     MatchParticipantResult[]
+
+  @@index([finishedAt])
+  @@index([winnerUserId, finishedAt])
+  @@index([roomKey, finishedAt])
+}
+
+model MatchParticipantResult {
+  id            String      @id @default(cuid())
+  matchResultId String
+  userId        String
+  displayName   String
+  color         String
+  outcome       String
+  createdAt     DateTime    @default(now())
+  matchResult   MatchResult @relation(fields: [matchResultId], references: [id], onDelete: Cascade)
+
+  @@unique([matchResultId, userId])
+  @@index([userId, matchResultId])
 }
 
 model MatchEvent {
