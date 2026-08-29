@@ -84,7 +84,9 @@ function activeSnapshot(overrides: Record<string, unknown> = {}) {
 
 function createRoomApi(overrides?: Partial<RoomApi>): RoomApi {
   const initialRoom = roomView({
-    participantViews: [{ userId: 'user-1', seatIndex: 0, ready: false, connected: true }],
+    participantViews: [
+      { userId: 'user-1', seatIndex: 0, ready: false, connected: true, displayName: 'Алексей' },
+    ],
     participants: [{ userId: 'user-1', seatIndex: 0, ready: false }],
     presence: [{ userId: 'user-1', connected: true }],
   });
@@ -166,6 +168,93 @@ describe('playable beta room flow', () => {
     expect(screen.queryByText('Раздел появится в следующем этапе.')).not.toBeInTheDocument();
   });
 
+  it('shows four explicit seats and keeps start disabled until every seated participant is ready and connected', async () => {
+    renderAuthenticatedRooms({
+      roomApi: createRoomApi({
+        view: vi.fn().mockResolvedValue(
+          roomView({
+            participants: [
+              { userId: 'user-1', seatIndex: 0, ready: true },
+              { userId: 'user-2', seatIndex: 1, ready: false },
+            ],
+            presence: [
+              { userId: 'user-1', connected: true },
+              { userId: 'user-2', connected: true },
+            ],
+            participantViews: [
+              { userId: 'user-1', seatIndex: 0, ready: true, connected: true, displayName: 'Алексей' },
+              { userId: 'user-2', seatIndex: 1, ready: false, connected: true, displayName: 'Таисия' },
+            ],
+          }),
+        ),
+      }),
+    });
+
+    expect(await screen.findByText('Место 1')).toBeVisible();
+    expect(screen.getByText('Место 2')).toBeVisible();
+    expect(screen.getByText('Место 3')).toBeVisible();
+    expect(screen.getByText('Место 4')).toBeVisible();
+    expect(screen.getByText('Алексей')).toBeVisible();
+    expect(screen.getByText('Таисия')).toBeVisible();
+    expect(screen.getByText('Игроков: 2 / 4')).toBeVisible();
+    expect(screen.getByText('Готовы: 1 / 2')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Начать матч' })).toBeDisabled();
+    expect(screen.getByText('Ожидаем готовность всех занятых мест.')).toBeVisible();
+  });
+
+  it('enables two-player start when two distinct users are seated, ready, and connected', async () => {
+    const startMatch = vi.fn().mockResolvedValue({
+      ok: true,
+      matchId: 'match-2',
+      room: {
+        roomId: 'single-room',
+        version: 4,
+        currentMatchId: 'match-2',
+        participants: [
+          { userId: 'user-1', seatIndex: 0, ready: true },
+          { userId: 'user-2', seatIndex: 1, ready: true },
+        ],
+      },
+    });
+
+    renderAuthenticatedRooms({
+      roomApi: createRoomApi({
+        view: vi.fn().mockResolvedValue(
+          roomView({
+            participants: [
+              { userId: 'user-1', seatIndex: 0, ready: true },
+              { userId: 'user-2', seatIndex: 1, ready: true },
+            ],
+            presence: [
+              { userId: 'user-1', connected: true },
+              { userId: 'user-2', connected: true },
+            ],
+            participantViews: [
+              { userId: 'user-1', seatIndex: 0, ready: true, connected: true, displayName: 'Алексей' },
+              { userId: 'user-2', seatIndex: 1, ready: true, connected: true, displayName: 'Таисия' },
+            ],
+          }),
+        ),
+        startMatch,
+      }),
+      realtime: createRealtimeClient({
+        sync: vi.fn().mockResolvedValue({
+          mode: 'snapshot',
+          snapshot: activeSnapshot(),
+          watermark: { stateVersion: 0, lastSequence: 0 },
+        }),
+      }),
+    });
+
+    const button = await screen.findByRole('button', { name: 'Начать матч' });
+    expect(button).toBeEnabled();
+
+    fireEvent.click(button);
+
+    expect(startMatch).toHaveBeenCalledTimes(1);
+    expect(await screen.findByRole('heading', { name: 'Матч' })).toBeVisible();
+  });
+
   it('opens the active match and allows rolling dice through the realtime command path', async () => {
     const roomApi = createRoomApi({
       view: vi.fn().mockResolvedValue(
@@ -180,8 +269,8 @@ describe('playable beta room flow', () => {
             { userId: 'user-2', connected: true },
           ],
           participantViews: [
-            { userId: 'user-1', seatIndex: 0, ready: true, connected: true },
-            { userId: 'user-2', seatIndex: 1, ready: true, connected: true },
+            { userId: 'user-1', seatIndex: 0, ready: true, connected: true, displayName: 'Алексей' },
+            { userId: 'user-2', seatIndex: 1, ready: true, connected: true, displayName: 'Таисия' },
           ],
         }),
       ),

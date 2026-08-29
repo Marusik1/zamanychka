@@ -161,6 +161,17 @@ describe('start match orchestration', () => {
     const two = await seedSeats(2);
     const twoResult = await two.service.startMatch(two.users[0]?.id ?? '', {});
     expect(twoResult.ok).toBe(true);
+    if (twoResult.ok) {
+      const twoMatch = await database.prisma.match.findUnique({ where: { id: twoResult.matchId } });
+      expect(twoMatch?.seatOrder).toEqual(['user-1', 'user-2']);
+      expect(twoMatch?.snapshot).toEqual(
+        createActiveGameState({
+          playerCount: 2,
+          firstPlayerId: 'user-1',
+          seatOrder: ['user-1', 'user-2'],
+        }),
+      );
+    }
 
     await database.clean();
     const four = await seedSeats(4);

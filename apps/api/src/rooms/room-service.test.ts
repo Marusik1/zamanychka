@@ -162,13 +162,13 @@ describe('room service', () => {
 
     const disconnected = await service.disconnectPresence('user-1');
     expect(disconnected.participantViews).toEqual([
-      { userId: 'user-1', seatIndex: 0, ready: true, connected: false },
+      { userId: 'user-1', displayName: 'User 1', seatIndex: 0, ready: true, connected: false },
     ]);
     expect(disconnected.presence).toEqual([{ userId: 'user-1', connected: false }]);
 
     const reconnected = await service.connectPresence('user-1');
     expect(reconnected.participantViews).toEqual([
-      { userId: 'user-1', seatIndex: 0, ready: true, connected: true },
+      { userId: 'user-1', displayName: 'User 1', seatIndex: 0, ready: true, connected: true },
     ]);
     expect(reconnected.presence).toEqual([{ userId: 'user-1', connected: true }]);
 
@@ -203,7 +203,7 @@ describe('room service', () => {
 
     expect(before).toEqual(after);
     expect(result.participantViews).toEqual([
-      { userId: 'user-1', seatIndex: 0, ready: true, connected: false },
+      { userId: 'user-1', displayName: 'User 1', seatIndex: 0, ready: true, connected: false },
     ]);
   });
 

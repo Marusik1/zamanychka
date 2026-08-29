@@ -111,6 +111,22 @@ export async function persistSingletonRoom(
 
 export function createRoomRepository(prisma: AppPrismaClient) {
   return {
+    async loadParticipantDisplayNames(userIds: readonly string[]): Promise<ReadonlyMap<string, string>> {
+      if (userIds.length === 0) return new Map();
+
+      const users = await prisma.user.findMany({
+        where: { id: { in: [...userIds] } },
+        select: { id: true, firstName: true, lastName: true },
+      });
+
+      return new Map(
+        users.map((user) => [
+          user.id,
+          [user.firstName, user.lastName].filter(Boolean).join(' '),
+        ]),
+      );
+    },
+
     async bootstrapSingletonRoom(): Promise<PersistedRoom> {
       return prisma.$transaction(async (tx) => {
         await ensureSingletonRoom(tx);

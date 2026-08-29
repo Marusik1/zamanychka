@@ -40,12 +40,14 @@ describe('room contracts', () => {
     expect(
       roomParticipantViewSchema.parse({
         userId: 'u1',
+        displayName: 'Мария',
         seatIndex: 2,
         ready: true,
         connected: false,
       }),
     ).toEqual({
       userId: 'u1',
+      displayName: 'Мария',
       seatIndex: 2,
       ready: true,
       connected: false,

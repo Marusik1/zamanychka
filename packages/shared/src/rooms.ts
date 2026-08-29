@@ -24,6 +24,7 @@ export const roomParticipantStateSchema = z
 
 export const roomParticipantViewSchema = roomParticipantStateSchema
   .extend({
+    displayName: z.string().trim().min(1).max(200),
     connected: z.boolean(),
   })
   .strict();

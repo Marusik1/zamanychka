@@ -47,7 +47,9 @@ function seatLabel(index: 0 | 1 | 2 | 3) {
 }
 
 function participantLabel(participant: RoomParticipantView, currentUserId: string) {
-  return participant.userId === currentUserId ? 'Вы' : `Игрок ${participant.seatIndex + 1}`;
+  return participant.userId === currentUserId
+    ? `${participant.displayName} (Вы)`
+    : participant.displayName;
 }
 
 function boardKey(coord: BoardCoord) {
@@ -211,6 +213,22 @@ export function PlayableBetaPage({
   }, [roomApi]);
 
   useEffect(() => {
+    if (room?.currentMatchId) return;
+
+    const intervalId = window.setInterval(() => {
+      void roomApi
+        .view()
+        .then((next) => {
+          setRoom(next);
+          setRoomError(null);
+        })
+        .catch(() => undefined);
+    }, 2_000);
+
+    return () => window.clearInterval(intervalId);
+  }, [room?.currentMatchId, roomApi]);
+
+  useEffect(() => {
     if (!room?.currentMatchId) {
       activeMatchRef.current = null;
       setMatch({ status: 'idle' });
@@ -272,6 +290,28 @@ export function PlayableBetaPage({
 
   const mySeat =
     room?.participantViews.find((participant) => participant.userId === authState.user.id) ?? null;
+
+  const occupiedCount = room?.participantViews.length ?? 0;
+  const readyCount = room?.participantViews.filter((participant) => participant.ready).length ?? 0;
+  const disconnectedCount =
+    room?.participantViews.filter((participant) => !participant.connected).length ?? 0;
+  const canStartMatch = Boolean(
+    mySeat &&
+      occupiedCount >= 2 &&
+      occupiedCount <= 4 &&
+      readyCount === occupiedCount &&
+      disconnectedCount === 0,
+  );
+
+  const startBlockReason = !mySeat
+    ? 'Сначала займите свободное место.'
+    : occupiedCount < 2
+      ? `Нужно минимум 2 игрока — сейчас ${occupiedCount}.`
+      : readyCount !== occupiedCount
+        ? 'Ожидаем готовность всех занятых мест.'
+        : disconnectedCount > 0
+          ? 'Ожидаем подключения всех игроков.'
+          : null;
 
   const legalActions =
     match.status === 'ready'
@@ -406,7 +446,11 @@ export function PlayableBetaPage({
           </Button>
 
           {room?.currentMatchId ? null : (
-            <Button onClick={() => void startMatch()} loading={roomPending} disabled={!mySeat}>
+            <Button
+              onClick={() => void startMatch()}
+              loading={roomPending}
+              disabled={!canStartMatch}
+            >
               Начать матч
             </Button>
           )}
@@ -485,8 +529,9 @@ export function PlayableBetaPage({
 
           <Panel as="section" className="beta-room-page__status-panel">
             <h2>Статус комнаты</h2>
-            <p>{room ? `Версия: ${room.version}` : 'Загрузка…'}</p>
-            <p>Для старта нужны 2–4 игрока, все готовы и подключены.</p>
+            <p>{`Игроков: ${occupiedCount} / 4`}</p>
+            <p>{`Готовы: ${readyCount} / ${occupiedCount}`}</p>
+            {startBlockReason ? <p>{startBlockReason}</p> : <p>Можно начинать матч.</p>}
           </Panel>
         </div>
       ) : match.status === 'error' ? (

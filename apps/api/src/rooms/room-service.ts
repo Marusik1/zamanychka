@@ -102,11 +102,16 @@ function toRoomState(room: PersistedRoom): RoomState {
   };
 }
 
-function toRoomView(room: PersistedRoom, presence: ReadonlyMap<string, boolean>): RoomView {
+function toRoomView(
+  room: PersistedRoom,
+  presence: ReadonlyMap<string, boolean>,
+  displayNames: ReadonlyMap<string, string>,
+): RoomView {
   const roomState = toRoomState(room);
   const presenceEntries = new Map<string, boolean>(presence);
   const participantViews = roomState.participants.map((participant) => ({
     ...participant,
+    displayName: displayNames.get(participant.userId) ?? participant.userId,
     connected: presenceEntries.get(participant.userId) ?? false,
   }));
 
@@ -159,7 +164,10 @@ export function createRoomService(options: {
   async function loadView(room?: PersistedRoom): Promise<RoomView> {
     const current = room ?? (await options.repository.bootstrapSingletonRoom());
     const presence = await options.presenceStore.snapshot(current.roomId);
-    return toRoomView(current, presence);
+    const displayNames = await options.repository.loadParticipantDisplayNames(
+      current.seats.flatMap((seat) => (seat.userId ? [seat.userId] : [])),
+    );
+    return toRoomView(current, presence, displayNames);
   }
 
   function selectFirstPlayerId(
