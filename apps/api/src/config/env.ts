@@ -4,6 +4,7 @@ const infrastructureSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   API_HOST: z.string().min(1).default('127.0.0.1'),
   API_PORT: z.coerce.number().int().min(1).max(65_535).default(3001),
+  PORT: z.coerce.number().int().min(1).max(65_535).optional(),
   DATABASE_URL: z.url().startsWith('postgresql://'),
   REDIS_URL: z.url().startsWith('redis://'),
 });
@@ -139,6 +140,7 @@ function parseDevUsers(input: Record<string, string | undefined>): DevUserConfig
 
 export function parseEnv(input: Record<string, string | undefined>): AppEnv {
   const infrastructure = infrastructureSchema.parse(input);
+  const apiPort = infrastructure.PORT ?? infrastructure.API_PORT;
   const devAuthEnabled = parseFlag(input, infrastructure.NODE_ENV);
   const allowedOrigins = parseOrigins(input, infrastructure.NODE_ENV);
   const sessionTtlSeconds = boundedInteger(
@@ -192,5 +194,5 @@ export function parseEnv(input: Record<string, string | undefined>): AppEnv {
           300,
         ),
       };
-  return { ...infrastructure, auth };
+  return { ...infrastructure, API_PORT: apiPort, auth };
 }

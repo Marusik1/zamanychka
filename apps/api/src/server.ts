@@ -1,4 +1,7 @@
 import { config as loadEnv } from 'dotenv';
+import { access } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { buildApp } from './app.js';
 import { createAuthRepository } from './auth/auth-repository.js';
@@ -18,6 +21,10 @@ import { createPostgresOutboxLeaseStore } from './realtime/outbox.js';
 import { createRealtimeRuntime } from './realtime/socketio.js';
 
 loadEnv({ path: new URL('../../../.env', import.meta.url), quiet: true });
+
+const serverDir = dirname(fileURLToPath(import.meta.url));
+const productionWebRoot = join(serverDir, '../../web/dist');
+await access(join(productionWebRoot, 'index.html'));
 
 const env = parseEnv(process.env);
 const dependencies = createLiveDependencies(env);
@@ -60,6 +67,7 @@ const app = buildApp({
   auth: { config: env.auth, service: authService },
   rooms: { service: roomService },
   profile: { service: profileService },
+  productionWebRoot,
 });
 const completion = createMatchCompletionService({ repository: roomRepository });
 const commandProcessor = createCommandProcessor({
@@ -97,4 +105,7 @@ const shutdown = async () => {
 process.once('SIGINT', () => void shutdown());
 process.once('SIGTERM', () => void shutdown());
 
-await app.listen({ host: env.API_HOST, port: env.API_PORT });
+await app.listen({
+  host: env.NODE_ENV === 'production' ? '0.0.0.0' : env.API_HOST,
+  port: env.API_PORT,
+});

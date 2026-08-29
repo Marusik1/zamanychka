@@ -82,6 +82,21 @@ describe('parseEnv auth matrix', () => {
     } else expect(result.auth.users).toHaveLength(2);
   });
 
+  it('prefers platform PORT over API_PORT when provided', () => {
+    const result = parseEnv(
+      env({
+        NODE_ENV: 'production',
+        DEV_AUTH_ENABLED: 'false',
+        TELEGRAM_BOT_TOKEN: 'token-placeholder',
+        APP_ORIGINS: 'https://zamanushka.example',
+        API_PORT: '3001',
+        PORT: '4317',
+      }),
+    );
+
+    expect(result.API_PORT).toBe(4317);
+  });
+
   it('rejects production development auth and missing Telegram tokens', () => {
     expect(() =>
       parseEnv(

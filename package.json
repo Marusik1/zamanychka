@@ -9,6 +9,7 @@
   },
   "scripts": {
     "dev": "pnpm -r --parallel --filter './apps/*' dev",
+    "start": "pnpm --filter @zamanushka/api start",
     "lint": "eslint .",
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "pnpm -r --if-present test",
