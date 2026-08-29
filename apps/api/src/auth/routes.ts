@@ -1,9 +1,11 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
   devAuthRequestSchema,
+  rulesOnboardingSeenResponseSchema,
   telegramAuthRequestSchema,
   type PublicErrorCode,
 } from '@zamanushka/shared';
+import { z } from 'zod';
 
 import type { CookiePolicy } from '../config/env.js';
 import type { AuthService } from './auth-service.js';
@@ -58,6 +60,7 @@ function map(reply: FastifyReply, thrown: unknown) {
 }
 
 export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOptions) {
+  const emptyBodySchema = z.object({}).strict();
   app.setErrorHandler((thrown, _request, reply) => {
     const statusCode =
       typeof thrown === 'object' && thrown !== null && 'statusCode' in thrown
@@ -100,7 +103,11 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOpti
           result.token,
           sessionCookie(options.cookie, options.sessionTtlSeconds),
         );
-        return reply.send({ user: result.user, session: result.session });
+        return reply.send({
+          user: result.user,
+          session: result.session,
+          rulesOnboardingSeenAt: result.rulesOnboardingSeenAt,
+        });
       } catch (thrown) {
         return map(reply, thrown);
       }
@@ -110,6 +117,20 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOpti
   app.get('/api/me', async (request, reply) => {
     try {
       return await options.service.me(request.cookies[options.cookie.name]);
+    } catch (thrown) {
+      return map(reply, thrown);
+    }
+  });
+  app.post('/api/me/rules-onboarding/seen', async (request, reply) => {
+    if (!origin(request, reply, options.allowedOrigins) || !json(request, reply)) return;
+    const parsed = emptyBodySchema.safeParse(request.body);
+    if (!parsed.success) return error(reply, 400, 'VALIDATION_ERROR');
+    try {
+      return reply.send(
+        rulesOnboardingSeenResponseSchema.parse(
+          await options.service.markRulesOnboardingSeen(request.cookies[options.cookie.name]),
+        ),
+      );
     } catch (thrown) {
       return map(reply, thrown);
     }

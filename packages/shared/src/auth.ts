@@ -29,16 +29,26 @@ export const authSessionViewSchema = z
   })
   .strict();
 
+export const rulesOnboardingSeenAtSchema = z.string().datetime({ offset: true }).nullable();
+
 export const authSuccessSchema = z
   .object({
     user: authUserSchema,
     session: authSessionViewSchema,
+    rulesOnboardingSeenAt: rulesOnboardingSeenAtSchema,
   })
   .strict();
 
 export const meResponseSchema = z
   .object({
     user: authUserSchema,
+    rulesOnboardingSeenAt: rulesOnboardingSeenAtSchema,
+  })
+  .strict();
+
+export const rulesOnboardingSeenResponseSchema = z
+  .object({
+    rulesOnboardingSeenAt: z.string().datetime({ offset: true }),
   })
   .strict();
 
@@ -96,8 +106,10 @@ export type TelegramAuthRequest = z.infer<typeof telegramAuthRequestSchema>;
 export type DevAuthRequest = z.infer<typeof devAuthRequestSchema>;
 export type AuthUser = z.infer<typeof authUserSchema>;
 export type AuthSessionView = z.infer<typeof authSessionViewSchema>;
+export type RulesOnboardingSeenAt = z.infer<typeof rulesOnboardingSeenAtSchema>;
 export type AuthSuccess = z.infer<typeof authSuccessSchema>;
 export type MeResponse = z.infer<typeof meResponseSchema>;
+export type RulesOnboardingSeenResponse = z.infer<typeof rulesOnboardingSeenResponseSchema>;
 export type LogoutResponse = z.infer<typeof logoutResponseSchema>;
 export type DevAuthCapability = z.infer<typeof devAuthCapabilitySchema>;
 export type PublicErrorCode = z.infer<typeof publicErrorCodeSchema>;

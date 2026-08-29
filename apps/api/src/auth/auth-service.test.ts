@@ -11,6 +11,7 @@ function fixture() {
     devUserKey: string | null;
     firstName: string;
     username?: string;
+    rulesOnboardingSeenAt?: Date | null;
   }
   interface FixtureSession {
     tokenHash?: string;
@@ -34,8 +35,12 @@ function fixture() {
         telegramId: profile.telegramId,
         devUserKey: null,
         firstName: profile.firstName,
+        rulesOnboardingSeenAt: null,
       };
-      Object.assign(user, profile, { telegramId: profile.telegramId, devUserKey: null });
+      Object.assign(user, profile, {
+        telegramId: profile.telegramId,
+        devUserKey: null,
+      });
       users.set(`tg:${profile.telegramId}`, user);
       return user;
     },
@@ -45,6 +50,7 @@ function fixture() {
         telegramId: null,
         devUserKey: profile.devUserKey,
         firstName: profile.displayName,
+        rulesOnboardingSeenAt: null,
       };
       Object.assign(user, {
         devUserKey: profile.devUserKey,
@@ -87,6 +93,11 @@ function fixture() {
       const s = sessions.get(hash);
       if (s) s.revokedAt = at;
       return { count: s ? 1 : 0 };
+    },
+    async markRulesOnboardingSeen(userId, seenAt) {
+      const user = findUser(userId);
+      user.rulesOnboardingSeenAt ??= seenAt;
+      return user.rulesOnboardingSeenAt;
     },
   };
   let token = 0;
@@ -142,5 +153,16 @@ describe('auth service', () => {
     expect((await service.me(login.token)).user.id).toBe('user-one');
     await service.logout(login.token);
     await expect(service.me(login.token)).rejects.toMatchObject({ code: 'AUTH_REQUIRED' });
+  });
+
+  it('marks rules onboarding seen idempotently for the authenticated user only', async () => {
+    const { service } = fixture();
+    const login = await service.loginDevelopment('one');
+
+    const first = await service.markRulesOnboardingSeen(login.token);
+    const second = await service.markRulesOnboardingSeen(login.token);
+
+    expect(first.rulesOnboardingSeenAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(second.rulesOnboardingSeenAt).toBe(first.rulesOnboardingSeenAt);
   });
 });

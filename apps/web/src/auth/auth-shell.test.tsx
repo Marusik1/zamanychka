@@ -26,7 +26,16 @@ describe('AuthShell', () => {
   });
 
   it('shows authenticated identity without raw metadata and with logout', () => {
-    render(<AuthShell state={{ status: 'AUTHENTICATED', user }} {...handlers} />);
+    render(
+      <AuthShell
+        state={{
+          status: 'AUTHENTICATED',
+          user,
+          rulesOnboardingSeenAt: '2026-08-29T10:00:00.000Z',
+        }}
+        {...handlers}
+      />,
+    );
 
     expect(screen.getByText('Анна')).toBeVisible();
     expect(screen.queryByText(/internal-42/)).not.toBeInTheDocument();
@@ -40,7 +49,12 @@ describe('AuthShell', () => {
       <AuthShell
         state={{
           status: 'AUTHENTICATED',
-          user: { id: 'telegram-1', displayName: 'Телеграм', authProvider: 'TELEGRAM' },
+          user: {
+            id: 'telegram-1',
+            displayName: 'Телеграм',
+            authProvider: 'TELEGRAM',
+          },
+          rulesOnboardingSeenAt: '2026-08-29T10:00:00.000Z',
         }}
         {...handlers}
       />,

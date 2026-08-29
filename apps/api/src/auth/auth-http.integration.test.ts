@@ -408,4 +408,91 @@ describe('real auth HTTP', () => {
       await database.prisma.$disconnect();
     });
   }
+
+  it('persists rules onboarding seen for the authenticated user and keeps other users unchanged', async () => {
+    await database.prisma.$connect();
+    await database.clean();
+    const users = [
+      { devUserKey: 'one', displayName: 'One' },
+      { devUserKey: 'two', displayName: 'Two' },
+    ];
+    const service = createAuthService({
+      repository: createAuthRepository(database.prisma),
+      sessionTtlSeconds: 600,
+      devUsers: users,
+    });
+    const app = buildApp({
+      probes: [],
+      auth: {
+        service,
+        config: {
+          mode: 'development',
+          users,
+          allowedOrigins: ['http://localhost:3000'],
+          cookie: {
+            name: 'zamanushka-session',
+            path: '/',
+            httpOnly: true,
+            sameSite: 'lax',
+            secure: false,
+          },
+          sessionTtlSeconds: 600,
+        },
+      },
+    });
+    const login = (devUserKey: string) =>
+      app.inject({
+        method: 'POST',
+        url: '/api/auth/dev',
+        headers: { origin: 'http://localhost:3000', 'content-type': 'application/json' },
+        payload: { devUserKey },
+      });
+    const first = await login('one');
+    const second = await login('two');
+    const firstCookie = cookiePair(first.headers['set-cookie']);
+    const secondCookie = cookiePair(second.headers['set-cookie']);
+
+    expect((await app.inject({ url: '/api/me', headers: { cookie: firstCookie } })).json()).toEqual({
+      user: expect.objectContaining({ displayName: 'One' }),
+      rulesOnboardingSeenAt: null,
+    });
+
+    const firstMark = await app.inject({
+      method: 'POST',
+      url: '/api/me/rules-onboarding/seen',
+      headers: {
+        origin: 'http://localhost:3000',
+        'content-type': 'application/json',
+        cookie: firstCookie,
+      },
+      payload: {},
+    });
+
+    expect(firstMark.statusCode).toBe(200);
+    expect(firstMark.json().rulesOnboardingSeenAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+
+    const secondMark = await app.inject({
+      method: 'POST',
+      url: '/api/me/rules-onboarding/seen',
+      headers: {
+        origin: 'http://localhost:3000',
+        'content-type': 'application/json',
+        cookie: firstCookie,
+      },
+      payload: {},
+    });
+
+    expect(secondMark.json().rulesOnboardingSeenAt).toBe(firstMark.json().rulesOnboardingSeenAt);
+    expect(
+      (await app.inject({ url: '/api/me', headers: { cookie: firstCookie } })).json()
+        .rulesOnboardingSeenAt,
+    ).toBe(firstMark.json().rulesOnboardingSeenAt);
+    expect(
+      (await app.inject({ url: '/api/me', headers: { cookie: secondCookie } })).json()
+        .rulesOnboardingSeenAt,
+    ).toBeNull();
+
+    await app.close();
+    await database.prisma.$disconnect();
+  });
 });

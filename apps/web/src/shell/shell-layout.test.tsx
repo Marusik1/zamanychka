@@ -19,13 +19,17 @@ function adapter(): TelegramAdapter {
 
 function authenticatedApi(): AuthApi {
   return {
-    me: vi
-      .fn()
-      .mockResolvedValue({ user: { id: 'one', displayName: 'One', authProvider: 'DEVELOPMENT' } }),
+    me: vi.fn().mockResolvedValue({
+      user: { id: 'one', displayName: 'One', authProvider: 'DEVELOPMENT' },
+      rulesOnboardingSeenAt: '2026-08-29T10:00:00.000Z',
+    }),
     loginTelegram: vi.fn(),
     developmentCapability: vi.fn(),
     loginDevelopment: vi.fn(),
     logout: vi.fn(),
+    markRulesOnboardingSeen: vi
+      .fn()
+      .mockResolvedValue({ rulesOnboardingSeenAt: '2026-08-29T10:00:00.000Z' }),
   };
 }
 
@@ -237,11 +241,8 @@ describe('EPIC-10 rules and profile routes', () => {
     renderAuthenticatedApp('#/profile/rules');
 
     expect(await screen.findByRole('heading', { name: 'ПРАВИЛА ИГРЫ' })).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Пройти обучение' })).toBeVisible();
-    expect(screen.getAllByTestId('rules-topic')).toHaveLength(7);
-    expect(screen.getAllByTestId('rules-topic-title').map((node) => node.textContent)).toEqual(
-      rulesContent.topics.map((topic) => topic.title),
-    );
+    expect(screen.getByRole('button', { name: 'Закрыть обучение' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Пройти обучение' })).not.toBeInTheDocument();
 
     const topNav = screen.getByRole('navigation', { name: 'Primary navigation' });
     expect(within(topNav).getByRole('link', { name: 'Профиль' })).toHaveAttribute(
@@ -253,8 +254,6 @@ describe('EPIC-10 rules and profile routes', () => {
 
   it('opens guided tutorial, preserves seven canonical steps, and returns to normal rules mode', async () => {
     renderAuthenticatedApp('#/profile/rules');
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Пройти обучение' }));
 
     expect(await screen.findByText('1 / 7')).toBeVisible();
     expect(screen.getByRole('heading', { name: 'Вход на поле' })).toBeVisible();
@@ -287,8 +286,7 @@ describe('EPIC-10 rules and profile routes', () => {
     window.innerWidth = 390;
     renderAuthenticatedApp('#/profile/rules');
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Пройти обучение' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Далее' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Далее' }));
     expect(await screen.findByText('2 / 7')).toBeVisible();
 
     fireEvent.click(screen.getByRole('button', { name: 'Закрыть обучение' }));

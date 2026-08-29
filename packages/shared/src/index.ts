@@ -44,6 +44,8 @@ export {
   logoutResponseSchema,
   publicErrorCodeSchema,
   publicErrorSchema,
+  rulesOnboardingSeenAtSchema,
+  rulesOnboardingSeenResponseSchema,
   telegramAuthRequestSchema,
   type AuthSessionView,
   type AuthSuccess,
@@ -54,6 +56,8 @@ export {
   type LogoutResponse,
   type PublicError,
   type PublicErrorCode,
+  type RulesOnboardingSeenAt,
+  type RulesOnboardingSeenResponse,
   type TelegramAuthRequest,
 } from './auth.js';
 export {

@@ -10,6 +10,7 @@ const result = {
   token: 'opaque',
   user: { id: 'u1', displayName: 'One', authProvider: 'DEVELOPMENT' as const },
   session: { expiresAt: '2020-01-01T00:10:00.000Z' },
+  rulesOnboardingSeenAt: null as string | null,
 };
 const service = {
   capability: () => ({
@@ -20,8 +21,10 @@ const service = {
   loginTelegram: async () => ({
     ...result,
     user: { ...result.user, authProvider: 'TELEGRAM' as const },
+    rulesOnboardingSeenAt: result.rulesOnboardingSeenAt,
   }),
-  me: async () => ({ user: result.user }),
+  me: async () => ({ user: result.user, rulesOnboardingSeenAt: result.rulesOnboardingSeenAt }),
+  markRulesOnboardingSeen: async () => ({ rulesOnboardingSeenAt: '2026-08-29T10:00:00.000Z' }),
   logout: async () => undefined,
 };
 

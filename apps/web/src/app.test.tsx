@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { StrictMode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -6,6 +6,8 @@ import { AuthApiError, type AuthApi } from './auth/api.js';
 import { App } from './app.js';
 import type { TelegramAdapter } from './telegram/adapter.js';
 import type { TelegramEvent, TelegramWebApp } from './telegram/types.js';
+
+const seenAt = '2026-08-29T10:00:00.000Z';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -33,9 +35,10 @@ function required<T>(value: T | undefined): T {
 }
 
 function authenticatedApi(
-  me: AuthApi['me'] = vi
-    .fn()
-    .mockResolvedValue({ user: { id: 'one', displayName: 'Один', authProvider: 'DEVELOPMENT' } }),
+  me: AuthApi['me'] = vi.fn().mockResolvedValue({
+    user: { id: 'one', displayName: 'Один', authProvider: 'DEVELOPMENT' },
+    rulesOnboardingSeenAt: seenAt,
+  }),
 ): AuthApi {
   return {
     me,
@@ -43,6 +46,7 @@ function authenticatedApi(
     developmentCapability: vi.fn(),
     loginDevelopment: vi.fn(),
     logout: vi.fn(),
+    markRulesOnboardingSeen: vi.fn().mockResolvedValue({ rulesOnboardingSeenAt: seenAt }),
   };
 }
 
@@ -111,6 +115,7 @@ describe('EPIC-01 app lifecycle', () => {
     vi.mocked(api.loginTelegram).mockResolvedValue({
       user: { id: 'telegram', displayName: 'Телеграм', authProvider: 'TELEGRAM' },
       session: { expiresAt: '2026-09-20T00:00:00.000Z' },
+      rulesOnboardingSeenAt: null,
     });
 
     render(
@@ -131,6 +136,7 @@ describe('EPIC-01 app lifecycle', () => {
     vi.mocked(api.loginTelegram).mockResolvedValue({
       user: { id: 'telegram', displayName: 'Телеграм', authProvider: 'TELEGRAM' },
       session: { expiresAt: '2026-09-20T00:00:00.000Z' },
+      rulesOnboardingSeenAt: null,
     });
 
     render(<App createAdapter={() => ({ ...adapter(), initData: 'signed' })} api={api} />);
@@ -186,11 +192,13 @@ describe('EPIC-01 app lifecycle', () => {
     required(logins.get('two')).resolve({
       user: { id: 'two', displayName: 'Последний', authProvider: 'DEVELOPMENT' },
       session: { expiresAt: '2026-09-20T00:00:00.000Z' },
+      rulesOnboardingSeenAt: seenAt,
     });
     await screen.findByText('Последний');
     required(logins.get('one')).resolve({
       user: { id: 'one', displayName: 'Устаревший', authProvider: 'DEVELOPMENT' },
       session: { expiresAt: '2026-09-20T00:00:00.000Z' },
+      rulesOnboardingSeenAt: seenAt,
     });
     await act(() => Promise.resolve());
 
@@ -248,10 +256,12 @@ describe('EPIC-01 app lifecycle', () => {
     expect(retries).toHaveLength(2);
     required(retries[1]).resolve({
       user: { id: 'latest', displayName: 'Последний', authProvider: 'DEVELOPMENT' },
+      rulesOnboardingSeenAt: seenAt,
     });
     await screen.findByText('Последний');
     required(retries[0]).resolve({
       user: { id: 'stale', displayName: 'Устаревший', authProvider: 'DEVELOPMENT' },
+      rulesOnboardingSeenAt: seenAt,
     });
     await act(() => Promise.resolve());
 
@@ -287,6 +297,7 @@ describe('EPIC-01 app lifecycle', () => {
       .fn()
       .mockResolvedValueOnce({
         user: { id: 'one', displayName: 'Один', authProvider: 'DEVELOPMENT' },
+        rulesOnboardingSeenAt: seenAt,
       })
       .mockRejectedValueOnce(new AuthApiError(401));
     const api = authenticatedApi(me);
@@ -314,7 +325,10 @@ describe('EPIC-01 app lifecycle', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Проверяем вход');
     expect(telegram.shellReady).toHaveBeenCalledTimes(1);
     await act(() => {
-      pending.resolve({ user: { id: 'one', displayName: 'Один', authProvider: 'DEVELOPMENT' } });
+      pending.resolve({
+        user: { id: 'one', displayName: 'Один', authProvider: 'DEVELOPMENT' },
+        rulesOnboardingSeenAt: seenAt,
+      });
       return pending.promise;
     });
     expect(telegram.shellReady).toHaveBeenCalledTimes(1);
@@ -347,5 +361,89 @@ describe('EPIC-01 app lifecycle', () => {
     ).toBeNull();
     expect(screen.getByRole('main').querySelector('[data-region="left-rail"]')).toBeNull();
     expect(screen.getByRole('main').querySelector('[data-region="right-rail"]')).toBeNull();
+  });
+});
+
+describe('EPIC-10 rules onboarding', () => {
+  it('shows the onboarding prompt for an unseen authenticated user', async () => {
+    render(
+      <App
+        createAdapter={adapter}
+        api={authenticatedApi(
+          vi.fn().mockResolvedValue({
+            user: { id: 'one', displayName: 'Один', authProvider: 'DEVELOPMENT' },
+            rulesOnboardingSeenAt: null,
+          }),
+        )}
+      />,
+    );
+
+    expect(await screen.findByRole('dialog')).toHaveTextContent('Как играть в «Заманушку»');
+    expect(screen.getByRole('button', { name: 'Начать обучение' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Позже' })).toBeVisible();
+  });
+
+  it('does not show the onboarding prompt for a seen authenticated user', async () => {
+    render(<App createAdapter={adapter} api={authenticatedApi()} />);
+
+    await screen.findByText('Один');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('starts the existing rules guided flow at step 1 and marks onboarding as seen', async () => {
+    const api = authenticatedApi(
+      vi.fn().mockResolvedValue({
+        user: { id: 'one', displayName: 'Один', authProvider: 'DEVELOPMENT' },
+        rulesOnboardingSeenAt: null,
+      }),
+    );
+
+    render(<App createAdapter={adapter} api={api} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Начать обучение' }));
+
+    expect(await screen.findByText('1 / 7')).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Вход на поле' })).toBeVisible();
+    expect(window.location.hash).toBe('#/profile/rules');
+    await waitFor(() => expect(api.markRulesOnboardingSeen).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('dismisses onboarding and does not reopen it during normal navigation after a successful mark', async () => {
+    const api = authenticatedApi(
+      vi.fn().mockResolvedValue({
+        user: { id: 'one', displayName: 'Один', authProvider: 'DEVELOPMENT' },
+        rulesOnboardingSeenAt: null,
+      }),
+    );
+
+    render(<App createAdapter={adapter} api={api} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Позже' }));
+    await waitFor(() => expect(api.markRulesOnboardingSeen).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('link', { name: 'Комнаты' }));
+    fireEvent(window, new HashChangeEvent('hashchange'));
+    await screen.findByRole('heading', { name: 'Комнаты' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('keeps the shell usable when mark-seen fails', async () => {
+    const api = authenticatedApi(
+      vi.fn().mockResolvedValue({
+        user: { id: 'one', displayName: 'Один', authProvider: 'DEVELOPMENT' },
+        rulesOnboardingSeenAt: null,
+      }),
+    );
+    vi.mocked(api.markRulesOnboardingSeen).mockRejectedValue(new Error('network'));
+
+    render(<App createAdapter={adapter} api={api} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Позже' }));
+
+    await waitFor(() => expect(api.markRulesOnboardingSeen).toHaveBeenCalledTimes(1));
+    expect(screen.getByText('Один')).toBeVisible();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 });

@@ -5,7 +5,7 @@ import { AuthApiError, type AuthApi } from './api.js';
 export type AuthState =
   | { status: 'BOOTSTRAPPING' }
   | { status: 'AUTHENTICATING' }
-  | { status: 'AUTHENTICATED'; user: AuthUser }
+  | { status: 'AUTHENTICATED'; user: AuthUser; rulesOnboardingSeenAt: string | null }
   | { status: 'DEV_AUTH_REQUIRED'; users: Extract<DevAuthCapability, { enabled: true }>['users'] }
   | { status: 'ERROR'; message: string; retryable: boolean };
 
@@ -24,7 +24,11 @@ export async function bootstrapAuth(
   try {
     const me = await api.me(signal);
     signal?.throwIfAborted();
-    return { status: 'AUTHENTICATED', user: me.user };
+    return {
+      status: 'AUTHENTICATED',
+      user: me.user,
+      rulesOnboardingSeenAt: me.rulesOnboardingSeenAt,
+    };
   } catch (error) {
     signal?.throwIfAborted();
     if (!(error instanceof AuthApiError) || error.status !== 401) return genericError;
@@ -36,7 +40,11 @@ export async function bootstrapAuth(
       transition?.({ status: 'AUTHENTICATING' });
       const result = await api.loginTelegram(initData, signal);
       signal?.throwIfAborted();
-      return { status: 'AUTHENTICATED', user: result.user };
+      return {
+        status: 'AUTHENTICATED',
+        user: result.user,
+        rulesOnboardingSeenAt: result.rulesOnboardingSeenAt,
+      };
     }
     const capability = await api.developmentCapability(signal);
     signal?.throwIfAborted();

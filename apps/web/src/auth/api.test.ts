@@ -15,7 +15,10 @@ describe('authentication API response validation', () => {
     const fetcher = vi
       .fn()
       .mockResolvedValueOnce(
-        json(200, { user: { id: 'one', displayName: 'One', authProvider: 'DEVELOPMENT' } }),
+        json(200, {
+          user: { id: 'one', displayName: 'One', authProvider: 'DEVELOPMENT' },
+          rulesOnboardingSeenAt: null,
+        }),
       )
       .mockResolvedValueOnce(json(200, { enabled: false, users: [] }))
       .mockResolvedValueOnce(json(200, { ok: true }));
@@ -28,6 +31,24 @@ describe('authentication API response validation', () => {
     expect(fetcher).toHaveBeenNthCalledWith(1, '/api/me', { credentials: 'include', signal });
     expect(fetcher).toHaveBeenNthCalledWith(2, '/api/auth/dev', { credentials: 'include', signal });
     expect(fetcher).toHaveBeenNthCalledWith(3, '/api/auth/logout', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+      signal,
+    });
+  });
+
+  it('posts onboarding-seen as a current-user mutation without client identity', async () => {
+    const signal = new AbortController().signal;
+    const fetcher = vi.fn().mockResolvedValue(
+      json(200, { rulesOnboardingSeenAt: '2026-08-29T10:00:00.000Z' }),
+    );
+    const api = createAuthApi(fetcher);
+
+    await api.markRulesOnboardingSeen(signal);
+
+    expect(fetcher).toHaveBeenCalledWith('/api/me/rules-onboarding/seen', {
       method: 'POST',
       credentials: 'include',
       headers: { 'content-type': 'application/json' },

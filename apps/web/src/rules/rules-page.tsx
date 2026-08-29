@@ -6,7 +6,7 @@ import {
   type TutorialPawnFixture,
 } from '@zamanushka/shared';
 import { Button, Panel } from '@zamanushka/ui';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 const perimeterCoords: Array<[number, number]> = [
   [0, 0],
@@ -228,8 +228,13 @@ function TutorialBoard({
   );
 }
 
-export function RulesPage() {
+export function RulesPage({ guidedStartKey }: { guidedStartKey?: number }) {
   const [guidedStepIndex, setGuidedStepIndex] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (guidedStartKey === undefined) return;
+    setGuidedStepIndex(0);
+  }, [guidedStartKey]);
 
   const currentTopic =
     guidedStepIndex === null ? null : rulesContent.topics[guidedStepIndex] ?? null;

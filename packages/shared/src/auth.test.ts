@@ -47,6 +47,7 @@ describe('authentication response contracts', () => {
     const response = {
       user: telegramUser,
       session: { expiresAt: '2026-08-18T21:00:00+03:00' },
+      rulesOnboardingSeenAt: '2026-08-29T10:00:00.000Z',
     };
 
     expect(authSuccessSchema.parse(response)).toEqual(response);
@@ -54,7 +55,7 @@ describe('authentication response contracts', () => {
   });
 
   it('accepts an exact current-user response', () => {
-    const response = { user: telegramUser };
+    const response = { user: telegramUser, rulesOnboardingSeenAt: null };
 
     expect(meResponseSchema.parse(response)).toEqual(response);
     expect(() => meResponseSchema.parse({ ...response, sessionId: 'hidden' })).toThrow();

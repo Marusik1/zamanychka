@@ -4,11 +4,13 @@ import {
   logoutResponseSchema,
   meResponseSchema,
   publicErrorSchema,
+  rulesOnboardingSeenResponseSchema,
   type AuthSuccess,
   type DevAuthCapability,
   type LogoutResponse,
   type MeResponse,
   type PublicErrorCode,
+  type RulesOnboardingSeenResponse,
 } from '@zamanushka/shared';
 type Fetcher = typeof fetch;
 interface Parser<T> {
@@ -61,6 +63,7 @@ export interface AuthApi {
   loginTelegram(initData: string, signal?: AbortSignal): Promise<AuthSuccess>;
   developmentCapability(signal?: AbortSignal): Promise<DevAuthCapability>;
   loginDevelopment(devUserKey: string, signal?: AbortSignal): Promise<AuthSuccess>;
+  markRulesOnboardingSeen(signal?: AbortSignal): Promise<RulesOnboardingSeenResponse>;
   logout(signal?: AbortSignal): Promise<LogoutResponse>;
 }
 
@@ -80,6 +83,12 @@ export function createAuthApi(fetcher: Fetcher = fetch): AuthApi {
     },
     async loginDevelopment(devUserKey, signal) {
       return parse(await fetcher('/api/auth/dev', post({ devUserKey }, signal)), authSuccessSchema);
+    },
+    async markRulesOnboardingSeen(signal) {
+      return parse(
+        await fetcher('/api/me/rules-onboarding/seen', post({}, signal)),
+        rulesOnboardingSeenResponseSchema,
+      );
     },
     async logout(signal) {
       return parse(await fetcher('/api/auth/logout', post({}, signal)), logoutResponseSchema);

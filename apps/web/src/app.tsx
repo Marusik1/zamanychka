@@ -1,4 +1,4 @@
-import { AppFrame, AppShell, Button, EmptyState, Panel } from '@zamanushka/ui';
+import { AppFrame, AppShell, Button, Dialog, EmptyState, Panel } from '@zamanushka/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { createAuthApi, type AuthApi } from './auth/api.js';
@@ -82,6 +82,8 @@ export function App({
     resolveShellViewport(window.innerWidth),
   );
   const [profileState, setProfileState] = useState<ProfileScreenState>(initialProfileState);
+  const [rulesOnboardingDismissed, setRulesOnboardingDismissed] = useState(false);
+  const [rulesGuidedStartKey, setRulesGuidedStartKey] = useState(0);
   const mounted = useRef(false);
   const adapter = useRef<TelegramAdapter | undefined>(undefined);
   const request = useRef<{ controller?: AbortController; epoch: number }>({ epoch: 0 });
@@ -223,6 +225,7 @@ export function App({
       profileRequest.current.epoch += 1;
       profileRequest.current.controller?.abort();
       setProfileState(initialProfileState);
+      setRulesOnboardingDismissed(false);
       return;
     }
 
@@ -236,12 +239,28 @@ export function App({
     }
   }, [loadHistory, loadProfile, routeHash, state.status]);
 
+  const completeRulesOnboarding = useCallback(async () => {
+    try {
+      const result = await api.markRulesOnboardingSeen();
+      setState((current) =>
+        current.status === 'AUTHENTICATED'
+          ? { ...current, rulesOnboardingSeenAt: result.rulesOnboardingSeenAt }
+          : current,
+      );
+    } catch {
+    }
+  }, [api]);
+
   async function selectDevelopmentUser(devUserKey: string) {
     const { controller, epoch } = beginRequest();
     commit(epoch, { status: 'AUTHENTICATING' });
     try {
       const result = await api.loginDevelopment(devUserKey, controller.signal);
-      commit(epoch, { status: 'AUTHENTICATED', user: result.user });
+      commit(epoch, {
+        status: 'AUTHENTICATED',
+        user: result.user,
+        rulesOnboardingSeenAt: result.rulesOnboardingSeenAt,
+      });
     } catch {
       if (!controller.signal.aborted) {
         commit(epoch, {
@@ -271,6 +290,7 @@ export function App({
   }
 
   if (state.status === 'AUTHENTICATED') {
+    const showRulesOnboarding = !state.rulesOnboardingSeenAt && !rulesOnboardingDismissed;
     const route =
       routeHash === '#/profile' && profileState.status === 'ready' && profileState.data
         ? {
@@ -280,7 +300,7 @@ export function App({
         : routeHash === '#/profile/rules'
           ? {
               activeKey: 'profile' as const,
-              page: <RulesPage />,
+              page: <RulesPage guidedStartKey={rulesGuidedStartKey} />,
             }
         : routeHash === '#/profile' && profileState.status === 'error'
           ? {
@@ -335,23 +355,52 @@ export function App({
         activeNavigationKey={route.activeKey}
         viewport={shellViewport}
       >
-        <div className="shell-authenticated-layout">
-          <div className="shell-authenticated-layout__page">{route.page}</div>
-          <Panel as="section" className="shell-session-panel">
-            <div className="shell-session-panel__identity">
-              <div className="shell-session-panel__avatar" aria-hidden="true">
-                {renderAvatar(state.user.displayName)}
+                <>
+          <div className="shell-authenticated-layout">
+            <div className="shell-authenticated-layout__page">{route.page}</div>
+            <Panel as="section" className="shell-session-panel">
+              <div className="shell-session-panel__identity">
+                <div className="shell-session-panel__avatar" aria-hidden="true">
+                  {renderAvatar(state.user.displayName)}
+                </div>
+                <div className="shell-session-panel__identity-copy">
+                  <p className="shell-session-panel__eyebrow">Активная сессия</p>
+                  <p className="shell-session-panel__name">{state.user.displayName}</p>
+                </div>
               </div>
-              <div className="shell-session-panel__identity-copy">
-                <p className="shell-session-panel__eyebrow">Активная сессия</p>
-                <p className="shell-session-panel__name">{state.user.displayName}</p>
-              </div>
+              <Button variant="secondary" onClick={() => void logout()}>
+                Выйти
+              </Button>
+            </Panel>
+          </div>
+          <Dialog
+            open={showRulesOnboarding}
+            title="Как играть в «Заманушку»"
+            description="Семь коротких шагов помогут быстро разобрать правила и откроют уже существующее обучение."
+          >
+            <div className="shell-onboarding-dialog">
+              <Button
+                onClick={() => {
+                  setRulesOnboardingDismissed(true);
+                  setRulesGuidedStartKey((key) => key + 1);
+                  window.location.hash = '#/profile/rules';
+                  void completeRulesOnboarding();
+                }}
+              >
+                Начать обучение
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setRulesOnboardingDismissed(true);
+                  void completeRulesOnboarding();
+                }}
+              >
+                Позже
+              </Button>
             </div>
-            <Button variant="secondary" onClick={() => void logout()}>
-              Выйти
-            </Button>
-          </Panel>
-        </div>
+          </Dialog>
+        </>
       </AppShell>
     );
   }

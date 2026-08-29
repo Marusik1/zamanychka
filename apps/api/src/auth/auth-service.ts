@@ -13,6 +13,7 @@ interface UserRow {
   lastName?: string | null;
   languageCode?: string | null;
   photoUrl?: string | null;
+  rulesOnboardingSeenAt?: Date | null;
 }
 interface SessionRow {
   user: UserRow;
@@ -43,6 +44,7 @@ export interface AuthRepository {
     now: Date;
   }): Promise<ReplacementResult>;
   resolveActiveSession(hash: string, now: Date): Promise<SessionRow | null>;
+  markRulesOnboardingSeen(userId: string, now: Date): Promise<Date>;
   revokeSession(hash: string, now: Date): Promise<unknown>;
 }
 
@@ -65,6 +67,10 @@ function view(user: UserRow, method: 'TELEGRAM' | 'DEVELOPMENT'): AuthUser {
     ...(user.photoUrl ? { photoUrl: user.photoUrl } : {}),
     ...(user.languageCode ? { languageCode: user.languageCode } : {}),
   };
+}
+
+function toSeenAtIso(user: UserRow) {
+  return user.rulesOnboardingSeenAt?.toISOString() ?? null;
 }
 
 export function createAuthService(options: {
@@ -106,7 +112,12 @@ export function createAuthService(options: {
         authMethod: method,
         expiresAt,
       });
-    return { token, user: view(user, method), session: { expiresAt: expiresAt.toISOString() } };
+    return {
+      token,
+      user: view(user, method),
+      session: { expiresAt: expiresAt.toISOString() },
+      rulesOnboardingSeenAt: toSeenAtIso(user),
+    };
   }
   return {
     capability(): DevAuthCapability {
@@ -141,7 +152,17 @@ export function createAuthService(options: {
       if (!token) throw new AuthServiceError('AUTH_REQUIRED');
       const session = await options.repository.resolveActiveSession(hashSessionToken(token), now());
       if (!session) throw new AuthServiceError('AUTH_REQUIRED');
-      return { user: view(session.user, session.authMethod) };
+      return {
+        user: view(session.user, session.authMethod),
+        rulesOnboardingSeenAt: toSeenAtIso(session.user),
+      };
+    },
+    async markRulesOnboardingSeen(token?: string) {
+      if (!token) throw new AuthServiceError('AUTH_REQUIRED');
+      const session = await options.repository.resolveActiveSession(hashSessionToken(token), now());
+      if (!session) throw new AuthServiceError('AUTH_REQUIRED');
+      const seenAt = await options.repository.markRulesOnboardingSeen(session.user.id, now());
+      return { rulesOnboardingSeenAt: seenAt.toISOString() };
     },
     async logout(token?: string) {
       if (token) await options.repository.revokeSession(hashSessionToken(token), now());

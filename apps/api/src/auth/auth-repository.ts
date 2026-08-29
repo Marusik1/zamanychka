@@ -79,6 +79,23 @@ export function createAuthRepository(prisma: AppPrismaClient) {
       });
     },
 
+    async markRulesOnboardingSeen(userId: string, now: Date) {
+      const user = await prisma.$transaction(async (tx) => {
+        const current = await tx.user.findUniqueOrThrow({
+          where: { id: userId },
+          select: { rulesOnboardingSeenAt: true },
+        });
+        if (current.rulesOnboardingSeenAt) return current;
+        return tx.user.update({
+          where: { id: userId },
+          data: { rulesOnboardingSeenAt: now },
+          select: { rulesOnboardingSeenAt: true },
+        });
+      });
+
+      return user.rulesOnboardingSeenAt ?? now;
+    },
+
     revokeSession(tokenHash: string, now: Date) {
       return prisma.$transaction((tx) =>
         tx.authSession.updateMany({

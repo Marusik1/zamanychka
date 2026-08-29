@@ -30,11 +30,11 @@ describe('authentication bootstrap', () => {
   });
 
   it('always requests /api/me first and does not reauthenticate a valid session', async () => {
-    const fetcher = vi.fn().mockResolvedValue(json(200, { user }));
+    const fetcher = vi.fn().mockResolvedValue(json(200, { user, rulesOnboardingSeenAt: null }));
 
     const state = await bootstrapAuth(createAuthApi(fetcher), 'signed-init-data');
 
-    expect(state).toEqual({ status: 'AUTHENTICATED', user });
+    expect(state).toEqual({ status: 'AUTHENTICATED', user, rulesOnboardingSeenAt: null });
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(fetcher).toHaveBeenCalledWith('/api/me', { credentials: 'include' });
   });
@@ -47,6 +47,7 @@ describe('authentication bootstrap', () => {
         json(200, {
           user,
           session: { expiresAt: '2026-09-20T00:00:00.000Z' },
+          rulesOnboardingSeenAt: null,
         }),
       );
 
@@ -67,7 +68,11 @@ describe('authentication bootstrap', () => {
       .fn()
       .mockResolvedValueOnce(json(401, { error: { code: 'AUTH_REQUIRED', message: 'Войдите' } }))
       .mockResolvedValueOnce(
-        json(200, { user, session: { expiresAt: '2026-09-20T00:00:00.000Z' } }),
+        json(200, {
+          user,
+          session: { expiresAt: '2026-09-20T00:00:00.000Z' },
+          rulesOnboardingSeenAt: null,
+        }),
       );
     const transition = vi.fn();
 
@@ -111,6 +116,7 @@ describe('authentication bootstrap', () => {
       json(200, {
         user: { ...user, authProvider: 'DEVELOPMENT' },
         session: { expiresAt: '2026-09-20T00:00:00.000Z' },
+        rulesOnboardingSeenAt: null,
       }),
     );
     const api = createAuthApi(fetcher);
