@@ -53,9 +53,14 @@ export function ProfilePage({ data }: { data: ProfileResponseDto }) {
             <p className="profile-page__eyebrow">Последние результаты</p>
             <h2>Недавние матчи</h2>
           </div>
-          <a className="profile-page__link-button" href="#/profile/history">
-            Вся история
-          </a>
+          <div className="profile-page__section-actions">
+            <a className="profile-page__link-button profile-page__link-button--ghost" href="#/profile/rules">
+              Правила игры
+            </a>
+            <a className="profile-page__link-button" href="#/profile/history">
+              Вся история
+            </a>
+          </div>
         </div>
 
         {data.recentResults.length === 0 ? (

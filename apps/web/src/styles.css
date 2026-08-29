@@ -349,6 +349,286 @@ body {
   background: transparent;
 }
 
+.profile-page__section-actions {
+  display: flex;
+  gap: var(--ui-space-12);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.rules-page {
+  display: grid;
+  gap: var(--ui-space-16);
+}
+
+.rules-page__header,
+.rules-page__tutorial-heading,
+.rules-page__intro {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--ui-space-16);
+}
+
+.rules-page__header {
+  align-items: flex-start;
+}
+
+.rules-page__header h1,
+.rules-page__intro h2,
+.rules-page__topic h2,
+.rules-page__tutorial h2 {
+  margin: 0;
+}
+
+.rules-page__eyebrow,
+.rules-page__tutorial-kicker,
+.rules-page__topic-index,
+.rules-page__progress,
+.rules-page__callout-title,
+.rules-page__board-caption {
+  margin: 0;
+  color: var(--ui-text-muted);
+}
+
+.rules-page__summary,
+.rules-page__intro-copy p,
+.rules-page__topic-copy p,
+.rules-page__callout p,
+.rules-page__board-caption {
+  margin: 0;
+}
+
+.rules-page__intro {
+  align-items: center;
+}
+
+.rules-page__intro-visual,
+.rules-page__intro-copy,
+.rules-page__topic-copy {
+  display: grid;
+  gap: var(--ui-space-8);
+}
+
+.rules-page__intro-visual {
+  min-width: 9rem;
+  justify-items: center;
+}
+
+.rules-page__intro-die,
+.rules-page__die {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 0.9rem;
+  border: 1px solid color-mix(in srgb, var(--ui-accent-gold) 40%, transparent);
+  background: linear-gradient(180deg, rgba(247, 241, 230, 0.98), rgba(225, 212, 188, 0.88));
+  color: #291d11;
+  font-weight: 700;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.26);
+}
+
+.rules-page__intro-pawns {
+  display: flex;
+  gap: 0.45rem;
+}
+
+.rules-page__topic-list,
+.rules-page__notes,
+.rules-page__tutorial {
+  display: grid;
+  gap: var(--ui-space-12);
+}
+
+.rules-page__topic {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--ui-space-12);
+  align-items: flex-start;
+}
+
+.rules-page__progress {
+  font-size: var(--ui-type-caption-size);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.rules-page__tutorial-heading {
+  align-items: center;
+}
+
+.rules-page__board-block,
+.rules-board {
+  display: grid;
+  gap: var(--ui-space-8);
+}
+
+.rules-board__reserves {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--ui-space-8);
+}
+
+.rules-board__reserve {
+  display: flex;
+  gap: 0.35rem;
+  min-height: 2rem;
+}
+
+.rules-board__reserve--blue,
+.rules-board__reserve--yellow {
+  justify-content: flex-end;
+}
+
+.rules-board__grid {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  width: min(100%, 25rem);
+  aspect-ratio: 1;
+  padding: 0.75rem;
+  border-radius: 1.1rem;
+  background: linear-gradient(145deg, #7d5630, #4f3520);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 18px 32px rgba(0, 0, 0, 0.28);
+}
+
+.rules-board__cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(24, 19, 15, 0.25);
+  background: #d8b98b;
+}
+
+.rules-board__cell:nth-child(16n + 1),
+.rules-board__cell:nth-child(16n + 3),
+.rules-board__cell:nth-child(16n + 5),
+.rules-board__cell:nth-child(16n + 7),
+.rules-board__cell:nth-child(16n + 10),
+.rules-board__cell:nth-child(16n + 12),
+.rules-board__cell:nth-child(16n + 14),
+.rules-board__cell:nth-child(16n + 16) {
+  background: #c59a67;
+}
+
+.rules-board__cell--red {
+  background: rgba(168, 51, 32, 0.55);
+}
+
+.rules-board__cell--blue {
+  background: rgba(45, 95, 165, 0.55);
+}
+
+.rules-board__cell--green {
+  background: rgba(72, 122, 53, 0.55);
+}
+
+.rules-board__cell--yellow {
+  background: rgba(204, 161, 46, 0.55);
+}
+
+.rules-board__cell--path::after {
+  content: '';
+  position: absolute;
+  inset: 22%;
+  border-radius: 999px;
+  border: 1px dashed rgba(250, 234, 186, 0.72);
+  background: rgba(250, 218, 120, 0.14);
+}
+
+.rules-pawn {
+  position: relative;
+  z-index: 1;
+  width: 58%;
+  height: 58%;
+  border-radius: 999px 999px 40% 40%;
+  box-shadow:
+    inset 0 8px 12px rgba(255, 255, 255, 0.18),
+    inset 0 -10px 14px rgba(0, 0, 0, 0.28),
+    0 5px 10px rgba(0, 0, 0, 0.25);
+}
+
+.rules-pawn::before {
+  content: '';
+  position: absolute;
+  top: -22%;
+  left: 50%;
+  width: 48%;
+  height: 48%;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: inherit;
+  box-shadow: inherit;
+}
+
+.rules-pawn--red {
+  background: linear-gradient(180deg, #f37d57, #9d2c1d);
+}
+
+.rules-pawn--blue {
+  background: linear-gradient(180deg, #63adf7, #255f9f);
+}
+
+.rules-pawn--green {
+  background: linear-gradient(180deg, #7ecf5f, #437329);
+}
+
+.rules-pawn--yellow {
+  background: linear-gradient(180deg, #ffe075, #c2901f);
+}
+
+.rules-pawn--ghost {
+  opacity: 0.18;
+}
+
+.rules-pawn--active,
+.rules-pawn--target,
+.rules-pawn--winner,
+.rules-pawn--home {
+  filter: drop-shadow(0 0 8px rgba(244, 196, 101, 0.3));
+}
+
+.rules-pawn--blocker,
+.rules-pawn--captured {
+  outline: 2px solid rgba(248, 240, 216, 0.85);
+  outline-offset: 1px;
+}
+
+.rules-page__notes {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.rules-page__actions {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--ui-space-12);
+}
+
+.rules-page__actions > * {
+  flex: 1 1 0;
+}
+
+.rules-page__callout {
+  display: grid;
+  gap: var(--ui-space-4);
+  padding: var(--ui-space-12) var(--ui-space-16);
+  border-radius: var(--ui-radius-card);
+  border: 1px solid color-mix(in srgb, var(--ui-border-muted) 65%, transparent);
+  background: color-mix(in srgb, var(--ui-surface-elevated) 88%, transparent);
+}
+
+.rules-page__callout--important {
+  border-color: color-mix(in srgb, var(--ui-accent-gold) 42%, transparent);
+}
+
+.rules-page__callout--warning {
+  border-color: color-mix(in srgb, #de7e5b 40%, transparent);
+}
+
 .profile-result-card {
   display: grid;
   gap: var(--ui-space-12);
@@ -494,11 +774,28 @@ body {
     gap: var(--ui-space-12);
   }
 
+  .profile-page__section-actions,
+  .rules-page__header,
+  .rules-page__tutorial-heading,
+  .rules-page__intro,
+  .rules-page__actions {
+    flex-direction: column;
+  }
+
   .profile-page__identity {
     align-items: start;
   }
 
   .profile-page__stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .rules-page__intro-visual {
+    min-width: 0;
+  }
+
+  .rules-board__grid {
+    width: 100%;
+    padding: 0.55rem;
   }
 }

@@ -7,6 +7,7 @@ import { bootstrapAuth, type AuthState } from './auth/bootstrap.js';
 import { createProfileApi, type ProfileApi } from './profile/api.js';
 import { HistoryPage } from './profile/history-page.js';
 import { ProfilePage } from './profile/profile-page.js';
+import { RulesPage } from './rules/rules-page.js';
 import { renderShellRoute, shellNavigationItems } from './shell/routes.js';
 import { createTelegramAdapter, type TelegramAdapter } from './telegram/adapter.js';
 
@@ -56,7 +57,7 @@ function renderAvatar(displayName: string) {
 }
 
 function isProfileRoute(hash: string) {
-  return hash === '#/profile' || hash === '#/profile/history';
+  return hash === '#/profile' || hash === '#/profile/history' || hash === '#/profile/rules';
 }
 
 function mergeUniqueResults(current: HistoryItems, incoming: HistoryItems): HistoryItems {
@@ -276,6 +277,11 @@ export function App({
             activeKey: 'profile' as const,
             page: <ProfilePage data={profileState.data} />,
           }
+        : routeHash === '#/profile/rules'
+          ? {
+              activeKey: 'profile' as const,
+              page: <RulesPage />,
+            }
         : routeHash === '#/profile' && profileState.status === 'error'
           ? {
               activeKey: 'profile' as const,

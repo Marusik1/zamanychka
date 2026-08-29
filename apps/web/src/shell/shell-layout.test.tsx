@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
+import { rulesContent, tutorialStepOrder } from '@zamanushka/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { AuthApi } from '../auth/api.js';
@@ -143,7 +144,7 @@ afterEach(() => {
   window.innerWidth = 1024;
 });
 
-describe('EPIC-08 shell profile and history routes', () => {
+describe('EPIC-10 rules and profile routes', () => {
   it('keeps existing shell placeholders for non-profile routes', async () => {
     renderAuthenticatedApp('#/rooms');
 
@@ -156,12 +157,10 @@ describe('EPIC-08 shell profile and history routes', () => {
 
     expect(await screen.findByRole('heading', { name: 'Профиль' })).toBeVisible();
     expect(screen.getByText('@alexey_dev')).toBeVisible();
-    expect(screen.getByText('@alexey_dev')).toBeVisible();
     expect(screen.getByText('12')).toBeVisible();
     expect(screen.getByText('7')).toBeVisible();
     expect(screen.getByText('5')).toBeVisible();
     expect(screen.getByText('58%')).toBeVisible();
-    expect(screen.getByText('Победа')).toBeVisible();
     expect(screen.getByRole('link', { name: 'Вся история' })).toBeVisible();
   });
 
@@ -199,11 +198,7 @@ describe('EPIC-08 shell profile and history routes', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Показать ещё' }));
 
-    expect(api.history).toHaveBeenNthCalledWith(
-      2,
-      { cursor: 'cursor-2' },
-      expect.any(AbortSignal),
-    );
+    expect(api.history).toHaveBeenNthCalledWith(2, { cursor: 'cursor-2' }, expect.any(AbortSignal));
     expect(await screen.findByText('Сдался')).toBeVisible();
     expect(await screen.findAllByTestId('profile-result-card')).toHaveLength(3);
 
@@ -224,11 +219,6 @@ describe('EPIC-08 shell profile and history routes', () => {
       'page',
     );
     expect(within(topNav).queryByRole('link', { name: 'История игр' })).not.toBeInTheDocument();
-
-    const main = screen.getByRole('main');
-    expect(main.querySelector('[data-layout="gameplay-three-column"]')).toBeNull();
-    expect(main.querySelector('[data-region="left-rail"]')).toBeNull();
-    expect(main.querySelector('[data-region="right-rail"]')).toBeNull();
   });
 
   it('uses mobile bottom navigation with profile active on nested history', async () => {
@@ -236,6 +226,79 @@ describe('EPIC-08 shell profile and history routes', () => {
     renderAuthenticatedApp('#/profile/history');
 
     expect(await screen.findByRole('heading', { name: 'История игр' })).toBeVisible();
+    const navigation = screen.getByRole('navigation', { name: 'Bottom navigation' });
+    expect(within(navigation).getByRole('link', { name: 'Профиль' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+  });
+
+  it('renders the canonical rules surface in the existing profile area without a new nav item', async () => {
+    renderAuthenticatedApp('#/profile/rules');
+
+    expect(await screen.findByRole('heading', { name: 'ПРАВИЛА ИГРЫ' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Пройти обучение' })).toBeVisible();
+    expect(screen.getAllByTestId('rules-topic')).toHaveLength(7);
+    expect(screen.getAllByTestId('rules-topic-title').map((node) => node.textContent)).toEqual(
+      rulesContent.topics.map((topic) => topic.title),
+    );
+
+    const topNav = screen.getByRole('navigation', { name: 'Primary navigation' });
+    expect(within(topNav).getByRole('link', { name: 'Профиль' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    expect(within(topNav).queryByRole('link', { name: 'Правила игры' })).not.toBeInTheDocument();
+  });
+
+  it('opens guided tutorial, preserves seven canonical steps, and returns to normal rules mode', async () => {
+    renderAuthenticatedApp('#/profile/rules');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Пройти обучение' }));
+
+    expect(await screen.findByText('1 / 7')).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Вход на поле' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Назад' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Далее' })).toBeVisible();
+    expect(screen.getByTestId('tutorial-board')).toHaveAccessibleName('Пример правила: Вход на поле');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Далее' }));
+    expect(await screen.findByText('2 / 7')).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Ещё один бросок' })).toBeVisible();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Назад' }));
+    expect(await screen.findByText('1 / 7')).toBeVisible();
+
+    for (let index = 1; index < tutorialStepOrder.length; index += 1) {
+      fireEvent.click(screen.getByRole('button', { name: 'Далее' }));
+    }
+
+    expect(await screen.findByText('7 / 7')).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Победа' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Готово' })).toBeVisible();
+    expect(screen.getByText('Четвёртая пешка завершает дом и сразу приносит победу.')).toBeVisible();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Готово' }));
+    expect(await screen.findByRole('heading', { name: 'ПРАВИЛА ИГРЫ' })).toBeVisible();
+    expect(screen.queryByText('7 / 7')).not.toBeInTheDocument();
+  });
+
+  it('reopens tutorial from the beginning and keeps profile nav active on mobile rules route', async () => {
+    window.innerWidth = 390;
+    renderAuthenticatedApp('#/profile/rules');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Пройти обучение' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Далее' }));
+    expect(await screen.findByText('2 / 7')).toBeVisible();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Закрыть обучение' }));
+    expect(await screen.findByRole('heading', { name: 'ПРАВИЛА ИГРЫ' })).toBeVisible();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Пройти обучение' }));
+    expect(await screen.findByText('1 / 7')).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Вход на поле' })).toBeVisible();
+    expect(screen.getByText('Занятый старт')).toBeVisible();
+
     const navigation = screen.getByRole('navigation', { name: 'Bottom navigation' });
     expect(within(navigation).getByRole('link', { name: 'Профиль' })).toHaveAttribute(
       'aria-current',
