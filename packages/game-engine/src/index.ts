@@ -8,6 +8,7 @@ export {
 export { getOccupancy } from './board/occupancy.js';
 export { HOME_COORDS, resolveHomeCoord, resolvePawnCoordinate } from './board/home.js';
 export { getNextActivePlayerId } from './turns/turn-rotation.js';
+export { getLegalActions, getLegalTurnActions } from './actions/legal-actions.js';
 export { canMovePawn } from './movement/move-legality.js';
 export { resolvePhysicalPath } from './movement/path.js';
 export { transition } from './transitions/transition.js';

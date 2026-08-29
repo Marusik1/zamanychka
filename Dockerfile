@@ -10,7 +10,7 @@ COPY packages ./packages
 COPY infra ./infra
 
 RUN pnpm install --frozen-lockfile
-RUN pnpm -C apps/api prisma:generate
+RUN DATABASE_URL="postgresql://build:build@127.0.0.1:5432/build?schema=public" pnpm -C apps/api prisma:generate
 RUN pnpm build
 
 ENV NODE_ENV=production

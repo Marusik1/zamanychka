@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { AuthApiError, type AuthApi } from './auth/api.js';
 import { App } from './app.js';
+import type { RoomApi } from './playable-beta/room-api.js';
 import type { TelegramAdapter } from './telegram/adapter.js';
 import type { TelegramEvent, TelegramWebApp } from './telegram/types.js';
 
@@ -47,6 +48,26 @@ function authenticatedApi(
     loginDevelopment: vi.fn(),
     logout: vi.fn(),
     markRulesOnboardingSeen: vi.fn().mockResolvedValue({ rulesOnboardingSeenAt: seenAt }),
+  };
+}
+
+function roomApi(): RoomApi {
+  const room = {
+    roomId: 'single-room',
+    version: 1,
+    currentMatchId: null,
+    participants: [],
+    presence: [],
+    participantViews: [],
+  };
+
+  return {
+    view: vi.fn().mockResolvedValue(room),
+    takeSeat: vi.fn(),
+    leaveSeat: vi.fn(),
+    setReady: vi.fn(),
+    startMatch: vi.fn(),
+    reconnect: vi.fn().mockResolvedValue(room),
   };
 }
 
@@ -347,12 +368,12 @@ describe('EPIC-01 app lifecycle', () => {
 
   it('limits the authenticated app to shell-safe navigation without identity editors or gameplay topology', async () => {
     const telegram = adapter();
-    render(<App createAdapter={() => telegram} api={authenticatedApi()} />);
+    render(<App createAdapter={() => telegram} api={authenticatedApi()} roomApi={roomApi()} />);
     await screen.findByText('Один');
 
     const navigation = screen.getByRole('navigation', { name: 'Primary navigation' });
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
-    expect(within(navigation).getAllByRole('link')).toHaveLength(5);
+    expect(within(navigation).getAllByRole('link')).toHaveLength(3);
     expect(within(navigation).getByRole('link', { name: 'Главная' })).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Создать комнату' })).not.toBeInTheDocument();
     expect(screen.queryByText('Подбор игроков')).not.toBeInTheDocument();
@@ -398,7 +419,7 @@ describe('EPIC-10 rules onboarding', () => {
       }),
     );
 
-    render(<App createAdapter={adapter} api={api} />);
+    render(<App createAdapter={adapter} api={api} roomApi={roomApi()} />);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Начать обучение' }));
 
@@ -425,7 +446,7 @@ describe('EPIC-10 rules onboarding', () => {
 
     fireEvent.click(screen.getByRole('link', { name: 'Комнаты' }));
     fireEvent(window, new HashChangeEvent('hashchange'));
-    await screen.findByRole('heading', { name: 'Комнаты' });
+    await screen.findByRole('heading', { name: 'Комната' });
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 

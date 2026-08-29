@@ -11,9 +11,11 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@zamanushka/game-engine": "workspace:*",
     "@zamanushka/shared": "workspace:*",
     "@zamanushka/ui": "workspace:*",
     "react": "latest",
-    "react-dom": "latest"
+    "react-dom": "latest",
+    "socket.io-client": "^4.8.3"
   }
 }

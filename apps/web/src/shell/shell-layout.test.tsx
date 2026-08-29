@@ -1,9 +1,10 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import { rulesContent, tutorialStepOrder } from '@zamanushka/shared';
+import { tutorialStepOrder } from '@zamanushka/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { AuthApi } from '../auth/api.js';
 import { App } from '../app.js';
+import type { RoomApi } from '../playable-beta/room-api.js';
 import type { ProfileApi } from '../profile/api.js';
 import type { TelegramAdapter } from '../telegram/adapter.js';
 
@@ -132,13 +133,37 @@ function profileApi(overrides?: Partial<ProfileApi>): ProfileApi {
   };
 }
 
-function renderAuthenticatedApp(hash = '#/', options: { profileApi?: ProfileApi } = {}) {
+function roomApi(): RoomApi {
+  const room = {
+    roomId: 'single-room',
+    version: 1,
+    currentMatchId: null,
+    participants: [],
+    presence: [],
+    participantViews: [],
+  };
+
+  return {
+    view: vi.fn().mockResolvedValue(room),
+    takeSeat: vi.fn(),
+    leaveSeat: vi.fn(),
+    setReady: vi.fn(),
+    startMatch: vi.fn(),
+    reconnect: vi.fn().mockResolvedValue(room),
+  };
+}
+
+function renderAuthenticatedApp(
+  hash = '#/',
+  options: { profileApi?: ProfileApi; roomApi?: RoomApi } = {},
+) {
   window.location.hash = hash;
   return render(
     <App
       createAdapter={adapter}
       api={authenticatedApi()}
       profileApi={options.profileApi ?? profileApi()}
+      roomApi={options.roomApi ?? roomApi()}
     />,
   );
 }
@@ -149,11 +174,12 @@ afterEach(() => {
 });
 
 describe('EPIC-10 rules and profile routes', () => {
-  it('keeps existing shell placeholders for non-profile routes', async () => {
+  it('renders the live singleton room route instead of the old placeholder copy', async () => {
     renderAuthenticatedApp('#/rooms');
 
-    expect(await screen.findByRole('heading', { name: 'Комнаты' })).toBeVisible();
-    expect(screen.getByText('Раздел появится в следующем этапе.')).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Комната' })).toBeVisible();
+    expect(screen.getByText('Статус комнаты')).toBeVisible();
+    expect(screen.queryByText('Раздел появится в следующем этапе.')).not.toBeInTheDocument();
   });
 
   it('renders the profile page with stats and recent results', async () => {
@@ -218,10 +244,7 @@ describe('EPIC-10 rules and profile routes', () => {
     expect(await screen.findByRole('heading', { name: 'История игр' })).toBeVisible();
 
     const topNav = screen.getByRole('navigation', { name: 'Primary navigation' });
-    expect(within(topNav).getByRole('link', { name: 'Профиль' })).toHaveAttribute(
-      'aria-current',
-      'page',
-    );
+    expect(within(topNav).getByRole('link', { name: 'Профиль' })).toHaveAttribute('aria-current', 'page');
     expect(within(topNav).queryByRole('link', { name: 'История игр' })).not.toBeInTheDocument();
   });
 
@@ -231,10 +254,7 @@ describe('EPIC-10 rules and profile routes', () => {
 
     expect(await screen.findByRole('heading', { name: 'История игр' })).toBeVisible();
     const navigation = screen.getByRole('navigation', { name: 'Bottom navigation' });
-    expect(within(navigation).getByRole('link', { name: 'Профиль' })).toHaveAttribute(
-      'aria-current',
-      'page',
-    );
+    expect(within(navigation).getByRole('link', { name: 'Профиль' })).toHaveAttribute('aria-current', 'page');
   });
 
   it('renders the canonical rules surface in the existing profile area without a new nav item', async () => {
@@ -245,10 +265,7 @@ describe('EPIC-10 rules and profile routes', () => {
     expect(screen.queryByRole('button', { name: 'Пройти обучение' })).not.toBeInTheDocument();
 
     const topNav = screen.getByRole('navigation', { name: 'Primary navigation' });
-    expect(within(topNav).getByRole('link', { name: 'Профиль' })).toHaveAttribute(
-      'aria-current',
-      'page',
-    );
+    expect(within(topNav).getByRole('link', { name: 'Профиль' })).toHaveAttribute('aria-current', 'page');
     expect(within(topNav).queryByRole('link', { name: 'Правила игры' })).not.toBeInTheDocument();
   });
 
@@ -298,9 +315,6 @@ describe('EPIC-10 rules and profile routes', () => {
     expect(screen.getByText('Занятый старт')).toBeVisible();
 
     const navigation = screen.getByRole('navigation', { name: 'Bottom navigation' });
-    expect(within(navigation).getByRole('link', { name: 'Профиль' })).toHaveAttribute(
-      'aria-current',
-      'page',
-    );
+    expect(within(navigation).getByRole('link', { name: 'Профиль' })).toHaveAttribute('aria-current', 'page');
   });
 });

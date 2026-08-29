@@ -4,16 +4,21 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { createAuthApi, type AuthApi } from './auth/api.js';
 import { AuthShell } from './auth/auth-shell.js';
 import { bootstrapAuth, type AuthState } from './auth/bootstrap.js';
+import { PlayableBetaPage } from './playable-beta/page.js';
+import { createRealtimeClient, type RealtimeClient } from './playable-beta/realtime-client.js';
+import { createRoomApi, type RoomApi } from './playable-beta/room-api.js';
 import { createProfileApi, type ProfileApi } from './profile/api.js';
 import { HistoryPage } from './profile/history-page.js';
 import { ProfilePage } from './profile/profile-page.js';
 import { RulesPage } from './rules/rules-page.js';
-import { renderShellRoute, shellNavigationItems } from './shell/routes.js';
+import { resolveShellRoute, shellNavigationItems } from './shell/routes.js';
 import { createTelegramAdapter, type TelegramAdapter } from './telegram/adapter.js';
 
 interface AppProps {
   api?: AuthApi;
   profileApi?: ProfileApi;
+  roomApi?: RoomApi;
+  realtimeClient?: RealtimeClient;
   createAdapter?: () => TelegramAdapter;
 }
 
@@ -30,6 +35,8 @@ type ProfileScreenState = {
 const DESKTOP_SHELL_BREAKPOINT = 1024;
 const defaultApi = createAuthApi();
 const defaultProfileApi = createProfileApi();
+const defaultRoomApi = createRoomApi();
+const defaultRealtimeClient = createRealtimeClient();
 const bootstrapFailure: AuthState = {
   status: 'ERROR',
   message: 'Не удалось проверить вход. Попробуйте ещё раз.',
@@ -74,6 +81,8 @@ function mergeUniqueResults(current: HistoryItems, incoming: HistoryItems): Hist
 export function App({
   api = defaultApi,
   profileApi = defaultProfileApi,
+  roomApi = defaultRoomApi,
+  realtimeClient = defaultRealtimeClient,
   createAdapter = createTelegramAdapter,
 }: AppProps) {
   const [state, setState] = useState<AuthState>({ status: 'BOOTSTRAPPING' });
@@ -194,9 +203,10 @@ export function App({
       profileRequest.current.epoch += 1;
       profileRequest.current.controller?.abort();
       if (adapter.current === ownedAdapter) adapter.current = undefined;
+      realtimeClient.disconnect();
       ownedAdapter.dispose();
     };
-  }, [createAdapter, start]);
+  }, [createAdapter, realtimeClient, start]);
 
   useEffect(() => {
     function syncRoute() {
@@ -247,8 +257,7 @@ export function App({
           ? { ...current, rulesOnboardingSeenAt: result.rulesOnboardingSeenAt }
           : current,
       );
-    } catch {
-    }
+    } catch {}
   }, [api]);
 
   async function selectDevelopmentUser(devUserKey: string) {
@@ -291,6 +300,7 @@ export function App({
 
   if (state.status === 'AUTHENTICATED') {
     const showRulesOnboarding = !state.rulesOnboardingSeenAt && !rulesOnboardingDismissed;
+    const shellRoute = resolveShellRoute(routeHash);
     const route =
       routeHash === '#/profile' && profileState.status === 'ready' && profileState.data
         ? {
@@ -302,51 +312,75 @@ export function App({
               activeKey: 'profile' as const,
               page: <RulesPage guidedStartKey={rulesGuidedStartKey} />,
             }
-        : routeHash === '#/profile' && profileState.status === 'error'
-          ? {
-              activeKey: 'profile' as const,
-              page: (
-                <EmptyState
-                  title="Профиль временно недоступен"
-                  description="Попробуйте открыть раздел ещё раз."
-                />
-              ),
-            }
-          : routeHash === '#/profile/history' &&
-              (profileState.status === 'ready' || profileState.status === 'error')
+          : routeHash === '#/profile' && profileState.status === 'error'
             ? {
                 activeKey: 'profile' as const,
                 page: (
-                  <>
-                    {profileState.status === 'error' ? (
-                      <EmptyState
-                        className="profile-page__inline-state"
-                        title="Не удалось загрузить историю"
-                        description="Уже загруженные результаты сохранены."
-                        action={
-                          <Button
-                            variant="secondary"
-                            onClick={() => void loadHistory(profileState.historyCursor ?? undefined)}
-                          >
-                            Повторить
-                          </Button>
-                        }
-                      />
-                    ) : null}
-                    <HistoryPage
-                      items={profileState.historyItems}
-                      nextCursor={profileState.historyCursor}
-                      onLoadMore={() => void loadHistory(profileState.historyCursor ?? undefined)}
-                    />
-                  </>
+                  <EmptyState
+                    title="Профиль временно недоступен"
+                    description="Попробуйте открыть раздел ещё раз."
+                  />
                 ),
               }
-            : isProfileRoute(routeHash)
+            : routeHash === '#/profile/history' &&
+                (profileState.status === 'ready' || profileState.status === 'error')
               ? {
                   activeKey: 'profile' as const,
-                  page: <Panel as="section">Загрузка…</Panel>,
+                  page: (
+                    <>
+                      {profileState.status === 'error' ? (
+                        <EmptyState
+                          className="profile-page__inline-state"
+                          title="Не удалось загрузить историю"
+                          description="Уже загруженные результаты сохранены."
+                          action={
+                            <Button
+                              variant="secondary"
+                              onClick={() =>
+                                void loadHistory(profileState.historyCursor ?? undefined)
+                              }
+                            >
+                              Повторить
+                            </Button>
+                          }
+                        />
+                      ) : null}
+                      <HistoryPage
+                        items={profileState.historyItems}
+                        nextCursor={profileState.historyCursor}
+                        onLoadMore={() => void loadHistory(profileState.historyCursor ?? undefined)}
+                      />
+                    </>
+                  ),
                 }
-              : renderShellRoute(routeHash);
+              : isProfileRoute(routeHash)
+                ? {
+                    activeKey: 'profile' as const,
+                    page: <Panel as="section">Загрузка…</Panel>,
+                  }
+                : shellRoute.key === 'home'
+                  ? {
+                      activeKey: 'home' as const,
+                      page: (
+                        <PlayableBetaPage
+                          variant="home"
+                          authState={state}
+                          roomApi={roomApi}
+                          realtimeClient={realtimeClient}
+                        />
+                      ),
+                    }
+                  : {
+                      activeKey: 'rooms' as const,
+                      page: (
+                        <PlayableBetaPage
+                          variant="rooms"
+                          authState={state}
+                          roomApi={roomApi}
+                          realtimeClient={realtimeClient}
+                        />
+                      ),
+                    };
 
     return (
       <AppShell
@@ -355,7 +389,7 @@ export function App({
         activeNavigationKey={route.activeKey}
         viewport={shellViewport}
       >
-                <>
+        <>
           <div className="shell-authenticated-layout">
             <div className="shell-authenticated-layout__page">{route.page}</div>
             <Panel as="section" className="shell-session-panel">
@@ -376,7 +410,7 @@ export function App({
           <Dialog
             open={showRulesOnboarding}
             title="Как играть в «Заманушку»"
-            description="Семь коротких шагов помогут быстро разобрать правила и откроют уже существующее обучение."
+            description="Семь коротких шагов помогут быстро разобраться в правилах и откроют уже существующее обучение."
           >
             <div className="shell-onboarding-dialog">
               <Button
