@@ -40,37 +40,36 @@ const shellRoutes: readonly ShellRoute[] = [
     key: 'home',
     hash: '#/',
     title: 'Главная',
-    description: 'Этот экран зарезервирован только для проверки оболочки и ритма отступов.',
-    eyebrow: 'Проверка оболочки',
-    scaffoldLabel: 'Каркас главного плейсхолдера',
+    description: 'Раздел появится в следующем этапе.',
+    eyebrow: 'Оболочка приложения',
+    scaffoldLabel: 'Каркас главного раздела',
     icon: routeIcon(['M3.5 9.5 10 4l6.5 5.5', 'M5.5 8.5V16h9V8.5', 'M8.5 16v-4h3v4']),
   },
   {
     key: 'rooms',
     hash: '#/rooms',
     title: 'Комнаты',
-    description: 'Экран комнат пока нужен только для проверки навигации, отступов и поверхностей.',
-    eyebrow: 'Маршрут-заглушка',
-    scaffoldLabel: 'Каркас плейсхолдера комнат',
+    description: 'Раздел появится в следующем этапе.',
+    eyebrow: 'Оболочка приложения',
+    scaffoldLabel: 'Каркас раздела комнат',
     icon: routeIcon(['M4 6.5h12', 'M4 10h12', 'M4 13.5h7', 'M13.5 13.5h2.5']),
   },
   {
     key: 'chat',
     hash: '#/chat',
     title: 'Чат',
-    description:
-      'Здесь проверяется только компоновка оболочки без поведения чата и списков сообщений.',
-    eyebrow: 'Маршрут-заглушка',
-    scaffoldLabel: 'Каркас плейсхолдера чата',
+    description: 'Раздел появится в следующем этапе.',
+    eyebrow: 'Оболочка приложения',
+    scaffoldLabel: 'Каркас раздела чата',
     icon: routeIcon(['M4.5 5.5h11v7h-6L6 15v-2.5H4.5z', 'M7.5 8.5h5']),
   },
   {
     key: 'collection',
     hash: '#/collection',
     title: 'Коллекция',
-    description: 'Раздел коллекции остаётся безопасной заглушкой без логики досок и выбора скинов.',
-    eyebrow: 'Маршрут-заглушка',
-    scaffoldLabel: 'Каркас плейсхолдера коллекции',
+    description: 'Раздел появится в следующем этапе.',
+    eyebrow: 'Оболочка приложения',
+    scaffoldLabel: 'Каркас раздела коллекции',
     icon: routeIcon([
       'M4.5 4.5h4.5v4.5H4.5z',
       'M11 4.5h4.5v4.5H11z',
@@ -82,10 +81,9 @@ const shellRoutes: readonly ShellRoute[] = [
     key: 'profile',
     hash: '#/profile',
     title: 'Профиль',
-    description:
-      'Профильный маршрут ограничен проверкой оболочки и не показывает будущие функции профиля.',
-    eyebrow: 'Маршрут-заглушка',
-    scaffoldLabel: 'Каркас плейсхолдера профиля',
+    description: 'Раздел появится в следующем этапе.',
+    eyebrow: 'Оболочка приложения',
+    scaffoldLabel: 'Каркас раздела профиля',
     icon: routeIcon([
       'M10 10a2.75 2.75 0 1 0 0-5.5 2.75 2.75 0 0 0 0 5.5Z',
       'M5.5 15.5a4.5 4.5 0 0 1 9 0',
@@ -101,7 +99,8 @@ export const shellNavigationItems: readonly NavigationItem[] = shellRoutes.map((
 }));
 
 export function resolveShellRoute(hash: string): ShellRoute {
-  const matchedRoute = shellRoutes.find((route) => route.hash === hash);
+  const normalized = hash === '#/profile/history' ? '#/profile' : hash;
+  const matchedRoute = shellRoutes.find((route) => route.hash === normalized);
   if (matchedRoute) return matchedRoute;
 
   const defaultRoute = shellRoutes[0];
