@@ -102,3 +102,19 @@ export {
   type ProfileUserDto,
   type VictoryReason,
 } from './profile-history.js';
+export {
+  ruleTopicIdSchema,
+  rulesBasicsSchema,
+  rulesContentSchema,
+  ruleTopicSchema,
+  tutorialFixtureSchema,
+  tutorialPawnFixtureSchema,
+  tutorialStepOrder,
+  rulesContent,
+  type RuleTopicId,
+  type RuleTopic,
+  type RulesBasics,
+  type RulesContent,
+  type TutorialFixture,
+  type TutorialPawnFixture,
+} from './rules.js';
