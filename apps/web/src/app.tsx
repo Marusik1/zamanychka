@@ -365,6 +365,7 @@ export function App({
                         <PlayableBetaPage
                           variant="home"
                           authState={state}
+                          routeHash={routeHash}
                           roomApi={roomApi}
                           realtimeClient={realtimeClient}
                         />
@@ -376,6 +377,7 @@ export function App({
                         <PlayableBetaPage
                           variant="rooms"
                           authState={state}
+                          routeHash={routeHash}
                           roomApi={roomApi}
                           realtimeClient={realtimeClient}
                         />

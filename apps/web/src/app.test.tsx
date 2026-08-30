@@ -53,18 +53,55 @@ function authenticatedApi(
 
 function roomApi(): RoomApi {
   const room = {
-    roomId: 'single-room',
+    id: 'room-1',
+    code: 'ABCD',
+    status: 'WAITING',
     version: 1,
     currentMatchId: null,
-    participants: [],
-    presence: [],
-    participantViews: [],
+    members: [],
+    seats: [
+      { seatIndex: 0, userId: null, ready: false },
+      { seatIndex: 1, userId: null, ready: false },
+      { seatIndex: 2, userId: null, ready: false },
+      { seatIndex: 3, userId: null, ready: false },
+    ],
+    counts: {
+      memberCount: 0,
+      seatedCount: 0,
+      readyCount: 0,
+    },
+    currentUser: {
+      isMember: false,
+      seatIndex: null,
+      ready: false,
+      canLeave: false,
+      canStart: false,
+      startBlockedReason: 'Сначала войдите в комнату.',
+    },
   };
 
   return {
-    view: vi.fn().mockResolvedValue(room),
+    listRooms: vi.fn().mockResolvedValue({
+      rooms: [
+        {
+          id: 'room-1',
+          code: 'ABCD',
+          status: 'WAITING',
+          currentMatchId: null,
+          counts: {
+            memberCount: 0,
+            seatedCount: 0,
+            readyCount: 0,
+          },
+        },
+      ],
+    }),
+    createRoom: vi.fn(),
+    getRoom: vi.fn().mockResolvedValue(room),
+    joinRoom: vi.fn(),
     takeSeat: vi.fn(),
     leaveSeat: vi.fn(),
+    leaveRoom: vi.fn(),
     setReady: vi.fn(),
     startMatch: vi.fn(),
     reconnect: vi.fn().mockResolvedValue(room),
@@ -446,7 +483,7 @@ describe('EPIC-10 rules onboarding', () => {
 
     fireEvent.click(screen.getByRole('link', { name: 'Комнаты' }));
     fireEvent(window, new HashChangeEvent('hashchange'));
-    await screen.findByRole('heading', { name: 'Комната' });
+    await screen.findByRole('heading', { name: 'Комнаты' });
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 

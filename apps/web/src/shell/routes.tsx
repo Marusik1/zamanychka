@@ -61,7 +61,12 @@ export const shellNavigationItems: readonly NavigationItem[] = shellRoutes.map((
 }));
 
 export function resolveShellRoute(hash: string): ShellRoute {
-  const normalized = hash === '#/profile/history' || hash === '#/profile/rules' ? '#/profile' : hash;
+  const normalized =
+    hash === '#/profile/history' || hash === '#/profile/rules'
+      ? '#/profile'
+      : hash === '#/rooms' || hash.startsWith('#/rooms/')
+        ? '#/rooms'
+        : hash;
   const matchedRoute = shellRoutes.find((route) => route.hash === normalized);
   if (matchedRoute) return matchedRoute;
 

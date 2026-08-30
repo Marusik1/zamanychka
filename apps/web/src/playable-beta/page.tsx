@@ -5,19 +5,20 @@ import {
   type GameState,
   type LegalAction,
 } from '@zamanushka/game-engine';
-import type { MatchSnapshot, RoomParticipantView, TransitionEnvelope } from '@zamanushka/shared';
+import type { MatchSnapshot, RoomState, TransitionEnvelope } from '@zamanushka/shared';
 import { Button, EmptyState, Panel } from '@zamanushka/ui';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { AuthState } from '../auth/bootstrap.js';
 import type { RealtimeClient } from './realtime-client.js';
-import type { RoomApi, RoomApiError, RoomView } from './room-api.js';
+import type { RoomApi, RoomApiError } from './room-api.js';
 
 type Variant = 'home' | 'rooms';
 
 interface PlayableBetaPageProps {
   variant: Variant;
   authState: Extract<AuthState, { status: 'AUTHENTICATED' }>;
+  routeHash: string;
   roomApi: RoomApi;
   realtimeClient: RealtimeClient;
 }
@@ -46,14 +47,36 @@ function seatLabel(index: 0 | 1 | 2 | 3) {
   return seatLabels[index];
 }
 
-function participantLabel(participant: RoomParticipantView, currentUserId: string) {
-  return participant.userId === currentUserId
-    ? `${participant.displayName} (Вы)`
-    : participant.displayName;
-}
-
 function boardKey(coord: BoardCoord) {
   return `${coord.row}:${coord.col}`;
+}
+
+function roomRoute(roomId: string) {
+  return `#/rooms/${roomId}`;
+}
+
+function navigateTo(hash: string) {
+  if (window.location.hash === hash) return;
+  window.location.hash = hash;
+  window.dispatchEvent(new HashChangeEvent('hashchange'));
+}
+
+function parseRoomId(hash: string) {
+  const match = /^#\/rooms\/([^/?#]+)/.exec(hash);
+  return match?.[1] ?? null;
+}
+
+function roomErrorMessage(error: unknown, fallback: string) {
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'message' in error &&
+    typeof (error as RoomApiError).message === 'string'
+  ) {
+    return (error as RoomApiError).message;
+  }
+
+  return fallback;
 }
 
 function buildCellOccupants(snapshot: MatchSnapshot) {
@@ -114,46 +137,56 @@ function commandFromAction(action: LegalAction, matchId: string, expectedStateVe
   }
 }
 
-function roomErrorMessage(error: unknown, fallback: string) {
-  if (
-    typeof error === 'object' &&
-    error !== null &&
-    'message' in error &&
-    typeof (error as RoomApiError).message === 'string'
-  ) {
-    return (error as RoomApiError).message;
-  }
-
-  return fallback;
-}
-
 export function PlayableBetaPage({
   variant,
   authState,
+  routeHash,
   roomApi,
   realtimeClient,
 }: PlayableBetaPageProps) {
-  const [room, setRoom] = useState<RoomView | null>(null);
+  const selectedRoomId = variant === 'rooms' ? parseRoomId(routeHash) : null;
+  const [roomList, setRoomList] = useState<Awaited<ReturnType<RoomApi['listRooms']>>['rooms']>([]);
+  const [room, setRoom] = useState<RoomState | null>(null);
   const [roomPending, setRoomPending] = useState(false);
   const [roomError, setRoomError] = useState<string | null>(null);
   const [match, setMatch] = useState<MatchViewState>({ status: 'idle' });
   const activeMatchRef = useRef<string | null>(null);
 
-  const refreshRoom = useCallback(async () => {
-    setRoomPending(true);
+  const loadRoomList = useCallback(
+    async (signal?: AbortSignal) => {
+      const next = await roomApi.listRooms(signal);
+      setRoomList(next.rooms);
+      setRoomError(null);
+      return next.rooms;
+    },
+    [roomApi],
+  );
 
-    try {
-      const next = await roomApi.view();
+  const loadRoom = useCallback(
+    async (roomId: string, signal?: AbortSignal) => {
+      const next = await roomApi.getRoom(roomId, signal);
       setRoom(next);
       setRoomError(null);
       return next;
-    } catch (error) {
-      setRoomError(roomErrorMessage(error, 'Не удалось загрузить комнату.'));
-      return null;
-    } finally {
-      setRoomPending(false);
-    }
-  }, [roomApi]);
+    },
+    [roomApi],
+  );
+
+  const refreshRoom = useCallback(
+    async (roomId: string, signal?: AbortSignal) => {
+      setRoomPending(true);
+
+      try {
+        return await loadRoom(roomId, signal);
+      } catch (error) {
+        setRoomError(roomErrorMessage(error, 'Не удалось загрузить комнату.'));
+        return null;
+      } finally {
+        setRoomPending(false);
+      }
+    },
+    [loadRoom],
+  );
 
   const syncMatch = useCallback(
     async (matchId: string, stateVersion = 0, lastSequence = 0) => {
@@ -170,9 +203,7 @@ export function PlayableBetaPage({
 
         if (response.mode === 'events') {
           const latest = response.transitions.at(-1);
-          if (!latest) {
-            throw new Error('SYNC_EMPTY_EVENTS');
-          }
+          if (!latest) throw new Error('SYNC_EMPTY_EVENTS');
 
           setMatch({
             status: 'ready',
@@ -201,32 +232,59 @@ export function PlayableBetaPage({
   );
 
   useEffect(() => {
-    void roomApi
-      .reconnect()
-      .then((next) => {
-        setRoom(next);
-        setRoomError(null);
-      })
-      .catch((error) => {
-        setRoomError(roomErrorMessage(error, 'Не удалось подключиться к комнате.'));
-      });
-  }, [roomApi]);
+    if (variant !== 'rooms') return;
 
-  useEffect(() => {
-    if (room?.currentMatchId) return;
+    const controller = new AbortController();
 
-    const intervalId = window.setInterval(() => {
+    if (selectedRoomId) {
       void roomApi
-        .view()
+        .reconnect(selectedRoomId, controller.signal)
         .then((next) => {
           setRoom(next);
           setRoomError(null);
         })
-        .catch(() => undefined);
+        .catch((error) => {
+          setRoomError(roomErrorMessage(error, 'Не удалось подключиться к комнате.'));
+        });
+    } else {
+      void loadRoomList(controller.signal).catch((error) => {
+        setRoomError(roomErrorMessage(error, 'Не удалось загрузить список комнат.'));
+      });
+    }
+
+    return () => controller.abort();
+  }, [loadRoomList, roomApi, selectedRoomId, variant]);
+
+  useEffect(() => {
+    if (variant !== 'rooms') return;
+
+    const intervalId = window.setInterval(() => {
+      const controller = new AbortController();
+
+      if (selectedRoomId && !room?.currentMatchId) {
+        void roomApi
+          .getRoom(selectedRoomId, controller.signal)
+          .then((next) => {
+            setRoom(next);
+            setRoomError(null);
+          })
+          .catch(() => undefined);
+        return;
+      }
+
+      if (!selectedRoomId) {
+        void roomApi
+          .listRooms(controller.signal)
+          .then((next) => {
+            setRoomList(next.rooms);
+            setRoomError(null);
+          })
+          .catch(() => undefined);
+      }
     }, 2_000);
 
     return () => window.clearInterval(intervalId);
-  }, [room?.currentMatchId, roomApi]);
+  }, [room?.currentMatchId, roomApi, selectedRoomId, variant]);
 
   useEffect(() => {
     if (!room?.currentMatchId) {
@@ -235,9 +293,7 @@ export function PlayableBetaPage({
       return;
     }
 
-    if (activeMatchRef.current === room.currentMatchId) {
-      return;
-    }
+    if (activeMatchRef.current === room.currentMatchId) return;
 
     activeMatchRef.current = room.currentMatchId;
     void syncMatch(room.currentMatchId);
@@ -271,47 +327,20 @@ export function PlayableBetaPage({
   }, [realtimeClient, syncMatch]);
 
   useEffect(() => {
-    if (match.status !== 'ready' || match.snapshot.status !== 'FINISHED') {
+    if (match.status !== 'ready' || match.snapshot.status !== 'FINISHED' || !selectedRoomId) {
       return;
     }
 
-    void refreshRoom();
-  }, [match, refreshRoom]);
+    void refreshRoom(selectedRoomId);
+  }, [match, refreshRoom, selectedRoomId]);
 
-  const seatOwner = useMemo(() => {
-    const map = new Map<number, RoomParticipantView>();
-
-    for (const participant of room?.participantViews ?? []) {
-      map.set(participant.seatIndex, participant);
-    }
-
-    return map;
-  }, [room?.participantViews]);
-
-  const mySeat =
-    room?.participantViews.find((participant) => participant.userId === authState.user.id) ?? null;
-
-  const occupiedCount = room?.participantViews.length ?? 0;
-  const readyCount = room?.participantViews.filter((participant) => participant.ready).length ?? 0;
-  const disconnectedCount =
-    room?.participantViews.filter((participant) => !participant.connected).length ?? 0;
-  const canStartMatch = Boolean(
-    mySeat &&
-      occupiedCount >= 2 &&
-      occupiedCount <= 4 &&
-      readyCount === occupiedCount &&
-      disconnectedCount === 0,
+  const membersById = useMemo(
+    () => new Map((room?.members ?? []).map((member) => [member.userId, member])),
+    [room?.members],
   );
-
-  const startBlockReason = !mySeat
-    ? 'Сначала займите свободное место.'
-    : occupiedCount < 2
-      ? `Нужно минимум 2 игрока — сейчас ${occupiedCount}.`
-      : readyCount !== occupiedCount
-        ? 'Ожидаем готовность всех занятых мест.'
-        : disconnectedCount > 0
-          ? 'Ожидаем подключения всех игроков.'
-          : null;
+  const mySeatIndex = room?.currentUser.seatIndex ?? null;
+  const occupiedCount = room?.counts.seatedCount ?? 0;
+  const readyCount = room?.counts.readyCount ?? 0;
 
   const legalActions =
     match.status === 'ready'
@@ -326,10 +355,7 @@ export function PlayableBetaPage({
   const offBoardByPlayer =
     match.status === 'ready'
       ? match.snapshot.pawns.reduce<Record<string, MatchSnapshot['pawns']>>((acc, pawn) => {
-          if (pawn.position.zone !== 'OFF_BOARD') {
-            return acc;
-          }
-
+          if (pawn.position.zone !== 'OFF_BOARD') return acc;
           acc[pawn.playerId] = [...(acc[pawn.playerId] ?? []), pawn];
           return acc;
         }, {})
@@ -338,13 +364,18 @@ export function PlayableBetaPage({
   const topPlayers = match.status === 'ready' ? match.snapshot.players.slice(0, 2) : [];
   const bottomPlayers = match.status === 'ready' ? match.snapshot.players.slice(2, 4) : [];
 
-  async function mutateRoom(action: () => Promise<unknown>) {
+  async function mutateRoom(action: (signal: AbortSignal) => Promise<unknown>) {
+    const controller = new AbortController();
     setRoomPending(true);
     setRoomError(null);
 
     try {
-      await action();
-      await refreshRoom();
+      await action(controller.signal);
+      if (selectedRoomId) {
+        await loadRoom(selectedRoomId, controller.signal);
+      } else {
+        await loadRoomList(controller.signal);
+      }
     } catch (error) {
       setRoomError(roomErrorMessage(error, 'Команду комнаты не удалось выполнить.'));
     } finally {
@@ -352,22 +383,48 @@ export function PlayableBetaPage({
     }
   }
 
-  async function startMatch() {
+  async function createAndJoinRoom() {
+    const controller = new AbortController();
     setRoomPending(true);
     setRoomError(null);
 
     try {
-      const result = await roomApi.startMatch();
+      const created = await roomApi.createRoom(controller.signal);
+      if (!created.ok) {
+        setRoomError(created.error.message);
+        return;
+      }
+
+      const joined = await roomApi.joinRoom(created.room.id, controller.signal);
+      if (!joined.ok) {
+        setRoomError(joined.error.message);
+        return;
+      }
+
+      setRoom(joined.room);
+      navigateTo(roomRoute(created.room.id));
+    } catch (error) {
+      setRoomError(roomErrorMessage(error, 'Не удалось создать комнату.'));
+    } finally {
+      setRoomPending(false);
+    }
+  }
+
+  async function startMatch() {
+    if (!room || !selectedRoomId) return;
+
+    const controller = new AbortController();
+    setRoomPending(true);
+    setRoomError(null);
+
+    try {
+      const result = await roomApi.startMatch(selectedRoomId, room.version, controller.signal);
       if (!result.ok) {
         setRoomError(result.error.message);
         return;
       }
 
-      setRoom((current) =>
-        current
-          ? { ...result.room, presence: current.presence, participantViews: current.participantViews }
-          : null,
-      );
+      setRoom(result.room);
       await syncMatch(result.matchId);
     } catch (error) {
       setRoomError(roomErrorMessage(error, 'Не удалось начать матч.'));
@@ -377,9 +434,7 @@ export function PlayableBetaPage({
   }
 
   async function submitAction(action: LegalAction) {
-    if (match.status !== 'ready') {
-      return;
-    }
+    if (match.status !== 'ready') return;
 
     setMatch({ ...match, pending: true, error: null });
 
@@ -416,18 +471,63 @@ export function PlayableBetaPage({
           <p className="beta-home-page__eyebrow">Бета</p>
           <h1>Играть</h1>
           <p className="beta-home-page__copy">
-            Откройте единственную комнату, займите место и начните матч без лишних промежуточных экранов.
+            Откройте список комнат, войдите в нужную и продолжайте матч через существующий игровой экран.
           </p>
           <div className="beta-home-page__actions">
-            <Button onClick={() => (window.location.hash = '#/rooms')}>Открыть комнату</Button>
+            <Button onClick={() => navigateTo('#/rooms')}>Открыть комнаты</Button>
           </div>
         </Panel>
+      </section>
+    );
+  }
 
-        <Panel as="section" className="beta-home-page__status">
-          <h2>Текущий стол</h2>
-          <p>{room?.currentMatchId ? 'Матч уже идёт — можно вернуться к партии.' : 'Комната ждёт игроков.'}</p>
-          <p>{room ? `Участников: ${room.participants.length}/4` : 'Загрузка комнаты…'}</p>
-        </Panel>
+  if (!selectedRoomId) {
+    return (
+      <section className="beta-room-page">
+        <header className="beta-room-page__header">
+          <div>
+            <p className="beta-room-page__eyebrow">Multi-room beta</p>
+            <h1>Комнаты</h1>
+          </div>
+
+          <div className="beta-room-page__header-actions">
+            <Button variant="secondary" onClick={() => void mutateRoom((signal) => loadRoomList(signal))} loading={roomPending}>
+              Обновить
+            </Button>
+            <Button onClick={() => void createAndJoinRoom()} loading={roomPending}>
+              Создать комнату
+            </Button>
+          </div>
+        </header>
+
+        {roomError ? (
+          <Panel as="section" className="beta-status-banner">
+            {roomError}
+          </Panel>
+        ) : null}
+
+        <div className="beta-room-page__lobby">
+          <Panel as="section" className="beta-room-page__seats">
+            <h2>Доступные комнаты</h2>
+
+            <div className="beta-room-page__seat-grid">
+              {roomList.map((entry) => (
+                <Panel key={entry.id} as="article" className="beta-room-page__seat-card">
+                  <div className="beta-room-page__seat-copy">
+                    <strong>{`Комната ${entry.code}`}</strong>
+                    <span>{`Участники: ${entry.counts.memberCount}`}</span>
+                    <span>{`Места: ${entry.counts.seatedCount} / 4`}</span>
+                    <span>{`Готовы: ${entry.counts.readyCount} / ${entry.counts.seatedCount}`}</span>
+                  </div>
+
+                  <Button onClick={() => navigateTo(roomRoute(entry.id))}>Открыть комнату</Button>
+                </Panel>
+              ))}
+            </div>
+
+            {roomList.length === 0 ? <p>Комнат пока нет. Создайте первую.</p> : null}
+          </Panel>
+        </div>
       </section>
     );
   }
@@ -436,21 +536,17 @@ export function PlayableBetaPage({
     <section className="beta-room-page">
       <header className="beta-room-page__header">
         <div>
-          <p className="beta-room-page__eyebrow">Singleton room</p>
-          <h1>{room?.currentMatchId ? 'Матч' : 'Комната'}</h1>
+          <p className="beta-room-page__eyebrow">Room {room?.id ?? selectedRoomId}</p>
+          <h1>{room ? `Комната ${room.code}` : 'Комната'}</h1>
         </div>
 
         <div className="beta-room-page__header-actions">
-          <Button variant="secondary" onClick={() => void refreshRoom()} loading={roomPending}>
+          <Button variant="secondary" onClick={() => void refreshRoom(selectedRoomId)} loading={roomPending}>
             Обновить
           </Button>
 
           {room?.currentMatchId ? null : (
-            <Button
-              onClick={() => void startMatch()}
-              loading={roomPending}
-              disabled={!canStartMatch}
-            >
+            <Button onClick={() => void startMatch()} loading={roomPending} disabled={!room?.currentUser.canStart}>
               Начать матч
             </Button>
           )}
@@ -463,44 +559,43 @@ export function PlayableBetaPage({
         </Panel>
       ) : null}
 
-      {!room?.currentMatchId ? (
+      {!room ? (
+        <Panel as="section">Загрузка комнаты…</Panel>
+      ) : !room.currentMatchId ? (
         <div className="beta-room-page__lobby">
           <Panel as="section" className="beta-room-page__seats">
             <h2>Игроки</h2>
 
+            {!room.currentUser.isMember ? (
+              <div className="beta-room-page__seat-actions">
+                <Button onClick={() => void mutateRoom((signal) => roomApi.joinRoom(selectedRoomId, signal))} loading={roomPending}>
+                  Войти в комнату
+                </Button>
+              </div>
+            ) : null}
+
             <div className="beta-room-page__seat-grid">
-              {[0, 1, 2, 3].map((index) => {
-                const seat = seatOwner.get(index);
-                const isMine = seat?.userId === authState.user.id;
+              {room.seats.map((seat) => {
+                const member = seat.userId ? membersById.get(seat.userId) ?? null : null;
+                const isMine = seat.seatIndex === mySeatIndex;
 
                 return (
-                  <Panel
-                    key={index}
-                    as="article"
-                    className="beta-room-page__seat-card"
-                    selected={isMine}
-                  >
+                  <Panel key={seat.seatIndex} as="article" className="beta-room-page__seat-card" selected={isMine}>
                     <div className="beta-room-page__seat-copy">
-                      <strong>{seatLabel(index as 0 | 1 | 2 | 3)}</strong>
-
-                      {seat ? (
+                      <strong>{seatLabel(seat.seatIndex)}</strong>
+                      {member ? (
                         <>
-                          <span>{participantLabel(seat, authState.user.id)}</span>
+                          <span>{member.userId === authState.user.id ? `${member.displayName} (Вы)` : member.displayName}</span>
                           <span>{seat.ready ? 'Готов' : 'Не готов'}</span>
-                          <span>{seat.connected ? 'В сети' : 'Отключён'}</span>
                         </>
                       ) : (
                         <span>Свободно</span>
                       )}
                     </div>
 
-                    {!seat && !mySeat ? (
-                      <Button
-                        onClick={() =>
-                          void mutateRoom(() => roomApi.takeSeat(index as 0 | 1 | 2 | 3))
-                        }
-                      >
-                        {`Занять место ${index + 1}`}
+                    {!member && room.currentUser.isMember && mySeatIndex === null ? (
+                      <Button onClick={() => void mutateRoom((signal) => roomApi.takeSeat(selectedRoomId, seat.seatIndex, room.version, signal))}>
+                        {`Занять место ${seat.seatIndex + 1}`}
                       </Button>
                     ) : null}
 
@@ -508,15 +603,11 @@ export function PlayableBetaPage({
                       <div className="beta-room-page__seat-actions">
                         <Button
                           variant={seat.ready ? 'secondary' : 'primary'}
-                          onClick={() => void mutateRoom(() => roomApi.setReady(!seat.ready))}
+                          onClick={() => void mutateRoom((signal) => roomApi.setReady(selectedRoomId, !seat.ready, room.version, signal))}
                         >
                           {seat.ready ? 'Снять готовность' : 'Готов'}
                         </Button>
-
-                        <Button
-                          variant="ghost"
-                          onClick={() => void mutateRoom(() => roomApi.leaveSeat())}
-                        >
+                        <Button variant="ghost" onClick={() => void mutateRoom((signal) => roomApi.leaveSeat(selectedRoomId, room.version, signal))}>
                           Покинуть место
                         </Button>
                       </div>
@@ -529,9 +620,16 @@ export function PlayableBetaPage({
 
           <Panel as="section" className="beta-room-page__status-panel">
             <h2>Статус комнаты</h2>
+            <p>{`Участников: ${room.counts.memberCount}`}</p>
             <p>{`Игроков: ${occupiedCount} / 4`}</p>
             <p>{`Готовы: ${readyCount} / ${occupiedCount}`}</p>
-            {startBlockReason ? <p>{startBlockReason}</p> : <p>Можно начинать матч.</p>}
+            <p>{room.currentUser.startBlockedReason ?? 'Можно начинать матч.'}</p>
+
+            {room.currentUser.isMember ? (
+              <Button variant="secondary" onClick={() => void mutateRoom((signal) => roomApi.leaveRoom(selectedRoomId, room.version, signal))}>
+                Покинуть комнату
+              </Button>
+            ) : null}
           </Panel>
         </div>
       ) : match.status === 'error' ? (
@@ -543,16 +641,12 @@ export function PlayableBetaPage({
           <Panel as="section" className="beta-room-page__board-panel">
             <div className="beta-room-page__match-header">
               <div>
-                <h2>Игровое поле</h2>
+                <h2>Матч</h2>
                 <p>
                   {match.snapshot.currentPlayerId === authState.user.id
                     ? 'Ваш ход'
                     : match.snapshot.currentPlayerId
-                      ? `Ход игрока ${
-                          (match.snapshot.players.find(
-                            (player) => player.playerId === match.snapshot.currentPlayerId,
-                          )?.seatIndex ?? 0) + 1
-                        }`
+                      ? `Ход игрока ${(match.snapshot.players.find((player) => player.playerId === match.snapshot.currentPlayerId)?.seatIndex ?? 0) + 1}`
                       : 'Матч завершён'}
                 </p>
               </div>
@@ -571,12 +665,10 @@ export function PlayableBetaPage({
                     className={`beta-board__reserve beta-board__reserve--${player.color.toLowerCase()}`}
                   >
                     <strong>{colorLabels[player.color]}</strong>
-
                     <div className="beta-board__pawn-strip">
                       {(offBoardByPlayer[player.playerId] ?? []).map((pawn) => {
                         const enterAction = legalActions.find(
-                          (candidate) =>
-                            candidate.type === 'ENTER_PAWN' && candidate.pawnId === pawn.pawnId,
+                          (candidate) => candidate.type === 'ENTER_PAWN' && candidate.pawnId === pawn.pawnId,
                         );
 
                         return (
@@ -635,12 +727,10 @@ export function PlayableBetaPage({
                     className={`beta-board__reserve beta-board__reserve--${player.color.toLowerCase()}`}
                   >
                     <strong>{colorLabels[player.color]}</strong>
-
                     <div className="beta-board__pawn-strip">
                       {(offBoardByPlayer[player.playerId] ?? []).map((pawn) => {
                         const enterAction = legalActions.find(
-                          (candidate) =>
-                            candidate.type === 'ENTER_PAWN' && candidate.pawnId === pawn.pawnId,
+                          (candidate) => candidate.type === 'ENTER_PAWN' && candidate.pawnId === pawn.pawnId,
                         );
 
                         return (
