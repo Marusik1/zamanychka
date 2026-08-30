@@ -43,9 +43,15 @@ export class RoomApiError extends Error {
 
 const roomViewSchema: Parser<RoomView> = {
   safeParse(value) {
-    const room = roomStateSchema.safeParse(value);
-    if (!room.success || typeof value !== 'object' || value === null) return { success: false };
+    if (typeof value !== 'object' || value === null) return { success: false };
     const candidate = value as Record<string, unknown>;
+    const room = roomStateSchema.safeParse({
+      roomId: candidate.roomId,
+      version: candidate.version,
+      currentMatchId: candidate.currentMatchId,
+      participants: candidate.participants,
+    });
+    if (!room.success) return { success: false };
     const presence = Array.isArray(candidate.presence)
       ? candidate.presence.map((entry) => roomPresenceProjectionSchema.safeParse(entry))
       : null;

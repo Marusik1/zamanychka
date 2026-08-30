@@ -203,7 +203,11 @@ export function createRoomService(options: {
     async takeSeat(actorUserId, request) {
       return mutateRoom(actorUserId, (room) => {
         const existingSeat = seatOfUser(room, actorUserId);
-        if (existingSeat) return { kind: 'error', code: 'SEAT_TAKEN' };
+        if (existingSeat) {
+          return existingSeat.seatIndex === request.seatIndex
+            ? { kind: 'success', room, presence: 'connect' }
+            : { kind: 'error', code: 'SEAT_TAKEN' };
+        }
 
         const targetSeat = seatByIndex(room, request.seatIndex);
         if (!targetSeat || targetSeat.userId) return { kind: 'error', code: 'SEAT_TAKEN' };

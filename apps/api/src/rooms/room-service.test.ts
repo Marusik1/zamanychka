@@ -73,6 +73,16 @@ describe('room service', () => {
     const service = createService();
     await service.takeSeat('user-1', { seatIndex: 0 });
 
+    await expect(service.takeSeat('user-1', { seatIndex: 0 })).resolves.toEqual({
+      ok: true,
+      room: {
+        roomId: 'single-room',
+        version: 1,
+        currentMatchId: null,
+        participants: [{ userId: 'user-1', seatIndex: 0, ready: false }],
+      },
+    });
+
     await expect(service.takeSeat('user-2', { seatIndex: 0 })).resolves.toEqual({
       ok: false,
       error: {
