@@ -72,6 +72,12 @@ function createMatchRepository(current = matchSnapshot()) {
   } satisfies MatchRepositoryLike;
 }
 
+function withoutLastSequence<T extends Record<string, unknown>>(value: T): Omit<T, 'lastSequence'> {
+  const clone = structuredClone(value);
+  delete (clone as { lastSequence?: number }).lastSequence;
+  return clone;
+}
+
 function createOutboxStore(row?: {
   id: string;
   matchId: string;
@@ -487,5 +493,120 @@ describe('Socket.IO realtime publication and subscriptions', () => {
     expect(result.mode).toBe('events');
     expect(result.watermark).toEqual({ stateVersion: 1, lastSequence: 2 });
     socket.disconnect();
+  });
+
+  it('returns a valid snapshot sync for a newly started active match before the first gameplay event', async () => {
+    const current = matchSnapshot();
+    const matchRepository = {
+      loadCurrentMatch: vi.fn(async (matchId: string) =>
+        matchId === 'match-1'
+          ? {
+              id: 'match-1',
+              seatOrder: ['user-a', 'user-b'],
+              stateVersion: 0,
+              lastSequence: 0,
+              snapshot: withoutLastSequence(current),
+              status: 'ACTIVE',
+            }
+          : null,
+      ),
+    };
+    const server = await startRuntime({
+      matchRepository: matchRepository as MatchRepositoryLike,
+      loadCommittedTransitions: vi.fn(async () => []),
+    });
+    servers.push(server);
+
+    const socketA = connectClient(server.url, sessionHeader('session-a').cookie);
+    await waitForEvent(socketA, 'connect');
+    await new Promise((resolve) => socketA.emit('match:join', { matchId: 'match-1' }, resolve));
+
+    const firstSync = await new Promise<{
+      mode: string;
+      snapshot: { lastSequence: number; stateVersion: number };
+      watermark: { stateVersion: number; lastSequence: number };
+    }>((resolve) => {
+      socketA.emit('game:sync', { matchId: 'match-1', stateVersion: 0, lastSequence: 0 }, resolve);
+    });
+
+    expect(firstSync.mode).toBe('snapshot');
+    expect(firstSync.snapshot.lastSequence).toBe(0);
+    expect(firstSync.watermark).toEqual({ stateVersion: 0, lastSequence: 0 });
+
+    const socketB = connectClient(server.url, sessionHeader('session-b').cookie);
+    await waitForEvent(socketB, 'connect');
+    await new Promise((resolve) => socketB.emit('match:join', { matchId: 'match-1' }, resolve));
+    socketB.disconnect();
+
+    const reconnectedB = connectClient(server.url, sessionHeader('session-b').cookie);
+    await waitForEvent(reconnectedB, 'connect');
+    await new Promise((resolve) => reconnectedB.emit('match:join', { matchId: 'match-1' }, resolve));
+
+    const reconnectSync = await new Promise<{
+      mode: string;
+      snapshot: { lastSequence: number; stateVersion: number };
+      watermark: { stateVersion: number; lastSequence: number };
+    }>((resolve) => {
+      reconnectedB.emit(
+        'game:sync',
+        { matchId: 'match-1', stateVersion: 0, lastSequence: 0 },
+        resolve,
+      );
+    });
+
+    expect(reconnectSync.mode).toBe('snapshot');
+    expect(reconnectSync.snapshot.lastSequence).toBe(0);
+    expect(reconnectSync.watermark).toEqual({ stateVersion: 0, lastSequence: 0 });
+    socketA.disconnect();
+    reconnectedB.disconnect();
+  });
+
+  it('keeps the Socket.IO server alive when sync computation fails for one request', async () => {
+    const server = await startRuntime({
+      matchRepository: {
+        loadCurrentMatch: vi.fn(async (matchId: string) =>
+          matchId === 'match-1'
+            ? {
+                id: 'match-1',
+                seatOrder: ['user-a', 'user-b'],
+                stateVersion: 0,
+                lastSequence: 0,
+                snapshot: withoutLastSequence(matchSnapshot()),
+                status: 'ACTIVE',
+              }
+            : null,
+        ),
+      } as MatchRepositoryLike,
+      loadCommittedTransitions: vi.fn(async () => {
+        throw new Error('SYNC_FAILURE');
+      }),
+    });
+    servers.push(server);
+
+    const socketA = connectClient(server.url, sessionHeader('session-a').cookie);
+    await waitForEvent(socketA, 'connect');
+    await new Promise((resolve) => socketA.emit('match:join', { matchId: 'match-1' }, resolve));
+
+    const failureAck = await new Promise<{
+      mode: string;
+      snapshot: { lastSequence: number };
+      watermark: { stateVersion: number; lastSequence: number };
+    }>((resolve) => {
+      socketA.emit('game:sync', { matchId: 'match-1', stateVersion: 0, lastSequence: 0 }, resolve);
+    });
+
+    expect(failureAck.mode).toBe('snapshot');
+    expect(failureAck.snapshot.lastSequence).toBe(0);
+    expect(failureAck.watermark).toEqual({ stateVersion: 0, lastSequence: 0 });
+
+    const socketB = connectClient(server.url, sessionHeader('session-b').cookie);
+    await waitForEvent(socketB, 'connect');
+    const joinResult = await new Promise<{ ok: boolean; code?: string }>((resolve) => {
+      socketB.emit('match:join', { matchId: 'match-1' }, resolve);
+    });
+
+    expect(joinResult).toEqual({ ok: true });
+    socketA.disconnect();
+    socketB.disconnect();
   });
 });

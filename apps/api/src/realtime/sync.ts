@@ -8,6 +8,7 @@ import {
   type GameSyncResponse,
   type TransitionEnvelope,
 } from '@zamanushka/shared';
+import { snapshotSyncResponse } from './snapshot-response.js';
 interface OutboxTransitionPayload {
   transitionId?: string;
   stateVersion?: number;
@@ -54,8 +55,7 @@ export function createGameSyncService(options: {
     const request = gameSyncRequestSchema.parse(input);
     const match = await options.repository.loadCurrentMatch(request.matchId);
     if (!match) {
-      return gameSyncResponseSchema.parse({
-        mode: 'snapshot',
+      return snapshotSyncResponse({
         snapshot: {
           status: 'ABANDONED',
           stateVersion: 0,
@@ -67,9 +67,9 @@ export function createGameSyncService(options: {
           winReason: null,
           players: [],
           pawns: [],
-          lastSequence: 0,
         },
-        watermark: { stateVersion: 0, lastSequence: 0 },
+        stateVersion: 0,
+        lastSequence: 0,
       });
     }
 
@@ -109,10 +109,10 @@ export function createGameSyncService(options: {
       });
     if (continuous) {
       if (!lastTransition) {
-        return gameSyncResponseSchema.parse({
-          mode: 'snapshot',
+        return snapshotSyncResponse({
           snapshot: snapshotState,
-          watermark: { stateVersion: match.stateVersion, lastSequence: match.lastSequence },
+          stateVersion: match.stateVersion,
+          lastSequence: match.lastSequence,
         });
       }
       return gameSyncResponseSchema.parse({
@@ -125,10 +125,10 @@ export function createGameSyncService(options: {
       });
     }
 
-    return gameSyncResponseSchema.parse({
-      mode: 'snapshot',
+    return snapshotSyncResponse({
       snapshot: snapshotState,
-      watermark: { stateVersion: match.stateVersion, lastSequence: match.lastSequence },
+      stateVersion: match.stateVersion,
+      lastSequence: match.lastSequence,
     });
   }
 

@@ -117,6 +117,19 @@ describe('game sync recovery', () => {
     }
   });
 
+  it('injects authoritative lastSequence into snapshot fallback when persisted snapshot omits it', async () => {
+    const { service, match } = createService();
+    delete (match.snapshot as { lastSequence?: number }).lastSequence;
+
+    const response = await service.sync({ matchId: match.id, stateVersion: 0, lastSequence: 0 });
+
+    expect(response.mode).toBe('snapshot');
+    if (response.mode === 'snapshot') {
+      expect(response.snapshot.lastSequence).toBe(3);
+      expect(response.watermark).toEqual({ stateVersion: 2, lastSequence: 3 });
+    }
+  });
+
   it('detects a gap and forces snapshot reconciliation instead of chaining broken deltas', async () => {
     const { service, prisma, match } = createService();
     prisma.outboxRow.findMany = vi.fn(async () => [

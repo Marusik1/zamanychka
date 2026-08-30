@@ -19,6 +19,7 @@ import { createRedisClient } from '../infrastructure/redis.js';
 import type { MatchRepository } from '../match/match-repository.js';
 import type { OutboxLeaseStore } from './outbox-dispatcher.js';
 import { createOutboxDispatcher } from './outbox-dispatcher.js';
+import { snapshotSyncResponse } from './snapshot-response.js';
 
 interface SocketData {
   userId: string;
@@ -152,7 +153,6 @@ export function createRealtimeRuntime(options: {
     winReason: null,
     players: [],
     pawns: [],
-    lastSequence: 0,
   } as const;
 
   io.use(async (socket, next) => {
@@ -219,80 +219,81 @@ export function createRealtimeRuntime(options: {
     socket.on('game:sync', async (input: unknown, ack?: (result: unknown) => void) => {
       const parsed = gameSyncRequestSchema.safeParse(input);
       if (!parsed.success) {
-        ack?.(
-          gameSyncResponseSchema.parse({
-            mode: 'snapshot',
-            snapshot: emptySnapshot,
-            watermark: { stateVersion: 0, lastSequence: 0 },
-          }),
-        );
+        ack?.(snapshotSyncResponse({ snapshot: emptySnapshot, stateVersion: 0, lastSequence: 0 }));
         return;
       }
-      const match = await options.matchRepository.loadCurrentMatch(parsed.data.matchId);
-      if (!match) {
-        ack?.(
-          gameSyncResponseSchema.parse({
-            mode: 'snapshot',
-            snapshot: emptySnapshot,
-            watermark: { stateVersion: 0, lastSequence: 0 },
-          }),
-        );
-        return;
-      }
-      if (!options.loadCommittedTransitions) {
-        ack?.(
-          gameSyncResponseSchema.parse({
-            mode: 'snapshot',
-            snapshot: match.snapshot,
-            watermark: {
+
+      let match: Awaited<ReturnType<MatchRepository['loadCurrentMatch']>> | null = null;
+
+      try {
+        match = await options.matchRepository.loadCurrentMatch(parsed.data.matchId);
+        if (!match) {
+          ack?.(snapshotSyncResponse({ snapshot: emptySnapshot, stateVersion: 0, lastSequence: 0 }));
+          return;
+        }
+
+        if (!options.loadCommittedTransitions) {
+          ack?.(
+            snapshotSyncResponse({
+              snapshot: match.snapshot,
               stateVersion: match.stateVersion ?? 0,
               lastSequence: match.lastSequence ?? 0,
-            },
-          }),
-        );
-        return;
-      }
-      const transitions = await options.loadCommittedTransitions({
-        matchId: parsed.data.matchId,
-        stateVersion: parsed.data.stateVersion,
-        lastSequence: parsed.data.lastSequence,
-      });
-      if (Array.isArray(transitions) && transitions.length > 0) {
-        const lastTransition = transitions[transitions.length - 1];
-        if (!lastTransition) {
-          ack?.(
-            gameSyncResponseSchema.parse({
-              mode: 'snapshot',
-              snapshot: match.snapshot,
-              watermark: {
-                stateVersion: match.stateVersion ?? 0,
-                lastSequence: match.lastSequence ?? 0,
-              },
             }),
           );
           return;
         }
-        const response = gameSyncResponseSchema.parse({
-          mode: 'events',
-          transitions,
-          watermark: {
-            stateVersion: lastTransition.stateVersion,
-            lastSequence: lastTransition.toSequence,
-          },
+
+        const transitions = await options.loadCommittedTransitions({
+          matchId: parsed.data.matchId,
+          stateVersion: parsed.data.stateVersion,
+          lastSequence: parsed.data.lastSequence,
         });
-        ack?.(response);
-        return;
-      }
-      ack?.(
-        gameSyncResponseSchema.parse({
-          mode: 'snapshot',
-          snapshot: match.snapshot,
-          watermark: {
+        if (Array.isArray(transitions) && transitions.length > 0) {
+          const lastTransition = transitions[transitions.length - 1];
+          if (!lastTransition) {
+            ack?.(
+              snapshotSyncResponse({
+                snapshot: match.snapshot,
+                stateVersion: match.stateVersion ?? 0,
+                lastSequence: match.lastSequence ?? 0,
+              }),
+            );
+            return;
+          }
+          const response = gameSyncResponseSchema.parse({
+            mode: 'events',
+            transitions,
+            watermark: {
+              stateVersion: lastTransition.stateVersion,
+              lastSequence: lastTransition.toSequence,
+            },
+          });
+          ack?.(response);
+          return;
+        }
+
+        ack?.(
+          snapshotSyncResponse({
+            snapshot: match.snapshot,
             stateVersion: match.stateVersion ?? 0,
             lastSequence: match.lastSequence ?? 0,
-          },
-        }),
-      );
+          }),
+        );
+      } catch (error) {
+        console.error('game:sync failed', error);
+        if (!match) return;
+        try {
+          ack?.(
+            snapshotSyncResponse({
+              snapshot: match.snapshot,
+              stateVersion: match.stateVersion ?? 0,
+              lastSequence: match.lastSequence ?? 0,
+            }),
+          );
+        } catch (fallbackError) {
+          console.error('game:sync fallback failed', fallbackError);
+        }
+      }
     });
   });
 
