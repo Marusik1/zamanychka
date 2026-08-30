@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
+import {
+  roomCommandSuccessSchema,
+  roomStateSchema,
+} from '@zamanushka/shared';
 
 import type { AuthService } from '../auth/auth-service.js';
 import type { RoomService } from './room-service.js';
@@ -311,6 +315,41 @@ describe('room routes', () => {
         })
       ).statusCode,
     ).toBe(404);
+  });
+
+  it('returns canonical shared DTO shapes for create, get, and reconnect room responses', async () => {
+    const service = roomService();
+    const instance = await app(service);
+
+    const createResponse = await instance.inject({
+      method: 'POST',
+      url: '/api/rooms',
+      headers: mutationHeaders,
+      payload: {},
+    });
+    expect(createResponse.statusCode).toBe(200);
+    expect(roomCommandSuccessSchema.safeParse(createResponse.json()).success).toBe(true);
+
+    const getResponse = await instance.inject({
+      method: 'GET',
+      url: `/api/rooms/${roomId}`,
+      headers: authHeaders,
+    });
+    expect(getResponse.statusCode).toBe(200);
+    const getBody = getResponse.json();
+    expect(roomStateSchema.safeParse(getBody).success).toBe(true);
+    expect(getBody).not.toHaveProperty('presence');
+
+    const reconnectResponse = await instance.inject({
+      method: 'POST',
+      url: `/api/rooms/${roomId}/reconnect`,
+      headers: mutationHeaders,
+      payload: {},
+    });
+    expect(reconnectResponse.statusCode).toBe(200);
+    const reconnectBody = reconnectResponse.json();
+    expect(roomStateSchema.safeParse(reconnectBody).success).toBe(true);
+    expect(reconnectBody).not.toHaveProperty('presence');
   });
 
   it('maps room command errors to stable HTTP statuses', async () => {

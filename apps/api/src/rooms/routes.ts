@@ -15,6 +15,7 @@ import {
 import type { AuthService } from '../auth/auth-service.js';
 import { isAllowedOrigin } from '../auth/origin-guard.js';
 import type { RoomService } from './room-service.js';
+import type { RoomView } from './room-service.js';
 
 export interface RoomRoutesOptions {
   service: RoomService;
@@ -113,6 +114,11 @@ function mapRoomResult(
   return roomError(reply, roomStatus(result.error.code), result.error.code);
 }
 
+function toRoomStateResponse(room: RoomView) {
+  const { presence: _presence, ...roomState } = room;
+  return roomState;
+}
+
 function isRoomNotFoundError(error: unknown): boolean {
   return error instanceof Error && error.message === 'ROOM_NOT_FOUND';
 }
@@ -139,7 +145,7 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
     const parsed = createRoomRequestSchema.safeParse(request.body);
     if (!parsed.success) return publicError(reply, 400, 'VALIDATION_ERROR');
 
-    return reply.send(await options.service.createRoom(userId, parsed.data));
+    return reply.send({ ok: true, room: await options.service.createRoom(userId, parsed.data) });
   });
 
   app.get('/api/rooms/:roomId', async (request, reply) => {
@@ -149,7 +155,7 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
     const roomId = String((request.params as { roomId: string }).roomId);
 
     try {
-      return reply.send(await options.service.getRoom(userId, roomId));
+      return reply.send(toRoomStateResponse(await options.service.getRoom(userId, roomId)));
     } catch (error) {
       if (isRoomNotFoundError(error)) {
         return roomError(reply, 404, 'ROOM_NOT_FOUND');
@@ -267,7 +273,7 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
     if (!parsed.success) return publicError(reply, 400, 'VALIDATION_ERROR');
 
     try {
-      return reply.send(await options.service.connectPresence(userId, roomId));
+      return reply.send(toRoomStateResponse(await options.service.connectPresence(userId, roomId)));
     } catch (error) {
       if (isRoomNotFoundError(error)) {
         return roomError(reply, 404, 'ROOM_NOT_FOUND');

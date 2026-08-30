@@ -84,6 +84,28 @@ describe('playable beta room API', () => {
     expect(fetcher).toHaveBeenCalledWith('/api/rooms/room-1', expect.objectContaining({ credentials: 'include' }));
   });
 
+  it('accepts canonical wrapped create-room success and canonical reconnect room state', async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ ok: true, room: roomState }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(roomState), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+
+    const api = createRoomApi(fetcher);
+
+    await expect(api.createRoom()).resolves.toEqual({ ok: true, room: roomState });
+    await expect(api.reconnect('room-1')).resolves.toEqual(roomState);
+  });
+
   it('posts expectedRoomVersion to room-scoped mutations and start-match', async () => {
     const fetcher = vi
       .fn()
