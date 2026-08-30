@@ -36,9 +36,9 @@
 
   /* Typography roles */
   --font-family-base:
-    'Segoe UI', 'Noto Sans', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, 'Noto Sans', sans-serif;
   --font-family-display: Georgia, 'Times New Roman', serif;
-  --font-family-numeric: 'Segoe UI', 'Noto Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-family-numeric: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
 
   --font-size-display: 2.5rem;
   --font-size-h1: 2rem;
@@ -63,9 +63,9 @@
   --line-height-compact: 1.3;
 
   --letter-spacing-display: 0.02em;
-  --letter-spacing-heading: 0.01em;
+  --letter-spacing-heading: -0.015em;
   --letter-spacing-body: 0;
-  --letter-spacing-button: 0.04em;
+  --letter-spacing-button: 0.02em;
   --letter-spacing-caption: 0.06em;
 
   /* Radius */
@@ -99,6 +99,9 @@
   --layer-sticky: 20;
   --layer-overlay: 40;
   --layer-modal: 50;
+
+  --shell-header-height-mobile: 60px;
+  --shell-nav-height-mobile: 64px;
 
   font-family: var(--font-family-base);
 }
@@ -232,7 +235,7 @@ textarea {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-panel);
   box-shadow: var(--shadow-panel);
-  padding: var(--space-6);
+  padding: var(--space-5);
 }
 
 .ui-panel-surface.is-selected {
@@ -243,7 +246,7 @@ textarea {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: var(--space-9);
+  min-height: 44px;
   min-width: var(--space-9);
   padding: 0 var(--space-5);
   border-radius: var(--radius-button);
@@ -774,7 +777,7 @@ textarea.ui-field__control {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
-  min-height: 72px;
+  min-height: var(--shell-header-height-mobile);
   padding-top: max(var(--space-3), env(safe-area-inset-top, 0px));
   padding-bottom: var(--space-3);
 }
@@ -806,13 +809,14 @@ textarea.ui-field__control {
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
-  padding-block: var(--space-6) calc(var(--space-8) + env(safe-area-inset-bottom, 0px));
+  padding-block: var(--space-5) calc(var(--space-6) + env(safe-area-inset-bottom, 0px));
 }
 
 .ui-app-shell__content {
   flex: 1 1 auto;
   width: min(100%, 1180px);
   display: grid;
+  align-content: start;
   gap: var(--space-6);
 }
 
@@ -868,7 +872,7 @@ textarea.ui-field__control {
   position: sticky;
   bottom: 0;
   z-index: var(--layer-sticky);
-  padding: var(--space-3) var(--space-4) calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
+  padding: var(--space-1) var(--space-3) calc(var(--space-1) + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--border-subtle);
   background: color-mix(in srgb, var(--color-surface) 94%, transparent);
 }
@@ -883,7 +887,7 @@ textarea.ui-field__control {
 
 .ui-bottom-nav__link {
   width: 100%;
-  min-height: 56px;
+  min-height: var(--shell-nav-height-mobile);
   flex-direction: column;
   padding-top: var(--space-2);
   padding-bottom: var(--space-2);
@@ -915,7 +919,7 @@ textarea.ui-field__control {
     flex: 1 1 auto;
     min-height: 0;
     overflow: auto;
-    padding-bottom: calc(var(--space-6) + env(safe-area-inset-bottom, 0px));
+    padding-block: var(--space-3) calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
   }
 
   .ui-bottom-nav {
@@ -931,6 +935,18 @@ textarea.ui-field__control {
     min-width: 0;
     padding-inline: var(--space-1);
     border-radius: var(--radius-control);
+  }
+
+  .ui-app-shell__container {
+    padding-inline: 14px;
+  }
+
+  .ui-app-shell__title {
+    font-size: 1.45rem;
+  }
+
+  .ui-app-shell__eyebrow {
+    display: none;
   }
 
   .ui-bottom-nav__link.is-selected {
