@@ -1,78 +1,166 @@
 import { describe, expect, it } from 'vitest';
 import {
+  createRoomRequestSchema,
+  joinRoomRequestSchema,
+  leaveRoomRequestSchema,
   leaveSeatRequestSchema,
+  listRoomsResponseSchema,
   roomCommandErrorCodeSchema,
   roomCommandResultSchema,
-  roomParticipantStateSchema,
-  roomParticipantViewSchema,
-  roomPresenceProjectionSchema,
-  roomReconnectRequestSchema,
+  roomMemberSchema,
   roomSeatIndexSchema,
+  roomSeatSchema,
   roomStateSchema,
+  roomSummarySchema,
   setReadyRequestSchema,
   startMatchRequestSchema,
   takeSeatRequestSchema,
 } from './rooms.js';
 
 describe('room contracts', () => {
-  it('accepts the canonical single-room DTO shape', () => {
+  it('accepts the canonical multi-room DTO shape', () => {
     const room = roomStateSchema.parse({
-      roomId: 'room-1',
+      id: 'room-1',
+      code: 'ABCD',
+      status: 'WAITING',
       version: 0,
       currentMatchId: null,
-      participants: [
-        { userId: 'u1', seatIndex: 0, ready: false },
-        { userId: 'u2', seatIndex: 1, ready: true },
+      members: [
+        {
+          userId: 'u1',
+          displayName: 'User 1',
+          joinedAt: '2026-08-30T09:00:00.000Z',
+        },
+        {
+          userId: 'u2',
+          displayName: 'User 2',
+          joinedAt: '2026-08-30T09:01:00.000Z',
+        },
       ],
+      seats: [
+        { seatIndex: 0, userId: 'u1', ready: true },
+        { seatIndex: 1, userId: null, ready: false },
+        { seatIndex: 2, userId: 'u2', ready: false },
+        { seatIndex: 3, userId: null, ready: false },
+      ],
+      counts: {
+        memberCount: 2,
+        seatedCount: 2,
+        readyCount: 1,
+      },
+      currentUser: {
+        isMember: true,
+        seatIndex: 0,
+        ready: true,
+        canLeave: true,
+        canStart: false,
+        startBlockedReason: 'ROOM_NOT_READY',
+      },
     });
 
-    expect(room.currentMatchId).toBeNull();
-    expect(room.participants).toHaveLength(2);
+    expect(room.counts.memberCount).toBe(2);
+    expect(room.currentUser.seatIndex).toBe(0);
   });
 
-  it('models seats, readiness, and connected presence separately', () => {
+  it('models room members, seats, and counts separately', () => {
     expect(roomSeatIndexSchema.parse(3)).toBe(3);
-    expect(roomParticipantStateSchema.parse({ userId: 'u1', seatIndex: 2, ready: true })).toEqual({
-      userId: 'u1',
-      seatIndex: 2,
-      ready: true,
-    });
     expect(
-      roomParticipantViewSchema.parse({
+      roomMemberSchema.parse({
         userId: 'u1',
-        displayName: 'Мария',
-        seatIndex: 2,
-        ready: true,
-        connected: false,
+        displayName: 'User 1',
+        joinedAt: '2026-08-30T09:00:00.000Z',
       }),
     ).toEqual({
       userId: 'u1',
-      displayName: 'Мария',
+      displayName: 'User 1',
+      joinedAt: '2026-08-30T09:00:00.000Z',
+    });
+    expect(roomSeatSchema.parse({ seatIndex: 2, userId: 'u1', ready: true })).toEqual({
       seatIndex: 2,
-      ready: true,
-      connected: false,
-    });
-    expect(roomPresenceProjectionSchema.parse({ userId: 'u1', connected: true })).toEqual({
       userId: 'u1',
-      connected: true,
+      ready: true,
+    });
+    expect(
+      roomSummarySchema.parse({
+        id: 'room-1',
+        code: 'ABCD',
+        status: 'ACTIVE',
+        currentMatchId: 'match-1',
+        counts: {
+          memberCount: 3,
+          seatedCount: 2,
+          readyCount: 2,
+        },
+      }),
+    ).toEqual({
+      id: 'room-1',
+      code: 'ABCD',
+      status: 'ACTIVE',
+      currentMatchId: 'match-1',
+      counts: {
+        memberCount: 3,
+        seatedCount: 2,
+        readyCount: 2,
+      },
     });
   });
 
-  it('accepts the room command contracts', () => {
-    expect(takeSeatRequestSchema.parse({ seatIndex: 1 })).toEqual({ seatIndex: 1 });
-    expect(leaveSeatRequestSchema.parse({})).toEqual({});
-    expect(setReadyRequestSchema.parse({ ready: true })).toEqual({ ready: true });
-    expect(startMatchRequestSchema.parse({})).toEqual({});
-    expect(roomReconnectRequestSchema.parse({})).toEqual({});
+  it('accepts room list and command contracts', () => {
+    expect(
+      listRoomsResponseSchema.parse({
+        rooms: [
+          {
+            id: 'room-1',
+            code: 'ABCD',
+            status: 'WAITING',
+            currentMatchId: null,
+            counts: { memberCount: 1, seatedCount: 0, readyCount: 0 },
+          },
+        ],
+      }),
+    ).toEqual({
+      rooms: [
+        {
+          id: 'room-1',
+          code: 'ABCD',
+          status: 'WAITING',
+          currentMatchId: null,
+          counts: { memberCount: 1, seatedCount: 0, readyCount: 0 },
+        },
+      ],
+    });
+    expect(createRoomRequestSchema.parse({})).toEqual({});
+    expect(joinRoomRequestSchema.parse({})).toEqual({});
+    expect(takeSeatRequestSchema.parse({ seatIndex: 1, expectedRoomVersion: 5 })).toEqual({
+      seatIndex: 1,
+      expectedRoomVersion: 5,
+    });
+    expect(leaveSeatRequestSchema.parse({ expectedRoomVersion: 5 })).toEqual({
+      expectedRoomVersion: 5,
+    });
+    expect(leaveRoomRequestSchema.parse({ expectedRoomVersion: 5 })).toEqual({
+      expectedRoomVersion: 5,
+    });
+    expect(setReadyRequestSchema.parse({ ready: true, expectedRoomVersion: 5 })).toEqual({
+      ready: true,
+      expectedRoomVersion: 5,
+    });
+    expect(startMatchRequestSchema.parse({ expectedRoomVersion: 5 })).toEqual({
+      expectedRoomVersion: 5,
+    });
   });
 
-  it('keeps client control out of start-match contracts', () => {
+  it('keeps client control out of room and start-match contracts', () => {
+    expect(() => createRoomRequestSchema.parse({ roomId: 'room-1' })).toThrow();
+    expect(() => takeSeatRequestSchema.parse({ seatIndex: 1 })).toThrow();
+    expect(() => joinRoomRequestSchema.parse({ userId: 'u1' })).toThrow();
     expect(() => startMatchRequestSchema.parse({ firstPlayerId: 'u1' })).toThrow();
     expect(() => startMatchRequestSchema.parse({ seatOrder: ['u1', 'u2'] })).toThrow();
   });
 
-  it('exposes domain error/result discrimination', () => {
-    expect(roomCommandErrorCodeSchema.options).toContain('ROOM_NOT_READY');
+  it('exposes domain error/result discrimination for room-scoped lifecycle', () => {
+    expect(roomCommandErrorCodeSchema.options).toContain('USER_ALREADY_IN_ANOTHER_ROOM');
+    expect(roomCommandErrorCodeSchema.options).toContain('NOT_ROOM_MEMBER');
     expect(
       roomCommandResultSchema.parse({
         ok: false,

@@ -28,7 +28,9 @@ describe('match result persistence schema', () => {
         firstName: 'Мария',
       },
     });
-    const room = await database.prisma.room.create({ data: { key: 'single-room' } });
+    const room = await database.prisma.room.create({
+      data: { key: 'single-room', code: 'MAIN', status: 'WAITING' },
+    });
     const match = await database.prisma.match.create({
       data: {
         roomKey: room.key,
@@ -74,7 +76,9 @@ describe('match result persistence schema', () => {
   });
 
   it('enforces unique matchId and participant uniqueness within one result', async () => {
-    const room = await database.prisma.room.create({ data: { key: 'single-room' } });
+    const room = await database.prisma.room.create({
+      data: { key: 'single-room', code: 'MAIN', status: 'WAITING' },
+    });
     const firstUser = await database.prisma.user.create({ data: { firstName: 'Мария' } });
     const secondUser = await database.prisma.user.create({ data: { firstName: 'Ольга' } });
     const match = await database.prisma.match.create({

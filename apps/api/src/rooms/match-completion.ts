@@ -1,8 +1,8 @@
 import type { RoomState } from '@zamanushka/shared';
 
 import type { Prisma } from '../generated/prisma/client.js';
-import type { PersistedRoom } from './domain.js';
-import { lockSingletonRoomInTransaction, persistSingletonRoom } from './room-repository.js';
+import { toRoomState, type PersistedRoom } from './domain.js';
+import { lockRoomInTransaction, persistRoom } from './room-repository.js';
 import type { createRoomRepository } from './room-repository.js';
 
 type RoomRepository = ReturnType<typeof createRoomRepository>;
@@ -27,6 +27,7 @@ function completionError(code: MatchCompletionErrorCode): MatchCompletionResult 
 function toWaitingRoom(room: PersistedRoom): PersistedRoom {
   return {
     ...room,
+    status: 'WAITING',
     version: room.version + 1,
     currentMatchId: null,
     seats: room.seats.map((seat) => ({
@@ -34,21 +35,6 @@ function toWaitingRoom(room: PersistedRoom): PersistedRoom {
       userId: null,
       ready: false,
     })),
-  };
-}
-
-function toRoomState(room: PersistedRoom): RoomState {
-  return {
-    roomId: room.roomId,
-    version: room.version,
-    currentMatchId: room.currentMatchId,
-    participants: room.seats
-      .filter((seat) => seat.userId !== null)
-      .map((seat) => ({
-        userId: seat.userId as string,
-        seatIndex: seat.seatIndex,
-        ready: seat.ready,
-      })),
   };
 }
 
@@ -64,19 +50,30 @@ export function createMatchCompletionService(options: { repository: RoomReposito
     });
   }
 
+  async function buildRoomState(room: PersistedRoom): Promise<RoomState> {
+    return toRoomState({
+      room,
+      actorUserId: '',
+      presence: new Map(),
+      displayNames: await options.repository.loadParticipantDisplayNames(
+        room.members.map((member) => member.userId),
+      ),
+    });
+  }
+
   async function completeLockedTerminalMatch(
     tx: TxClient,
-    room: PersistedRoom,
     completedMatchId: string,
   ): Promise<MatchCompletionResult> {
     const match = await loadMatch(tx, completedMatchId);
     if (!match) return completionError('MATCH_NOT_FOUND');
     if (match.status !== 'FINISHED') return completionError('MATCH_NOT_TERMINAL');
+
+    const room = await lockRoomInTransaction(tx, match.roomKey);
     if (room.currentMatchId !== completedMatchId) return completionError('MATCH_NOT_CURRENT');
 
-    const nextRoom = toWaitingRoom(room);
-    await persistSingletonRoom(tx, nextRoom);
-    return { ok: true, matchId: completedMatchId, room: toRoomState(nextRoom) };
+    const saved = await persistRoom(tx, toWaitingRoom(room));
+    return { ok: true, matchId: completedMatchId, room: await buildRoomState(saved) };
   }
 
   return {
@@ -84,16 +81,14 @@ export function createMatchCompletionService(options: { repository: RoomReposito
       tx: TxClient,
       completedMatchId: string,
     ): Promise<MatchCompletionResult> {
-      return completeLockedTerminalMatch(
-        tx,
-        await lockSingletonRoomInTransaction(tx),
-        completedMatchId,
-      );
+      return completeLockedTerminalMatch(tx, completedMatchId);
     },
 
     async completeTerminalMatch(completedMatchId: string): Promise<MatchCompletionResult> {
-      return options.repository.withLockedSingletonRoom((tx, room) =>
-        completeLockedTerminalMatch(tx, room, completedMatchId),
+      const match = await options.repository.loadMatchRoomKey(completedMatchId);
+      if (!match) return completionError('MATCH_NOT_FOUND');
+      return options.repository.withLockedRoom(match.roomKey, async (tx) =>
+        completeLockedTerminalMatch(tx, completedMatchId),
       );
     },
   };

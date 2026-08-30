@@ -1,5 +1,9 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { createRoomRepository, SINGLETON_ROOM_KEY } from './room-repository.js';
+import {
+  createRoomRepository,
+  persistRoom,
+  SINGLETON_ROOM_KEY,
+} from './room-repository.js';
 import { createTestDatabase } from '../test/test-database.js';
 
 const database = createTestDatabase();
@@ -14,7 +18,215 @@ afterAll(async () => {
 });
 
 describe('room repository', () => {
-  it('bootstraps the singleton room and returns the same room on repeated bootstrap', async () => {
+  it('creates and loads independent rooms with durable memberships', async () => {
+    await database.prisma.user.createMany({
+      data: [
+        { id: 'u1', firstName: 'User 1' },
+        { id: 'u2', firstName: 'User 2' },
+      ],
+    });
+
+    const first = await repository.createRoom('u1');
+    const second = await repository.createRoom('u2');
+
+    expect(first.roomId).not.toBe(second.roomId);
+    expect(first.code).not.toBe(second.code);
+
+    await expect(repository.loadRoom(first.roomId)).resolves.toMatchObject({
+      roomId: first.roomId,
+      members: [expect.objectContaining({ userId: 'u1' })],
+    });
+    await expect(repository.loadRoom(second.roomId)).resolves.toMatchObject({
+      roomId: second.roomId,
+      members: [expect.objectContaining({ userId: 'u2' })],
+    });
+
+    await expect(database.prisma.roomMembership.count()).resolves.toBe(2);
+  });
+
+  it('lists independent non-closed rooms', async () => {
+    await database.prisma.user.createMany({
+      data: [
+        { id: 'u1', firstName: 'User 1' },
+        { id: 'u2', firstName: 'User 2' },
+      ],
+    });
+
+    const first = await repository.createRoom('u1');
+    const second = await repository.createRoom('u2');
+
+    const rooms = await repository.listRooms();
+
+    expect(rooms.map((room) => room.roomId)).toEqual(
+      expect.arrayContaining([first.roomId, second.roomId]),
+    );
+  });
+
+  it('loads the one active membership for a user', async () => {
+    await database.prisma.user.create({
+      data: { id: 'u1', firstName: 'User 1' },
+    });
+
+    const room = await repository.createRoom('u1');
+
+    await expect(repository.loadMembershipForUser('u1')).resolves.toMatchObject({
+      roomKey: room.roomId,
+      userId: 'u1',
+    });
+    await expect(repository.loadMembershipForUser('missing-user')).resolves.toBeNull();
+  });
+
+  it('keeps createRoom idempotent while a user already has an active membership', async () => {
+    await database.prisma.user.create({
+      data: { id: 'u1', firstName: 'User 1' },
+    });
+
+    const first = await repository.createRoom('u1');
+    const second = await repository.createRoom('u1');
+
+    expect(second.roomId).toBe(first.roomId);
+    await expect(
+      database.prisma.roomMembership.count({ where: { userId: 'u1' } }),
+    ).resolves.toBe(1);
+  });
+
+  it('database constraint prevents one user from belonging to two rooms', async () => {
+    await database.prisma.user.createMany({
+      data: [
+        { id: 'u1', firstName: 'User 1' },
+        { id: 'u2', firstName: 'User 2' },
+      ],
+    });
+
+    const first = await repository.createRoom('u1');
+    const second = await repository.createRoom('u2');
+
+    expect(first.roomId).not.toBe(second.roomId);
+
+    await expect(
+      database.prisma.roomMembership.create({
+        data: {
+          roomKey: second.roomId,
+          userId: 'u1',
+        },
+      }),
+    ).rejects.toBeDefined();
+
+    await expect(
+      database.prisma.roomMembership.count({ where: { userId: 'u1' } }),
+    ).resolves.toBe(1);
+  });
+
+  it('persists seat/readiness/match state only inside the addressed room', async () => {
+    await database.prisma.user.createMany({
+      data: [
+        { id: 'u1', firstName: 'User 1' },
+        { id: 'u2', firstName: 'User 2' },
+        { id: 'u3', firstName: 'User 3' },
+      ],
+    });
+
+    const first = await repository.createRoom('u1');
+    const second = await repository.createRoom('u3');
+
+    await database.prisma.roomMembership.create({
+      data: { roomKey: first.roomId, userId: 'u2' },
+    });
+
+    await database.prisma.match.create({
+      data: {
+        id: 'match-1',
+        roomKey: first.roomId,
+        firstPlayerId: 'u1',
+        seatOrder: ['u1', 'u2'],
+        snapshot: {},
+      },
+    });
+
+    const saved = await repository.withLockedRoom(first.roomId, async (tx, locked) =>
+      persistRoom(tx, {
+        ...locked,
+        status: 'ACTIVE',
+        version: locked.version + 1,
+        currentMatchId: 'match-1',
+        seats: [
+          { seatIndex: 0, userId: 'u1', ready: true },
+          { seatIndex: 1, userId: null, ready: false },
+          { seatIndex: 2, userId: 'u2', ready: false },
+          { seatIndex: 3, userId: null, ready: false },
+        ],
+      }),
+    );
+
+    expect(saved).toMatchObject({
+      roomId: first.roomId,
+      status: 'ACTIVE',
+      currentMatchId: 'match-1',
+    });
+
+    await expect(repository.loadRoom(first.roomId)).resolves.toEqual(saved);
+
+    await expect(repository.loadRoom(second.roomId)).resolves.toMatchObject({
+      roomId: second.roomId,
+      status: 'WAITING',
+      currentMatchId: null,
+      members: [expect.objectContaining({ userId: 'u3' })],
+      seats: [
+        { seatIndex: 0, userId: null, ready: false },
+        { seatIndex: 1, userId: null, ready: false },
+        { seatIndex: 2, userId: null, ready: false },
+        { seatIndex: 3, userId: null, ready: false },
+      ],
+    });
+  });
+
+  it('loads a room through the transaction that owns its room-scoped lock', async () => {
+    await database.prisma.user.create({
+      data: { id: 'u1', firstName: 'User 1' },
+    });
+
+    const room = await repository.createRoom('u1');
+
+    const result = await repository.withLockedRoom(room.roomId, async (tx, locked) => {
+      expect(locked.roomId).toBe(room.roomId);
+
+      const loaded = await repository.loadRoomInTransaction(tx, room.roomId);
+      return loaded?.roomId ?? null;
+    });
+
+    expect(result).toBe(room.roomId);
+  });
+
+  it('throws ROOM_NOT_FOUND when a room-scoped lock targets a missing room', async () => {
+    await expect(
+      repository.withLockedRoom('missing-room', async () => null),
+    ).rejects.toThrow('ROOM_NOT_FOUND');
+  });
+
+  it('resolves a match back to its owning room', async () => {
+    await database.prisma.user.create({
+      data: { id: 'u1', firstName: 'User 1' },
+    });
+
+    const room = await repository.createRoom('u1');
+
+    await database.prisma.match.create({
+      data: {
+        id: 'match-1',
+        roomKey: room.roomId,
+        firstPlayerId: 'u1',
+        seatOrder: ['u1'],
+        snapshot: {},
+      },
+    });
+
+    await expect(repository.loadMatchRoomKey('match-1')).resolves.toMatchObject({
+      roomKey: room.roomId,
+    });
+    await expect(repository.loadMatchRoomKey('missing-match')).resolves.toBeNull();
+  });
+
+  it('keeps singleton bootstrap only as a compatibility path', async () => {
     const first = await repository.bootstrapSingletonRoom();
     const second = await repository.bootstrapSingletonRoom();
 
@@ -24,56 +236,16 @@ describe('room repository', () => {
     expect(first.seats.map((seat) => seat.seatIndex)).toEqual([0, 1, 2, 3]);
   });
 
-  it('round-trips room state, seat assignment, readiness, and current match pointer', async () => {
-    const created = await repository.bootstrapSingletonRoom();
-    await database.prisma.user.createMany({
-      data: [
-        { id: 'u1', firstName: 'User 1' },
-        { id: 'u2', firstName: 'User 2' },
-      ],
-    });
-    const saved = await repository.saveSingletonRoom({
-      ...created,
-      version: 7,
-      currentMatchId: 'match-1',
-      seats: [
-        { seatIndex: 0, userId: 'u1', ready: true },
-        { seatIndex: 1, userId: null, ready: false },
-        { seatIndex: 2, userId: 'u2', ready: false },
-        { seatIndex: 3, userId: null, ready: false },
-      ],
+  it('does not store gameplay state in the room aggregate', async () => {
+    await database.prisma.user.create({
+      data: { id: 'u1', firstName: 'User 1' },
     });
 
-    expect(saved.version).toBe(7);
-    expect(saved.currentMatchId).toBe('match-1');
-    expect(saved.seats).toEqual([
-      { seatIndex: 0, userId: 'u1', ready: true },
-      { seatIndex: 1, userId: null, ready: false },
-      { seatIndex: 2, userId: 'u2', ready: false },
-      { seatIndex: 3, userId: null, ready: false },
-    ]);
+    const room = await repository.createRoom('u1');
 
-    const loaded = await repository.loadSingletonRoom();
-    expect(loaded).toEqual(saved);
-  });
-
-  it('exposes a serialized mutation boundary through the singleton room lock', async () => {
-    const result = await repository.withLockedSingletonRoom(async (tx, room) => {
-      expect(room.roomId).toBe(SINGLETON_ROOM_KEY);
-      const roomRow = await tx.room.findUnique({
-        where: { key: SINGLETON_ROOM_KEY },
-      });
-      return roomRow?.key ?? null;
-    });
-
-    expect(result).toBe(SINGLETON_ROOM_KEY);
-  });
-
-  it('does not store gameplay state in the room', async () => {
-    const room = await repository.bootstrapSingletonRoom();
     expect(room).toEqual(
       expect.objectContaining({
-        roomId: SINGLETON_ROOM_KEY,
+        roomId: room.roomId,
         currentMatchId: null,
       }),
     );

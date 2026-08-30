@@ -1,52 +1,60 @@
 import type {
+  CreateRoomRequest,
+  JoinRoomRequest,
+  ListRoomsResponse,
   RoomCommandError,
   RoomCommandSuccess,
-  RoomParticipantView,
-  RoomPresenceProjection,
   RoomSeatIndex,
   RoomState,
   SetReadyRequest,
   StartMatchRequest,
+  StartMatchResult,
   TakeSeatRequest,
 } from '@zamanushka/shared';
 
 import { createActiveGameState } from '@zamanushka/game-engine';
 import type { Prisma } from '../generated/prisma/client.js';
-import type { PersistedRoom, RoomId } from './domain.js';
-import { persistSingletonRoom } from './room-repository.js';
+import {
+  cloneRoom,
+  seatByIndex,
+  seatOfUser,
+  toRoomState,
+  toRoomSummary,
+  type LeaveRoomRequest,
+  type LeaveSeatRequest,
+  type PersistedRoom,
+  type RoomId,
+} from './domain.js';
+import { persistRoom } from './room-repository.js';
 import type { createRoomRepository } from './room-repository.js';
 
 type RoomRepository = ReturnType<typeof createRoomRepository>;
 type TxClient = Prisma.TransactionClient;
 
-interface RoomView extends RoomState {
-  presence: readonly RoomPresenceProjection[];
-  participantViews: readonly RoomParticipantView[];
-}
-
-interface StartMatchSuccess {
-  ok: true;
-  room: RoomState;
-  matchId: string;
-}
-
-type StartMatchResult =
-  | StartMatchSuccess
+type MutatingRoomResult =
+  | RoomCommandSuccess
   | {
       ok: false;
       error: RoomCommandError['error'];
     };
+
+type MutationResult =
+  | { kind: 'success'; room: PersistedRoom; presence: 'connect' | 'disconnect' | null }
+  | { kind: 'error'; code: RoomCommandError['error']['code'] };
 
 const ERROR_MESSAGES: Record<RoomCommandError['error']['code'], string> = {
   ROOM_NOT_FOUND: 'Room is not available',
   ROOM_ALREADY_ACTIVE: 'Room already has an active match',
   ROOM_NOT_READY: 'Room is not ready',
   ROOM_FULL: 'Room is full',
+  ROOM_CLOSED: 'Room is closed',
   SEAT_TAKEN: 'Seat is already taken',
   SEAT_NOT_OWNED: 'Seat is not owned by this participant',
   SEATED_PARTICIPANT_DISCONNECTED: 'Seated participant is disconnected',
   STALE_ROOM_VERSION: 'Room version is stale',
   NOT_ALLOWED: 'Operation is not allowed',
+  NOT_ROOM_MEMBER: 'User is not a member of this room',
+  USER_ALREADY_IN_ANOTHER_ROOM: 'User already belongs to another room',
 };
 
 export interface RoomPresenceStore {
@@ -55,14 +63,22 @@ export interface RoomPresenceStore {
   snapshot(roomId: RoomId): Promise<ReadonlyMap<string, boolean>>;
 }
 
+export interface RoomView extends RoomState {
+  presence: readonly { userId: string; connected: boolean }[];
+}
+
 export interface RoomService {
-  takeSeat(actorUserId: string, request: TakeSeatRequest): Promise<MutatingRoomResult>;
-  leaveSeat(actorUserId: string): Promise<MutatingRoomResult>;
-  setReady(actorUserId: string, request: SetReadyRequest): Promise<MutatingRoomResult>;
-  startMatch(actorUserId: string, request: StartMatchRequest): Promise<StartMatchResult>;
-  connectPresence(actorUserId: string): Promise<RoomView>;
-  disconnectPresence(actorUserId: string): Promise<RoomView>;
-  viewRoom(): Promise<RoomView>;
+  listRooms(actorUserId: string): Promise<ListRoomsResponse>;
+  createRoom(actorUserId: string, request: CreateRoomRequest): Promise<RoomState>;
+  getRoom(actorUserId: string, roomId: string): Promise<RoomView>;
+  joinRoom(actorUserId: string, roomId: string, request: JoinRoomRequest): Promise<MutatingRoomResult>;
+  takeSeat(actorUserId: string, roomId: string, request: TakeSeatRequest): Promise<MutatingRoomResult>;
+  leaveSeat(actorUserId: string, roomId: string, request: LeaveSeatRequest): Promise<MutatingRoomResult>;
+  setReady(actorUserId: string, roomId: string, request: SetReadyRequest): Promise<MutatingRoomResult>;
+  leaveRoom(actorUserId: string, roomId: string, request: LeaveRoomRequest): Promise<MutatingRoomResult>;
+  startMatch(actorUserId: string, roomId: string, request: StartMatchRequest): Promise<StartMatchResult>;
+  connectPresence(actorUserId: string, roomId: string): Promise<RoomView>;
+  disconnectPresence(actorUserId: string, roomId: string): Promise<RoomView>;
 }
 
 export interface StartMatchStore {
@@ -87,71 +103,18 @@ function startMatchError(code: RoomCommandError['error']['code']): StartMatchRes
   return { ok: false, error: { code, message: ERROR_MESSAGES[code] } };
 }
 
-function toRoomState(room: PersistedRoom): RoomState {
-  return {
-    roomId: room.roomId,
-    version: room.version,
-    currentMatchId: room.currentMatchId,
-    participants: room.seats
-      .filter((seat) => seat.userId !== null)
-      .map((seat) => ({
-        userId: seat.userId as string,
-        seatIndex: seat.seatIndex,
-        ready: seat.ready,
-      })),
-  };
+function isRoomNotFoundError(error: unknown): boolean {
+  return error instanceof Error && error.message === 'ROOM_NOT_FOUND';
 }
 
-function toRoomView(
-  room: PersistedRoom,
-  presence: ReadonlyMap<string, boolean>,
-  displayNames: ReadonlyMap<string, string>,
-): RoomView {
-  const roomState = toRoomState(room);
-  const presenceEntries = new Map<string, boolean>(presence);
-  const participantViews = roomState.participants.map((participant) => ({
-    ...participant,
-    displayName: displayNames.get(participant.userId) ?? participant.userId,
-    connected: presenceEntries.get(participant.userId) ?? false,
-  }));
-
-  return {
-    ...roomState,
-    presence: participantViews.map((participant) => ({
-      userId: participant.userId,
-      connected: participant.connected,
-    })),
-    participantViews,
-  };
+function isUniqueConstraintError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === 'P2002'
+  );
 }
-
-function cloneRoom(room: PersistedRoom): PersistedRoom {
-  return {
-    roomId: room.roomId,
-    version: room.version,
-    currentMatchId: room.currentMatchId,
-    seats: room.seats.map((seat) => ({ ...seat })),
-  };
-}
-
-function seatByIndex(room: PersistedRoom, seatIndex: RoomSeatIndex) {
-  return room.seats.find((seat) => seat.seatIndex === seatIndex) ?? null;
-}
-
-function seatOfUser(room: PersistedRoom, userId: string) {
-  return room.seats.find((seat) => seat.userId === userId) ?? null;
-}
-
-type MutatingRoomResult =
-  | RoomCommandSuccess
-  | {
-      ok: false;
-      error: RoomCommandError['error'];
-    };
-
-type RoomMutation =
-  | { kind: 'success'; room: PersistedRoom; presence: 'connect' | 'disconnect' | null }
-  | { kind: 'error'; code: RoomCommandError['error']['code'] };
 
 export function createRoomService(options: {
   repository: RoomRepository;
@@ -161,13 +124,41 @@ export function createRoomService(options: {
   ) => string;
   matchStore?: StartMatchStore;
 }): RoomService {
-  async function loadView(room?: PersistedRoom): Promise<RoomView> {
-    const current = room ?? (await options.repository.bootstrapSingletonRoom());
-    const presence = await options.presenceStore.snapshot(current.roomId);
-    const displayNames = await options.repository.loadParticipantDisplayNames(
-      current.seats.flatMap((seat) => (seat.userId ? [seat.userId] : [])),
-    );
-    return toRoomView(current, presence, displayNames);
+  async function loadView(room: PersistedRoom, actorUserId: string): Promise<RoomView> {
+    const memberIds = room.members.map((member) => member.userId);
+    const [presence, displayNames] = await Promise.all([
+      options.presenceStore.snapshot(room.roomId),
+      options.repository.loadParticipantDisplayNames(memberIds),
+    ]);
+
+    const roomState = toRoomState({
+      room,
+      actorUserId,
+      presence,
+      displayNames,
+    });
+
+    return {
+      ...roomState,
+      presence: room.members.map((member) => ({
+        userId: member.userId,
+        connected: presence.get(member.userId) ?? false,
+      })),
+    };
+  }
+
+  function hasMembership(room: PersistedRoom, userId: string) {
+    return room.members.some((member) => member.userId === userId);
+  }
+
+  function checkExpectedVersion(
+    room: PersistedRoom,
+    expectedRoomVersion: number,
+  ): MutationResult | null {
+    if (room.version !== expectedRoomVersion) {
+      return { kind: 'error', code: 'STALE_ROOM_VERSION' };
+    }
+    return null;
   }
 
   function selectFirstPlayerId(
@@ -177,156 +168,406 @@ export function createRoomService(options: {
     return selector(participants);
   }
 
+  async function loadCurrentRoomResult(
+    roomId: string,
+    actorUserId: string,
+  ): Promise<MutatingRoomResult> {
+    const current = await options.repository.loadRoom(roomId);
+    if (!current) return roomError('ROOM_NOT_FOUND');
+    return roomSuccess(await loadView(current, actorUserId));
+  }
+
   async function mutateRoom(
     actorUserId: string,
-    mutator: (room: PersistedRoom) => RoomMutation,
+    roomId: string,
+    mutator: (room: PersistedRoom) => MutationResult,
   ): Promise<MutatingRoomResult> {
     if (!actorUserId) return roomError('NOT_ALLOWED');
-    return options.repository.withLockedSingletonRoom(async (tx, room) => {
-      if (room.currentMatchId) return roomError('ROOM_ALREADY_ACTIVE');
 
-      const next = mutator(cloneRoom(room));
-      if (next.kind === 'error') return roomError(next.code);
+    try {
+      return await options.repository.withLockedRoom(roomId, async (tx, room) => {
+        const next = mutator(cloneRoom(room));
+        if (next.kind === 'error') return roomError(next.code);
 
-      await persistSingletonRoom(tx, next.room);
-      if (next.presence === 'connect') {
-        await options.presenceStore.connect({ roomId: room.roomId, userId: actorUserId });
-      } else if (next.presence === 'disconnect') {
-        await options.presenceStore.disconnect({ roomId: room.roomId, userId: actorUserId });
-      }
+        const saved = await persistRoom(tx, next.room);
 
-      return roomSuccess(toRoomState(next.room));
-    });
+        if (next.presence === 'connect') {
+          await options.presenceStore.connect({ roomId: saved.roomId, userId: actorUserId });
+        } else if (next.presence === 'disconnect') {
+          await options.presenceStore.disconnect({ roomId: saved.roomId, userId: actorUserId });
+        }
+
+        return roomSuccess(await loadView(saved, actorUserId));
+      });
+    } catch (error) {
+      if (isRoomNotFoundError(error)) return roomError('ROOM_NOT_FOUND');
+      throw error;
+    }
   }
 
   return {
-    async takeSeat(actorUserId, request) {
-      return mutateRoom(actorUserId, (room) => {
+    async listRooms(_actorUserId) {
+      const rooms = await options.repository.listRooms();
+      return { rooms: rooms.map(toRoomSummary) };
+    },
+
+    async createRoom(actorUserId, _request) {
+      if (!actorUserId) throw new Error('NOT_ALLOWED');
+
+      const room = await options.repository.createRoom(actorUserId);
+      return toRoomState({
+        room,
+        actorUserId,
+        presence: new Map(),
+        displayNames: await options.repository.loadParticipantDisplayNames(
+          room.members.map((member) => member.userId),
+        ),
+      });
+    },
+
+    async getRoom(actorUserId, roomId) {
+      const room = await options.repository.loadRoom(roomId);
+      if (!room) throw new Error('ROOM_NOT_FOUND');
+      return loadView(room, actorUserId);
+    },
+
+    async joinRoom(actorUserId, roomId, _request) {
+      if (!actorUserId) return roomError('NOT_ALLOWED');
+
+      try {
+        return await options.repository.withLockedRoom(roomId, async (tx, room) => {
+          if (hasMembership(room, actorUserId)) {
+            return roomSuccess(await loadView(room, actorUserId));
+          }
+
+          if (room.status === 'CLOSED') {
+            return roomError('ROOM_CLOSED');
+          }
+
+          if (room.status !== 'WAITING' || room.currentMatchId !== null) {
+            return roomError('ROOM_ALREADY_ACTIVE');
+          }
+
+          if (room.members.length >= 4) {
+            return roomError('ROOM_FULL');
+          }
+
+          const currentMembership = await tx.roomMembership.findUnique({
+            where: { userId: actorUserId },
+          });
+
+          if (currentMembership && currentMembership.roomKey !== roomId) {
+            return roomError('USER_ALREADY_IN_ANOTHER_ROOM');
+          }
+
+          await tx.roomMembership.create({
+            data: {
+              roomKey: roomId,
+              userId: actorUserId,
+            },
+          });
+
+          const saved = await persistRoom(tx, {
+            ...room,
+            version: room.version + 1,
+          });
+
+          return roomSuccess(await loadView(saved, actorUserId));
+        });
+      } catch (error) {
+        if (isRoomNotFoundError(error)) return roomError('ROOM_NOT_FOUND');
+
+        if (isUniqueConstraintError(error)) {
+          const currentMembership = await options.repository.loadMembershipForUser(actorUserId);
+
+          if (currentMembership?.roomKey === roomId) {
+            return loadCurrentRoomResult(roomId, actorUserId);
+          }
+
+          return roomError('USER_ALREADY_IN_ANOTHER_ROOM');
+        }
+
+        throw error;
+      }
+    },
+
+    async takeSeat(actorUserId, roomId, request) {
+      return mutateRoom(actorUserId, roomId, (room) => {
+        if (!hasMembership(room, actorUserId)) {
+          return { kind: 'error', code: 'NOT_ROOM_MEMBER' };
+        }
+
+        if (room.status === 'CLOSED') {
+          return { kind: 'error', code: 'ROOM_CLOSED' };
+        }
+
+        if (room.status !== 'WAITING' || room.currentMatchId !== null) {
+          return { kind: 'error', code: 'ROOM_ALREADY_ACTIVE' };
+        }
+
         const existingSeat = seatOfUser(room, actorUserId);
+
+        if (existingSeat?.seatIndex === request.seatIndex) {
+          return { kind: 'success', room, presence: 'connect' };
+        }
+
+        const stale = checkExpectedVersion(room, request.expectedRoomVersion);
+        if (stale) return stale;
+
         if (existingSeat) {
-          return existingSeat.seatIndex === request.seatIndex
-            ? { kind: 'success', room, presence: 'connect' }
-            : { kind: 'error', code: 'SEAT_TAKEN' };
+          return { kind: 'error', code: 'SEAT_TAKEN' };
         }
 
         const targetSeat = seatByIndex(room, request.seatIndex);
-        if (!targetSeat || targetSeat.userId) return { kind: 'error', code: 'SEAT_TAKEN' };
+        if (!targetSeat || targetSeat.userId !== null) {
+          return { kind: 'error', code: 'SEAT_TAKEN' };
+        }
 
-        room.version += 1;
         targetSeat.userId = actorUserId;
         targetSeat.ready = false;
+        room.version += 1;
+
         return { kind: 'success', room, presence: 'connect' };
       });
     },
 
-    async leaveSeat(actorUserId) {
-      return mutateRoom(actorUserId, (room) => {
-        const ownedSeat = seatOfUser(room, actorUserId);
-        if (!ownedSeat) return { kind: 'error', code: 'SEAT_NOT_OWNED' };
+    async leaveSeat(actorUserId, roomId, request) {
+      return mutateRoom(actorUserId, roomId, (room) => {
+        if (!hasMembership(room, actorUserId)) {
+          return { kind: 'error', code: 'NOT_ROOM_MEMBER' };
+        }
 
-        room.version += 1;
+        if (room.status === 'CLOSED') {
+          return { kind: 'error', code: 'ROOM_CLOSED' };
+        }
+
+        if (room.status !== 'WAITING' || room.currentMatchId !== null) {
+          return { kind: 'error', code: 'ROOM_ALREADY_ACTIVE' };
+        }
+
+        const stale = checkExpectedVersion(room, request.expectedRoomVersion);
+        if (stale) return stale;
+
+        const ownedSeat = seatOfUser(room, actorUserId);
+        if (!ownedSeat) {
+          return { kind: 'success', room, presence: null };
+        }
+
         ownedSeat.userId = null;
         ownedSeat.ready = false;
-        return { kind: 'success', room, presence: 'disconnect' };
-      });
-    },
-
-    async setReady(actorUserId, request) {
-      return mutateRoom(actorUserId, (room) => {
-        const ownedSeat = seatOfUser(room, actorUserId);
-        if (!ownedSeat) return { kind: 'error', code: 'SEAT_NOT_OWNED' };
-        if (ownedSeat.ready === request.ready) return { kind: 'success', room, presence: null };
-
         room.version += 1;
-        ownedSeat.ready = request.ready;
+
         return { kind: 'success', room, presence: null };
       });
     },
 
-    async startMatch(actorUserId) {
-      return options.repository.withLockedSingletonRoom(async (tx, room) => {
-        const presence = await options.presenceStore.snapshot(room.roomId);
-        const seatedParticipants = room.seats
-          .filter((seat): seat is typeof seat & { userId: string } => seat.userId !== null)
-          .map((seat) => ({
-            userId: seat.userId,
-            seatIndex: seat.seatIndex,
-            ready: seat.ready,
-            connected: presence.get(seat.userId) ?? false,
-          }))
-          .sort((left, right) => left.seatIndex - right.seatIndex);
-
-        if (!actorUserId) return startMatchError('NOT_ALLOWED');
-        if (!room.seats.some((seat) => seat.userId === actorUserId))
-          return startMatchError('SEAT_NOT_OWNED');
-        if (room.currentMatchId) return startMatchError('ROOM_ALREADY_ACTIVE');
-        if (seatedParticipants.length < 2) return startMatchError('ROOM_NOT_READY');
-        if (seatedParticipants.length > 4) return startMatchError('ROOM_FULL');
-        if (seatedParticipants.some((participant) => !participant.ready))
-          return startMatchError('ROOM_NOT_READY');
-        if (seatedParticipants.some((participant) => !participant.connected))
-          return startMatchError('SEATED_PARTICIPANT_DISCONNECTED');
-
-        const firstPlayerId = selectFirstPlayerId(seatedParticipants);
-        if (!seatedParticipants.some((participant) => participant.userId === firstPlayerId)) {
-          return startMatchError('NOT_ALLOWED');
+    async setReady(actorUserId, roomId, request) {
+      return mutateRoom(actorUserId, roomId, (room) => {
+        if (!hasMembership(room, actorUserId)) {
+          return { kind: 'error', code: 'NOT_ROOM_MEMBER' };
         }
 
-        const seatOrder = seatedParticipants.map((participant) => participant.userId);
-        const initialState = createActiveGameState({
-          playerCount: seatOrder.length as 2 | 3 | 4,
-          seatOrder: seatOrder as
-            [string, string] | [string, string, string] | [string, string, string, string],
-          firstPlayerId,
-        });
+        if (room.status === 'CLOSED') {
+          return { kind: 'error', code: 'ROOM_CLOSED' };
+        }
 
-        const match = options.matchStore
-          ? await options.matchStore.createInitialMatch({
-              tx,
-              roomId: room.roomId,
-              firstPlayerId,
-              seatOrder,
-              snapshot: initialState as Prisma.InputJsonValue,
-            })
-          : await tx.match.create({
-              data: {
-                roomKey: room.roomId,
-                firstPlayerId,
-                seatOrder,
-                snapshot: initialState as Prisma.InputJsonValue,
-              },
-              select: { id: true },
-            });
+        if (room.status !== 'WAITING' || room.currentMatchId !== null) {
+          return { kind: 'error', code: 'ROOM_ALREADY_ACTIVE' };
+        }
 
-        const nextRoom: PersistedRoom = {
-          ...room,
-          version: room.version + 1,
-          currentMatchId: match.id,
-        };
-        await persistSingletonRoom(tx, nextRoom);
+        const stale = checkExpectedVersion(room, request.expectedRoomVersion);
+        if (stale) return stale;
 
-        return {
-          ok: true,
-          room: toRoomState(nextRoom),
-          matchId: match.id,
-        };
+        const ownedSeat = seatOfUser(room, actorUserId);
+        if (!ownedSeat) return { kind: 'error', code: 'SEAT_NOT_OWNED' };
+
+        if (ownedSeat.ready === request.ready) {
+          return { kind: 'success', room, presence: null };
+        }
+
+        ownedSeat.ready = request.ready;
+        room.version += 1;
+
+        return { kind: 'success', room, presence: null };
       });
     },
 
-    async connectPresence(actorUserId) {
-      const room = await options.repository.bootstrapSingletonRoom();
-      await options.presenceStore.connect({ roomId: room.roomId, userId: actorUserId });
-      return loadView(room);
+    async leaveRoom(actorUserId, roomId, request) {
+      if (!actorUserId) return roomError('NOT_ALLOWED');
+
+      try {
+        const result = await options.repository.withLockedRoom(roomId, async (tx, room) => {
+          if (!hasMembership(room, actorUserId)) return roomError('NOT_ROOM_MEMBER');
+
+          if (room.status === 'ACTIVE' || room.currentMatchId !== null) {
+            return roomError('ROOM_ALREADY_ACTIVE');
+          }
+
+          if (room.version !== request.expectedRoomVersion) {
+            return roomError('STALE_ROOM_VERSION');
+          }
+
+          const next = cloneRoom(room);
+          const ownedSeat = seatOfUser(next, actorUserId);
+
+          if (ownedSeat) {
+            ownedSeat.userId = null;
+            ownedSeat.ready = false;
+          }
+
+          next.version += 1;
+
+          // Important ordering:
+          // clear RoomSeat ownership first, then remove RoomMembership.
+          // This keeps the RoomSeat -> RoomMembership FK valid throughout the transaction.
+          await persistRoom(tx, next);
+
+          await tx.roomMembership.delete({
+            where: {
+              roomKey_userId: {
+                roomKey: roomId,
+                userId: actorUserId,
+              },
+            },
+          });
+
+          const saved = await options.repository.loadRoomInTransaction(tx, roomId);
+          if (!saved) return roomError('ROOM_NOT_FOUND');
+
+          return roomSuccess(await loadView(saved, actorUserId));
+        });
+
+        if (result.ok) {
+          await options.presenceStore.disconnect({ roomId, userId: actorUserId });
+        }
+
+        return result;
+      } catch (error) {
+        if (isRoomNotFoundError(error)) return roomError('ROOM_NOT_FOUND');
+        throw error;
+      }
     },
 
-    async disconnectPresence(actorUserId) {
-      const room = await options.repository.bootstrapSingletonRoom();
-      await options.presenceStore.disconnect({ roomId: room.roomId, userId: actorUserId });
-      return loadView(room);
+    async startMatch(actorUserId, roomId, request) {
+      if (!actorUserId) return startMatchError('NOT_ALLOWED');
+
+      try {
+        return await options.repository.withLockedRoom(roomId, async (tx, room) => {
+          if (!hasMembership(room, actorUserId)) {
+            return startMatchError('NOT_ROOM_MEMBER');
+          }
+
+          if (room.status === 'CLOSED') {
+            return startMatchError('ROOM_CLOSED');
+          }
+
+          if (room.status !== 'WAITING' || room.currentMatchId !== null) {
+            return startMatchError('ROOM_ALREADY_ACTIVE');
+          }
+
+          if (room.version !== request.expectedRoomVersion) {
+            return startMatchError('STALE_ROOM_VERSION');
+          }
+
+          const presence = await options.presenceStore.snapshot(room.roomId);
+          const seatedParticipants = room.seats
+            .filter((seat): seat is typeof seat & { userId: string } => seat.userId !== null)
+            .map((seat) => ({
+              userId: seat.userId,
+              seatIndex: seat.seatIndex,
+              ready: seat.ready,
+              connected: presence.get(seat.userId) ?? false,
+            }))
+            .sort((left, right) => left.seatIndex - right.seatIndex);
+
+          if (!seatedParticipants.some((participant) => participant.userId === actorUserId)) {
+            return startMatchError('SEAT_NOT_OWNED');
+          }
+
+          if (seatedParticipants.length < 2) {
+            return startMatchError('ROOM_NOT_READY');
+          }
+
+          if (seatedParticipants.length > 4) {
+            return startMatchError('ROOM_FULL');
+          }
+
+          if (seatedParticipants.some((participant) => !participant.ready)) {
+            return startMatchError('ROOM_NOT_READY');
+          }
+
+          if (seatedParticipants.some((participant) => !participant.connected)) {
+            return startMatchError('SEATED_PARTICIPANT_DISCONNECTED');
+          }
+
+          const firstPlayerId = selectFirstPlayerId(seatedParticipants);
+          if (!seatedParticipants.some((participant) => participant.userId === firstPlayerId)) {
+            return startMatchError('NOT_ALLOWED');
+          }
+
+          const seatOrder = seatedParticipants.map((participant) => participant.userId);
+          const initialState = createActiveGameState({
+            playerCount: seatOrder.length as 2 | 3 | 4,
+            seatOrder: seatOrder as
+              | [string, string]
+              | [string, string, string]
+              | [string, string, string, string],
+            firstPlayerId,
+          });
+
+          const match = options.matchStore
+            ? await options.matchStore.createInitialMatch({
+                tx,
+                roomId: room.roomId,
+                firstPlayerId,
+                seatOrder,
+                snapshot: initialState as Prisma.InputJsonValue,
+              })
+            : await tx.match.create({
+                data: {
+                  roomKey: room.roomId,
+                  firstPlayerId,
+                  seatOrder,
+                  snapshot: initialState as Prisma.InputJsonValue,
+                },
+                select: { id: true },
+              });
+
+          const saved = await persistRoom(tx, {
+            ...room,
+            status: 'ACTIVE',
+            version: room.version + 1,
+            currentMatchId: match.id,
+          });
+
+          return {
+            ok: true,
+            room: await loadView(saved, actorUserId),
+            matchId: match.id,
+          };
+        });
+      } catch (error) {
+        if (isRoomNotFoundError(error)) {
+          return startMatchError('ROOM_NOT_FOUND');
+        }
+        throw error;
+      }
     },
 
-    async viewRoom() {
-      return loadView();
+    async connectPresence(actorUserId, roomId) {
+      const room = await options.repository.loadRoom(roomId);
+      if (!room) throw new Error('ROOM_NOT_FOUND');
+
+      await options.presenceStore.connect({ roomId, userId: actorUserId });
+      return loadView(room, actorUserId);
+    },
+
+    async disconnectPresence(actorUserId, roomId) {
+      const room = await options.repository.loadRoom(roomId);
+      if (!room) throw new Error('ROOM_NOT_FOUND');
+
+      await options.presenceStore.disconnect({ roomId, userId: actorUserId });
+      return loadView(room, actorUserId);
     },
   };
 }

@@ -22,6 +22,11 @@ async function createMatch() {
   await database.prisma.room.create({
     data: {
       key: 'single-room',
+      code: 'MAIN',
+      status: 'WAITING',
+      memberships: {
+        create: [{ userId: 'user-1' }, { userId: 'user-2' }],
+      },
       seats: {
         create: [
           { seatIndex: 0, userId: 'user-1', ready: true },
@@ -47,7 +52,7 @@ async function createMatch() {
   });
   await database.prisma.room.update({
     where: { key: 'single-room' },
-    data: { currentMatchId: match.id },
+    data: { status: 'ACTIVE', currentMatchId: match.id },
   });
   return match;
 }
@@ -153,7 +158,7 @@ describe('transactional realtime command processor', () => {
       ],
     });
     expect(await database.prisma.outboxRow.count({ where: { matchId: match.id } })).toBe(1);
-    expect(await roomRepository.loadSingletonRoom()).toMatchObject({ currentMatchId: null });
+    expect(await roomRepository.loadRoom('single-room')).toMatchObject({ currentMatchId: null });
   });
 
   it('does not create a match result for a non-terminal command', async () => {
@@ -275,7 +280,7 @@ describe('transactional realtime command processor', () => {
     expect(await database.prisma.outboxRow.count()).toBe(0);
   });
 
-  it('persists a terminal surrender, outbox, and matching EPIC-04 room reset atomically', async () => {
+  it('persists a terminal surrender, outbox, and matching room reset atomically', async () => {
     const match = await createMatch();
     const completion = createMatchCompletionService({ repository: roomRepository });
     const onTerminalMatch = vi.fn(
@@ -324,7 +329,7 @@ describe('transactional realtime command processor', () => {
     ).toBeGreaterThan(0);
     expect(await database.prisma.processedAction.count({ where: { matchId: match.id } })).toBe(1);
     expect(await database.prisma.outboxRow.count({ where: { matchId: match.id } })).toBe(1);
-    expect(await roomRepository.loadSingletonRoom()).toMatchObject({
+    expect(await roomRepository.loadRoom('single-room')).toMatchObject({
       currentMatchId: null,
       seats: [
         { seatIndex: 0, userId: null, ready: false },
@@ -375,7 +380,7 @@ describe('transactional realtime command processor', () => {
     expect(await database.prisma.outboxRow.count()).toBe(0);
     expect(await database.prisma.matchResult.count()).toBe(0);
     expect(await database.prisma.matchParticipantResult.count()).toBe(0);
-    expect(await roomRepository.loadSingletonRoom()).toMatchObject({ currentMatchId: match.id });
+    expect(await roomRepository.loadRoom('single-room')).toMatchObject({ currentMatchId: match.id });
   });
 
   it('rolls back a terminal transition and room reset when outbox persistence fails', async () => {
@@ -409,7 +414,7 @@ describe('transactional realtime command processor', () => {
     expect(await database.prisma.matchEvent.count()).toBe(0);
     expect(await database.prisma.processedAction.count()).toBe(0);
     expect(await database.prisma.outboxRow.count()).toBe(0);
-    expect(await roomRepository.loadSingletonRoom()).toMatchObject({ currentMatchId: match.id });
+    expect(await roomRepository.loadRoom('single-room')).toMatchObject({ currentMatchId: match.id });
   });
 
   it('does not reset a newer room match when a stale terminal match completes', async () => {
@@ -449,7 +454,7 @@ describe('transactional realtime command processor', () => {
       database.prisma.match.findUniqueOrThrow({ where: { id: matchA.id } }),
     ).resolves.toMatchObject({ status: 'FINISHED' });
     expect(await database.prisma.outboxRow.count({ where: { matchId: matchA.id } })).toBe(1);
-    expect(await roomRepository.loadSingletonRoom()).toMatchObject({
+    expect(await roomRepository.loadRoom('single-room')).toMatchObject({
       currentMatchId: matchB.id,
       seats: expect.arrayContaining([
         { seatIndex: 0, userId: 'user-1', ready: true },

@@ -91,7 +91,7 @@ async function seedResult(input: {
   await database.prisma.room.upsert({
     where: { key: roomKey },
     update: {},
-    create: { key: roomKey },
+    create: { key: roomKey, code: roomKey === 'single-room' ? 'MAIN' : roomKey.slice(0, 4).toUpperCase(), status: 'WAITING' },
   });
   const startedAt = new Date(new Date(input.finishedAt).getTime() - 60_000);
   const match = await database.prisma.match.create({

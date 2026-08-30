@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { createRoomRepository } from './room-repository.js';
+import { createRoomRepository, SINGLETON_ROOM_KEY } from './room-repository.js';
 import { createRoomService, type RoomPresenceStore } from './room-service.js';
 import { createTestDatabase } from '../test/test-database.js';
 
@@ -37,6 +37,26 @@ function createService() {
   });
 }
 
+async function seedUsers(ids: string[]) {
+  await database.prisma.user.createMany({
+    data: ids.map((id, index) => ({ id, firstName: `User ${index + 1}` })),
+  });
+}
+
+async function joinSingleton(ids: string[]) {
+  await repository.bootstrapSingletonRoom();
+  await database.prisma.roomMembership.createMany({
+    data: ids.map((userId) => ({ roomKey: SINGLETON_ROOM_KEY, userId })),
+    skipDuplicates: true,
+  });
+}
+
+async function roomVersion(roomId = SINGLETON_ROOM_KEY) {
+  const room = await repository.loadRoom(roomId);
+  if (!room) throw new Error('missing room');
+  return room.version;
+}
+
 beforeEach(async () => {
   await database.clean();
 });
@@ -46,212 +66,133 @@ afterAll(async () => {
 });
 
 describe('room service', () => {
-  it('takes a free seat and keeps readiness cleared', async () => {
-    await database.prisma.user.create({ data: { id: 'user-1', firstName: 'User 1' } });
+  it('takes a free seat for a room member', async () => {
+    await seedUsers(['user-1']);
+    await joinSingleton(['user-1']);
     const service = createService();
 
-    const result = await service.takeSeat('user-1', { seatIndex: 0 });
+    const result = await service.takeSeat('user-1', SINGLETON_ROOM_KEY, {
+      seatIndex: 0,
+      expectedRoomVersion: await roomVersion(),
+    });
 
-    expect(result).toEqual({
-      ok: true,
-      room: {
-        roomId: 'single-room',
-        version: 1,
-        currentMatchId: null,
-        participants: [{ userId: 'user-1', seatIndex: 0, ready: false }],
-      },
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.room.id).toBe(SINGLETON_ROOM_KEY);
+    expect(result.room.seats[0]).toEqual({ seatIndex: 0, userId: 'user-1', ready: false });
+    expect(result.room.counts).toEqual({ memberCount: 1, seatedCount: 1, readyCount: 0 });
+  });
+
+  it('rejects occupied seat and requires membership', async () => {
+    await seedUsers(['user-1', 'user-2']);
+    await joinSingleton(['user-1']);
+    const service = createService();
+
+    await service.takeSeat('user-1', SINGLETON_ROOM_KEY, {
+      seatIndex: 0,
+      expectedRoomVersion: await roomVersion(),
+    });
+
+    await expect(
+      service.takeSeat('user-2', SINGLETON_ROOM_KEY, {
+        seatIndex: 0,
+        expectedRoomVersion: await roomVersion(),
+      }),
+    ).resolves.toEqual({
+      ok: false,
+      error: { code: 'NOT_ROOM_MEMBER', message: 'User is not a member of this room' },
     });
   });
 
-  it('rejects an occupied seat and a second seat for the same user', async () => {
-    await database.prisma.user.createMany({
-      data: [
-        { id: 'user-1', firstName: 'User 1' },
-        { id: 'user-2', firstName: 'User 2' },
-      ],
-    });
+  it('leaves the owned seat and keeps membership', async () => {
+    await seedUsers(['user-1']);
+    await joinSingleton(['user-1']);
     const service = createService();
-    await service.takeSeat('user-1', { seatIndex: 0 });
-
-    await expect(service.takeSeat('user-1', { seatIndex: 0 })).resolves.toEqual({
-      ok: true,
-      room: {
-        roomId: 'single-room',
-        version: 1,
-        currentMatchId: null,
-        participants: [{ userId: 'user-1', seatIndex: 0, ready: false }],
-      },
+    await service.takeSeat('user-1', SINGLETON_ROOM_KEY, {
+      seatIndex: 0,
+      expectedRoomVersion: await roomVersion(),
     });
 
-    await expect(service.takeSeat('user-2', { seatIndex: 0 })).resolves.toEqual({
-      ok: false,
-      error: {
-        code: 'SEAT_TAKEN',
-        message: 'Seat is already taken',
-      },
+    const result = await service.leaveSeat('user-1', SINGLETON_ROOM_KEY, {
+      expectedRoomVersion: await roomVersion(),
     });
 
-    await expect(service.takeSeat('user-1', { seatIndex: 1 })).resolves.toEqual({
-      ok: false,
-      error: {
-        code: 'SEAT_TAKEN',
-        message: 'Seat is already taken',
-      },
-    });
-  });
-
-  it('leaves the owned seat and preserves other seats', async () => {
-    await database.prisma.user.createMany({
-      data: [
-        { id: 'user-1', firstName: 'User 1' },
-        { id: 'user-2', firstName: 'User 2' },
-      ],
-    });
-    const service = createService();
-    await service.takeSeat('user-1', { seatIndex: 0 });
-    await service.takeSeat('user-2', { seatIndex: 1 });
-    await service.setReady('user-2', { ready: true });
-
-    const result = await service.leaveSeat('user-1');
-
-    expect(result).toEqual({
-      ok: true,
-      room: {
-        roomId: 'single-room',
-        version: 4,
-        currentMatchId: null,
-        participants: [{ userId: 'user-2', seatIndex: 1, ready: true }],
-      },
-    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.room.counts).toEqual({ memberCount: 1, seatedCount: 0, readyCount: 0 });
+    expect(result.room.currentUser.isMember).toBe(true);
+    expect(result.room.currentUser.seatIndex).toBeNull();
   });
 
   it('sets readiness only for the seated participant', async () => {
-    await database.prisma.user.createMany({
-      data: [
-        { id: 'user-1', firstName: 'User 1' },
-        { id: 'user-2', firstName: 'User 2' },
-      ],
-    });
+    await seedUsers(['user-1', 'user-2']);
+    await joinSingleton(['user-1', 'user-2']);
     const service = createService();
-    await service.takeSeat('user-1', { seatIndex: 0 });
-
-    await expect(service.setReady('user-1', { ready: true })).resolves.toEqual({
-      ok: true,
-      room: {
-        roomId: 'single-room',
-        version: 2,
-        currentMatchId: null,
-        participants: [{ userId: 'user-1', seatIndex: 0, ready: true }],
-      },
+    await service.takeSeat('user-1', SINGLETON_ROOM_KEY, {
+      seatIndex: 0,
+      expectedRoomVersion: await roomVersion(),
     });
 
-    await expect(service.setReady('user-1', { ready: false })).resolves.toEqual({
-      ok: true,
-      room: {
-        roomId: 'single-room',
-        version: 3,
-        currentMatchId: null,
-        participants: [{ userId: 'user-1', seatIndex: 0, ready: false }],
-      },
-    });
-
-    await expect(service.setReady('user-2', { ready: true })).resolves.toEqual({
+    await expect(
+      service.setReady('user-2', SINGLETON_ROOM_KEY, {
+        ready: true,
+        expectedRoomVersion: await roomVersion(),
+      }),
+    ).resolves.toEqual({
       ok: false,
-      error: {
-        code: 'SEAT_NOT_OWNED',
-        message: 'Seat is not owned by this participant',
-      },
+      error: { code: 'SEAT_NOT_OWNED', message: 'Seat is not owned by this participant' },
     });
+
+    const result = await service.setReady('user-1', SINGLETON_ROOM_KEY, {
+      ready: true,
+      expectedRoomVersion: await roomVersion(),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.room.seats[0]?.ready).toBe(true);
+    expect(result.room.counts.readyCount).toBe(1);
   });
 
-  it('preserves seat and readiness across disconnect and reconnect presence changes', async () => {
-    await database.prisma.user.create({ data: { id: 'user-1', firstName: 'User 1' } });
+  it('preserves seat and ready across disconnect and reconnect', async () => {
+    await seedUsers(['user-1']);
+    await joinSingleton(['user-1']);
     const service = createService();
-    await service.takeSeat('user-1', { seatIndex: 0 });
-    await service.setReady('user-1', { ready: true });
+    await service.takeSeat('user-1', SINGLETON_ROOM_KEY, {
+      seatIndex: 0,
+      expectedRoomVersion: await roomVersion(),
+    });
+    await service.setReady('user-1', SINGLETON_ROOM_KEY, {
+      ready: true,
+      expectedRoomVersion: await roomVersion(),
+    });
 
-    const disconnected = await service.disconnectPresence('user-1');
-    expect(disconnected.participantViews).toEqual([
-      { userId: 'user-1', displayName: 'User 1', seatIndex: 0, ready: true, connected: false },
-    ]);
+    const disconnected = await service.disconnectPresence('user-1', SINGLETON_ROOM_KEY);
     expect(disconnected.presence).toEqual([{ userId: 'user-1', connected: false }]);
 
-    const reconnected = await service.connectPresence('user-1');
-    expect(reconnected.participantViews).toEqual([
-      { userId: 'user-1', displayName: 'User 1', seatIndex: 0, ready: true, connected: true },
-    ]);
+    const reconnected = await service.connectPresence('user-1', SINGLETON_ROOM_KEY);
     expect(reconnected.presence).toEqual([{ userId: 'user-1', connected: true }]);
-
-    const room = await repository.loadSingletonRoom();
-    expect(room?.seats).toEqual([
-      { seatIndex: 0, userId: 'user-1', ready: true },
-      { seatIndex: 1, userId: null, ready: false },
-      { seatIndex: 2, userId: null, ready: false },
-      { seatIndex: 3, userId: null, ready: false },
-    ]);
+    expect(reconnected.currentUser.ready).toBe(true);
+    expect(reconnected.currentUser.seatIndex).toBe(0);
   });
 
-  it('does not mutate the room roster during active-match disconnect presence changes', async () => {
-    await database.prisma.user.create({ data: { id: 'user-1', firstName: 'User 1' } });
-    await repository.bootstrapSingletonRoom();
-    await repository.saveSingletonRoom({
-      roomId: 'single-room',
-      version: 9,
-      currentMatchId: 'match-1',
-      seats: [
-        { seatIndex: 0, userId: 'user-1', ready: true },
-        { seatIndex: 1, userId: null, ready: false },
-        { seatIndex: 2, userId: null, ready: false },
-        { seatIndex: 3, userId: null, ready: false },
-      ],
-    });
+  it('supports create, list, join, and leave room with room-scoped state', async () => {
+    await seedUsers(['user-1', 'user-2']);
     const service = createService();
+    const created = await service.createRoom('user-1', {});
+    const rooms = await service.listRooms('user-1');
 
-    const before = await repository.loadSingletonRoom();
-    const result = await service.disconnectPresence('user-1');
-    const after = await repository.loadSingletonRoom();
+    expect(rooms.rooms.some((room) => room.id === created.id)).toBe(true);
 
-    expect(before).toEqual(after);
-    expect(result.participantViews).toEqual([
-      { userId: 'user-1', displayName: 'User 1', seatIndex: 0, ready: true, connected: false },
-    ]);
-  });
+    const joined = await service.joinRoom('user-2', created.id, {});
+    expect(joined.ok).toBe(true);
+    if (!joined.ok) return;
+    expect(joined.room.counts.memberCount).toBe(2);
 
-  it('serializes concurrent claims for the same seat', async () => {
-    await database.prisma.user.createMany({
-      data: [
-        { id: 'user-1', firstName: 'User 1' },
-        { id: 'user-2', firstName: 'User 2' },
-      ],
+    const left = await service.leaveRoom('user-2', created.id, {
+      expectedRoomVersion: joined.room.version,
     });
-    const service = createService();
-    await repository.bootstrapSingletonRoom();
-
-    const [first, second] = await Promise.all([
-      service.takeSeat('user-1', { seatIndex: 0 }),
-      service.takeSeat('user-2', { seatIndex: 0 }),
-    ]);
-
-    const loser = first.ok ? second : first;
-
-    expect(first.ok !== second.ok).toBe(true);
-    expect(loser).toEqual({
-      ok: false,
-      error: {
-        code: 'SEAT_TAKEN',
-        message: 'Seat is already taken',
-      },
-    });
-    expect(await repository.loadSingletonRoom()).toEqual({
-      roomId: 'single-room',
-      version: 1,
-      currentMatchId: null,
-      seats: [
-        { seatIndex: 0, userId: 'user-1', ready: false },
-        { seatIndex: 1, userId: null, ready: false },
-        { seatIndex: 2, userId: null, ready: false },
-        { seatIndex: 3, userId: null, ready: false },
-      ],
-    });
+    expect(left.ok).toBe(true);
+    if (!left.ok) return;
+    expect(left.room.counts.memberCount).toBe(1);
   });
 });

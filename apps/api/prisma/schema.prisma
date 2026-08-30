@@ -27,6 +27,7 @@ model User {
   updatedAt    DateTime      @updatedAt
   sessions     AuthSession[]
   roomSeats    RoomSeat[]
+  roomMembership RoomMembership?
 }
 
 model AuthSession {
@@ -45,12 +46,29 @@ model AuthSession {
 
 model Room {
   key           String     @id
+  code          String     @unique
+  status        String     @default("WAITING")
   version       Int        @default(0)
-  currentMatchId String?
+  currentMatchId String?    @unique
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
   seats         RoomSeat[]
-  matches       Match[]
+  memberships   RoomMembership[]
+  matches       Match[]     @relation("RoomMatches")
+  currentMatch  Match?      @relation("RoomCurrentMatch", fields: [currentMatchId], references: [id], onDelete: SetNull)
+}
+
+model RoomMembership {
+  id        String   @id @default(cuid())
+  roomKey   String
+  userId    String   @unique
+  joinedAt  DateTime @default(now())
+  room      Room     @relation(fields: [roomKey], references: [key], onDelete: Restrict)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  seats     RoomSeat[]
+
+  @@unique([roomKey, userId])
+  @@index([roomKey])
 }
 
 model Match {
@@ -66,7 +84,8 @@ model Match {
   finishedAt     DateTime?
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
-  room           Room              @relation(fields: [roomKey], references: [key], onDelete: Cascade)
+  room           Room              @relation("RoomMatches", fields: [roomKey], references: [key], onDelete: Restrict)
+  currentForRoom Room?             @relation("RoomCurrentMatch")
   events         MatchEvent[]
   actions        ProcessedAction[]
   outboxRows     OutboxRow[]
@@ -158,6 +177,7 @@ model RoomSeat {
 
   room Room @relation(fields: [roomKey], references: [key], onDelete: Cascade)
   user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  membership RoomMembership? @relation(fields: [roomKey, userId], references: [roomKey, userId], onDelete: Restrict)
 
   @@id([roomKey, seatIndex])
   @@index([roomKey])

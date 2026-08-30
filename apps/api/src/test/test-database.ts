@@ -28,7 +28,7 @@ export function createTestDatabase(
     prisma,
     clean: () =>
       prisma.$executeRawUnsafe(
-        'TRUNCATE TABLE "MatchParticipantResult", "MatchResult", "OutboxRow", "ProcessedAction", "MatchEvent", "RoomSeat", "Match", "Room", "AuthSession", "User" CASCADE',
+        'TRUNCATE TABLE "MatchParticipantResult", "MatchResult", "OutboxRow", "ProcessedAction", "MatchEvent", "RoomSeat", "RoomMembership", "Match", "Room", "AuthSession", "User" CASCADE',
       ),
   };
 }

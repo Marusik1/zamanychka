@@ -1,118 +1,179 @@
+import { randomUUID } from 'node:crypto';
 import type { Prisma } from '../generated/prisma/client.js';
 import type { AppPrismaClient } from '../infrastructure/prisma.js';
-import type { PersistedRoom, RoomSeatIndex, RoomSeatRecord } from './domain.js';
+import type { PersistedRoom, RoomSeatIndex } from './domain.js';
 
 export const SINGLETON_ROOM_KEY = 'single-room';
-const DEFAULT_SEAT_INDICES: readonly RoomSeatIndex[] = [0, 1, 2, 3];
-
+const SEATS: readonly RoomSeatIndex[] = [0, 1, 2, 3];
 type TxClient = Prisma.TransactionClient;
-
-function sortSeats(seats: readonly RoomSeatRecord[]): RoomSeatRecord[] {
-  return [...seats].sort((left, right) => left.seatIndex - right.seatIndex);
-}
 
 function toDomain(room: {
   key: string;
+  code: string;
+  status: string;
   version: number;
   currentMatchId: string | null;
   seats: { seatIndex: number; userId: string | null; ready: boolean }[];
+  memberships: { userId: string; joinedAt: Date }[];
 }): PersistedRoom {
   return {
     roomId: room.key,
+    code: room.code,
+    status: room.status as PersistedRoom['status'],
     version: room.version,
     currentMatchId: room.currentMatchId,
-    seats: sortSeats(
-      room.seats.map((seat) => ({
-        seatIndex: seat.seatIndex as 0 | 1 | 2 | 3,
+    members: room.memberships
+      .map((membership) => ({
+        userId: membership.userId,
+        joinedAt: membership.joinedAt.toISOString(),
+      }))
+      .sort(
+        (left, right) =>
+          left.joinedAt.localeCompare(right.joinedAt) || left.userId.localeCompare(right.userId),
+      ),
+    seats: room.seats
+      .map((seat) => ({
+        seatIndex: seat.seatIndex as RoomSeatIndex,
         userId: seat.userId,
         ready: seat.ready,
-      })),
-    ),
+      }))
+      .sort((left, right) => left.seatIndex - right.seatIndex),
   };
 }
 
-async function ensureSingletonRoom(tx: TxClient) {
-  await tx.room.upsert({
-    where: { key: SINGLETON_ROOM_KEY },
-    create: {
-      key: SINGLETON_ROOM_KEY,
-      seats: {
-        create: DEFAULT_SEAT_INDICES.map((seatIndex) => ({
-          seatIndex,
-          ready: false,
-        })),
-      },
+async function loadRoomTx(tx: TxClient, roomId: string) {
+  const row = await tx.room.findUnique({
+    where: { key: roomId },
+    include: {
+      seats: { orderBy: { seatIndex: 'asc' } },
+      memberships: { orderBy: [{ joinedAt: 'asc' }, { userId: 'asc' }] },
     },
-    update: {},
   });
+  return row ? toDomain(row) : null;
 }
 
-async function loadRoom(tx: TxClient): Promise<PersistedRoom | null> {
-  const room = await tx.room.findUnique({
-    where: { key: SINGLETON_ROOM_KEY },
-    include: { seats: { orderBy: { seatIndex: 'asc' } } },
-  });
-  return room ? toDomain(room) : null;
-}
-
-export async function lockSingletonRoomInTransaction(tx: TxClient): Promise<PersistedRoom> {
-  await tx.$queryRaw`
-    SELECT "key"
-    FROM "Room"
-    WHERE "key" = ${SINGLETON_ROOM_KEY}
-    FOR UPDATE
-  `;
-  const room = await loadRoom(tx);
-  if (!room) {
-    throw new Error('singleton room lock failed');
-  }
+export async function lockRoomInTransaction(tx: TxClient, roomId: string): Promise<PersistedRoom> {
+  await tx.$queryRaw`SELECT "key" FROM "Room" WHERE "key" = ${roomId} FOR UPDATE`;
+  const room = await loadRoomTx(tx, roomId);
+  if (!room) throw new Error('ROOM_NOT_FOUND');
   return room;
 }
 
-export async function persistSingletonRoom(
-  tx: TxClient,
-  room: PersistedRoom,
-): Promise<PersistedRoom> {
+export async function persistRoom(tx: TxClient, room: PersistedRoom) {
   await tx.room.update({
-    where: { key: SINGLETON_ROOM_KEY },
+    where: { key: room.roomId },
     data: {
       version: room.version,
+      status: room.status,
       currentMatchId: room.currentMatchId,
     },
   });
 
   for (const seat of room.seats) {
-    await tx.roomSeat.upsert({
+    await tx.roomSeat.update({
       where: {
         roomKey_seatIndex: {
-          roomKey: SINGLETON_ROOM_KEY,
+          roomKey: room.roomId,
           seatIndex: seat.seatIndex,
         },
       },
-      create: {
-        roomKey: SINGLETON_ROOM_KEY,
-        seatIndex: seat.seatIndex,
-        userId: seat.userId,
-        ready: seat.ready,
-      },
-      update: {
+      data: {
         userId: seat.userId,
         ready: seat.ready,
       },
     });
   }
 
-  const saved = await loadRoom(tx);
-  if (!saved) {
-    throw new Error('singleton room save failed');
-  }
+  const saved = await loadRoomTx(tx, room.roomId);
+  if (!saved) throw new Error('ROOM_NOT_FOUND');
   return saved;
 }
 
+export const lockSingletonRoomInTransaction = (tx: TxClient) =>
+  lockRoomInTransaction(tx, SINGLETON_ROOM_KEY);
+export const persistSingletonRoom = (tx: TxClient, room: PersistedRoom) => persistRoom(tx, room);
+
 export function createRoomRepository(prisma: AppPrismaClient) {
+  async function ensureLegacy(tx: TxClient) {
+    await tx.room.upsert({
+      where: { key: SINGLETON_ROOM_KEY },
+      create: {
+        key: SINGLETON_ROOM_KEY,
+        code: 'MAIN',
+        seats: { create: SEATS.map((seatIndex) => ({ seatIndex })) },
+      },
+      update: {},
+    });
+  }
+
   return {
-    async loadParticipantDisplayNames(userIds: readonly string[]): Promise<ReadonlyMap<string, string>> {
-      if (userIds.length === 0) return new Map();
+    async createRoom(userId: string) {
+      return prisma.$transaction(async (tx) => {
+        const existing = await tx.roomMembership.findUnique({ where: { userId } });
+        if (existing) {
+          const existingRoom = await loadRoomTx(tx, existing.roomKey);
+          if (!existingRoom) throw new Error('ROOM_NOT_FOUND');
+          return existingRoom;
+        }
+
+        const roomId = randomUUID();
+        const code = randomUUID().replaceAll('-', '').slice(0, 4).toUpperCase();
+
+        await tx.room.create({
+          data: {
+            key: roomId,
+            code,
+            seats: { create: SEATS.map((seatIndex) => ({ seatIndex })) },
+            memberships: { create: { userId } },
+          },
+        });
+
+        const created = await loadRoomTx(tx, roomId);
+        if (!created) throw new Error('ROOM_NOT_FOUND');
+        return created;
+      });
+    },
+
+    async listRooms() {
+      return (
+        await prisma.room.findMany({
+          where: { status: { not: 'CLOSED' } },
+          include: { seats: true, memberships: true },
+          orderBy: { createdAt: 'asc' },
+        })
+      ).map(toDomain);
+    },
+
+    async loadRoom(roomId: string) {
+      return prisma.$transaction((tx) => loadRoomTx(tx, roomId));
+    },
+
+    async loadRoomInTransaction(tx: TxClient, roomId: string) {
+      return loadRoomTx(tx, roomId);
+    },
+
+    async loadMembershipForUser(userId: string) {
+      return prisma.roomMembership.findUnique({ where: { userId } });
+    },
+
+    async loadMatchRoomKey(matchId: string) {
+      return prisma.match.findUnique({
+        where: { id: matchId },
+        select: { roomKey: true },
+      });
+    },
+
+    async withLockedRoom<T>(
+      roomId: string,
+      handler: (tx: TxClient, room: PersistedRoom) => Promise<T>,
+    ) {
+      return prisma.$transaction(async (tx) =>
+        handler(tx, await lockRoomInTransaction(tx, roomId)),
+      );
+    },
+
+    async loadParticipantDisplayNames(userIds: readonly string[]) {
+      if (!userIds.length) return new Map<string, string>();
 
       const users = await prisma.user.findMany({
         where: { id: { in: [...userIds] } },
@@ -122,39 +183,35 @@ export function createRoomRepository(prisma: AppPrismaClient) {
       return new Map(
         users.map((user) => [
           user.id,
-          [user.firstName, user.lastName].filter(Boolean).join(' '),
+          [user.firstName, user.lastName].filter(Boolean).join(' ') || user.id,
         ]),
       );
     },
 
-    async bootstrapSingletonRoom(): Promise<PersistedRoom> {
+    async bootstrapSingletonRoom() {
       return prisma.$transaction(async (tx) => {
-        await ensureSingletonRoom(tx);
-        const room = await loadRoom(tx);
-        if (!room) {
-          throw new Error('singleton room bootstrap failed');
-        }
-        return room;
+        await ensureLegacy(tx);
+        return (await loadRoomTx(tx, SINGLETON_ROOM_KEY))!;
       });
     },
 
-    async loadSingletonRoom(): Promise<PersistedRoom | null> {
-      return prisma.$transaction(async (tx) => loadRoom(tx));
+    async loadSingletonRoom() {
+      return prisma.$transaction((tx) => loadRoomTx(tx, SINGLETON_ROOM_KEY));
     },
 
-    async saveSingletonRoom(room: PersistedRoom): Promise<PersistedRoom> {
+    async saveSingletonRoom(room: PersistedRoom) {
       return prisma.$transaction(async (tx) => {
-        await ensureSingletonRoom(tx);
-        return persistSingletonRoom(tx, room);
+        await ensureLegacy(tx);
+        return persistRoom(tx, room);
       });
     },
 
     async withLockedSingletonRoom<T>(
       handler: (tx: TxClient, room: PersistedRoom) => Promise<T>,
-    ): Promise<T> {
+    ) {
       return prisma.$transaction(async (tx) => {
-        await ensureSingletonRoom(tx);
-        return handler(tx, await lockSingletonRoomInTransaction(tx));
+        await ensureLegacy(tx);
+        return handler(tx, await lockRoomInTransaction(tx, SINGLETON_ROOM_KEY));
       });
     },
   };

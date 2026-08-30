@@ -8,7 +8,9 @@ const database = createTestDatabase();
 const repository = createMatchRepository(database.prisma);
 
 async function createMatch() {
-  await database.prisma.room.create({ data: { key: 'single-room' } });
+  await database.prisma.room.create({
+    data: { key: 'single-room', code: 'MAIN', status: 'WAITING' },
+  });
   return database.prisma.match.create({
     data: {
       roomKey: 'single-room',
