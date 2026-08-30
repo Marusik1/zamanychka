@@ -107,6 +107,33 @@ function activeSnapshot(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function activeRoom(overrides: Record<string, unknown> = {}) {
+  return roomState({
+    status: 'ACTIVE',
+    currentMatchId: 'match-1',
+    counts: { memberCount: 2, seatedCount: 2, readyCount: 2 },
+    members: [
+      { userId: 'user-1', displayName: 'Алексей', joinedAt: '2026-08-30T10:00:00.000Z' },
+      { userId: 'user-2', displayName: 'Таисия', joinedAt: '2026-08-30T10:01:00.000Z' },
+    ],
+    seats: [
+      { seatIndex: 0, userId: 'user-1', ready: true },
+      { seatIndex: 1, userId: 'user-2', ready: true },
+      { seatIndex: 2, userId: null, ready: false },
+      { seatIndex: 3, userId: null, ready: false },
+    ],
+    currentUser: {
+      isMember: true,
+      seatIndex: 0,
+      ready: true,
+      canLeave: false,
+      canStart: false,
+      startBlockedReason: 'Матч уже идёт.',
+    },
+    ...overrides,
+  });
+}
+
 function createRoomApi(overrides?: Partial<RoomApi>): RoomApi {
   const currentRoom = roomState();
   const rooms = {
@@ -181,12 +208,7 @@ function renderAuthenticated(hash = '#/rooms', options?: { roomApi?: RoomApi; re
   };
 
   return render(
-    <App
-      createAdapter={adapter}
-      api={authenticatedApi()}
-      profileApi={profileApi()}
-      {...props}
-    />,
+    <App createAdapter={adapter} api={authenticatedApi()} profileApi={profileApi()} {...props} />,
   );
 }
 
@@ -361,7 +383,7 @@ describe('playable beta room flow', () => {
           version: 5,
           status: 'ACTIVE',
           currentMatchId: 'match-2',
-          currentUser: { ...startRoom.currentUser, canStart: false, startBlockedReason: 'Матч уже идет.' },
+          currentUser: { ...startRoom.currentUser, canStart: false, startBlockedReason: 'Матч уже идёт.' },
         },
       }),
     });
@@ -369,12 +391,175 @@ describe('playable beta room flow', () => {
 
     renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
 
-    const button = await screen.findByRole('button', { name: 'Начать матч' });
-    fireEvent.click(button);
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Начать матч' })).at(-1)!);
 
     await waitFor(() => expect(api.startMatch).toHaveBeenCalledWith('room-1', 4, expect.any(AbortSignal)));
     expect(realtime.ensureConnected).toHaveBeenCalled();
     expect(realtime.joinMatch).toHaveBeenCalledWith('match-2');
     expect(await screen.findByRole('heading', { name: 'Матч' })).toBeVisible();
+  });
+
+  it('shows an obvious roll action on my turn during WAITING_FOR_ROLL', async () => {
+    const api = createRoomApi({
+      getRoom: vi.fn().mockResolvedValue(activeRoom()),
+    });
+    const realtime = createRealtimeClient({
+      sync: vi.fn().mockResolvedValue({
+        mode: 'snapshot',
+        snapshot: activeSnapshot(),
+        watermark: { stateVersion: 0, lastSequence: 0 },
+      }),
+    });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
+
+    expect(await screen.findByRole('button', { name: 'Бросить кубик' })).toBeVisible();
+    expect(screen.getByText('Ваш ход')).toBeVisible();
+    expect(screen.getByText('Выпало: —')).toBeVisible();
+  });
+
+  it('does not render duplicate generic enter buttons and uses selectable pawns instead', async () => {
+    const api = createRoomApi({
+      getRoom: vi.fn().mockResolvedValue(activeRoom()),
+    });
+    const realtime = createRealtimeClient({
+      sync: vi.fn().mockResolvedValue({
+        mode: 'snapshot',
+        snapshot: activeSnapshot({ turnPhase: 'WAITING_FOR_ACTION', diceValue: 6 }),
+        watermark: { stateVersion: 0, lastSequence: 0 },
+      }),
+    });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
+
+    await screen.findByRole('heading', { name: 'Матч' });
+    expect(screen.queryAllByRole('button', { name: 'Вывести пешку' })).toHaveLength(0);
+    expect(screen.getByText('Выберите пешку')).toBeVisible();
+    expect(screen.getAllByRole('button', { name: 'Вывести красную пешку на поле' })).toHaveLength(4);
+  });
+
+  it('submits the selected pawn move with the canonical command payload', async () => {
+    const api = createRoomApi({
+      getRoom: vi.fn().mockResolvedValue(activeRoom()),
+    });
+    const realtime = createRealtimeClient({
+      sync: vi.fn().mockResolvedValue({
+        mode: 'snapshot',
+        snapshot: activeSnapshot({
+          turnPhase: 'WAITING_FOR_ACTION',
+          diceValue: 3,
+          pawns: [
+            { pawnId: 'user-1-pawn-1', playerId: 'user-1', color: 'RED', position: { zone: 'PERIMETER', progress: 1 } },
+            { pawnId: 'user-1-pawn-2', playerId: 'user-1', color: 'RED', position: { zone: 'OFF_BOARD' } },
+            { pawnId: 'user-1-pawn-3', playerId: 'user-1', color: 'RED', position: { zone: 'OFF_BOARD' } },
+            { pawnId: 'user-1-pawn-4', playerId: 'user-1', color: 'RED', position: { zone: 'OFF_BOARD' } },
+            { pawnId: 'user-2-pawn-1', playerId: 'user-2', color: 'YELLOW', position: { zone: 'OFF_BOARD' } },
+            { pawnId: 'user-2-pawn-2', playerId: 'user-2', color: 'YELLOW', position: { zone: 'OFF_BOARD' } },
+            { pawnId: 'user-2-pawn-3', playerId: 'user-2', color: 'YELLOW', position: { zone: 'OFF_BOARD' } },
+            { pawnId: 'user-2-pawn-4', playerId: 'user-2', color: 'YELLOW', position: { zone: 'OFF_BOARD' } },
+          ],
+        }),
+        watermark: { stateVersion: 0, lastSequence: 0 },
+      }),
+      sendCommand: vi.fn().mockResolvedValue({
+        ok: true,
+        matchId: 'match-1',
+        snapshot: activeSnapshot({
+          stateVersion: 1,
+          turnPhase: 'WAITING_FOR_ROLL',
+          diceValue: 3,
+          lastSequence: 1,
+          pawns: [
+            { pawnId: 'user-1-pawn-1', playerId: 'user-1', color: 'RED', position: { zone: 'PERIMETER', progress: 4 } },
+            { pawnId: 'user-1-pawn-2', playerId: 'user-1', color: 'RED', position: { zone: 'OFF_BOARD' } },
+            { pawnId: 'user-1-pawn-3', playerId: 'user-1', color: 'RED', position: { zone: 'OFF_BOARD' } },
+            { pawnId: 'user-1-pawn-4', playerId: 'user-1', color: 'RED', position: { zone: 'OFF_BOARD' } },
+            { pawnId: 'user-2-pawn-1', playerId: 'user-2', color: 'YELLOW', position: { zone: 'OFF_BOARD' } },
+            { pawnId: 'user-2-pawn-2', playerId: 'user-2', color: 'YELLOW', position: { zone: 'OFF_BOARD' } },
+            { pawnId: 'user-2-pawn-3', playerId: 'user-2', color: 'YELLOW', position: { zone: 'OFF_BOARD' } },
+            { pawnId: 'user-2-pawn-4', playerId: 'user-2', color: 'YELLOW', position: { zone: 'OFF_BOARD' } },
+          ],
+        }),
+        lastSequence: 1,
+      }),
+    });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
+
+    const movePawn = await screen.findByRole('button', { name: 'Переместить красную пешку 1' });
+    fireEvent.click(movePawn);
+
+    await waitFor(() =>
+      expect(realtime.sendCommand).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'MOVE_PAWN',
+          matchId: 'match-1',
+          pawnId: 'user-1-pawn-1',
+          expectedStateVersion: 0,
+        }),
+      ),
+    );
+  });
+
+  it('prevents duplicate gameplay submissions while a command is pending', async () => {
+    const api = createRoomApi({
+      getRoom: vi.fn().mockResolvedValue(activeRoom()),
+    });
+    let resolveCommand: ((value: unknown) => void) | null = null;
+    const realtime = createRealtimeClient({
+      sync: vi.fn().mockResolvedValue({
+        mode: 'snapshot',
+        snapshot: activeSnapshot(),
+        watermark: { stateVersion: 0, lastSequence: 0 },
+      }),
+      sendCommand: vi.fn().mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveCommand = resolve;
+          }),
+      ),
+    });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
+
+    const rollButton = await screen.findByRole('button', { name: 'Бросить кубик' });
+    fireEvent.click(rollButton);
+    fireEvent.click(rollButton);
+
+    await waitFor(() => expect(realtime.sendCommand).toHaveBeenCalledTimes(1));
+    expect(resolveCommand).not.toBeNull();
+    resolveCommand!({
+      ok: true,
+      matchId: 'match-1',
+      snapshot: activeSnapshot({ stateVersion: 1, diceValue: 6, turnPhase: 'WAITING_FOR_ACTION', lastSequence: 1 }),
+      lastSequence: 1,
+    });
+  });
+
+  it('shows the finished match state with a return-to-room action instead of gameplay controls', async () => {
+    const api = createRoomApi({
+      getRoom: vi
+        .fn()
+        .mockResolvedValueOnce(activeRoom())
+        .mockResolvedValueOnce(roomState({ version: 2, counts: { memberCount: 2, seatedCount: 0, readyCount: 0 } })),
+    });
+    const realtime = createRealtimeClient({
+      sync: vi.fn().mockResolvedValue({
+        mode: 'snapshot',
+        snapshot: activeSnapshot({
+          status: 'FINISHED',
+          currentPlayerId: null,
+          winnerPlayerId: 'user-1',
+          winReason: 'HOME_DIAGONAL_COMPLETED',
+        }),
+        watermark: { stateVersion: 0, lastSequence: 0 },
+      }),
+    });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
+
+    expect(await screen.findByText('Матч завершён')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Вернуться в комнату' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Бросить кубик' })).not.toBeInTheDocument();
   });
 });

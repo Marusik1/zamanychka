@@ -42,6 +42,12 @@ const colorLabels = {
   GREEN: 'Зелёные',
   YELLOW: 'Жёлтые',
 } as const;
+const colorActionLabels = {
+  RED: 'красную',
+  BLUE: 'синюю',
+  GREEN: 'зелёную',
+  YELLOW: 'жёлтую',
+} as const;
 
 function seatLabel(index: 0 | 1 | 2 | 3) {
   return seatLabels[index];
@@ -108,6 +114,67 @@ function actionLabel(action: LegalAction) {
     case 'MOVE_PAWN':
       return `Ход ${action.pawnId.split('-').at(-1) ?? 'пешкой'}`;
   }
+}
+
+function pawnOrdinal(pawnId: string) {
+  return pawnId.split('-').at(-1) ?? '1';
+}
+
+function pawnActionLabel(action: Extract<LegalAction, { pawnId: string }>, snapshot: MatchSnapshot) {
+  const pawn = snapshot.pawns.find((candidate) => candidate.pawnId === action.pawnId);
+  const colorLabel = pawn ? colorActionLabels[pawn.color] : 'эту';
+
+  if (action.type === 'ENTER_PAWN') {
+    return `Вывести ${colorLabel} пешку на поле`;
+  }
+
+  return `Переместить ${colorLabel} пешку ${pawnOrdinal(action.pawnId)}`;
+}
+
+function finishedReason(snapshot: MatchSnapshot) {
+  if (snapshot.winReason === 'HOME_DIAGONAL_COMPLETED') {
+    return 'Все 4 пешки дома.';
+  }
+
+  if (snapshot.winReason === 'LAST_ACTIVE_PLAYER') {
+    return 'Соперники выбыли из матча.';
+  }
+
+  return 'Матч завершён.';
+}
+
+function statusCopy(snapshot: MatchSnapshot, currentUserId: string, actionCount: number) {
+  const isMyTurn = snapshot.currentPlayerId === currentUserId;
+
+  if (snapshot.status === 'FINISHED') {
+    return {
+      title: 'Матч завершён',
+      subtitle: finishedReason(snapshot),
+    };
+  }
+
+  if (snapshot.turnPhase === 'WAITING_FOR_ROLL') {
+    return {
+      title: isMyTurn ? 'Ваш ход' : 'Ход соперника',
+      subtitle: isMyTurn ? 'Бросьте кубик.' : 'Ждём бросок соперника.',
+    };
+  }
+
+  if (snapshot.turnPhase === 'WAITING_FOR_ACTION') {
+    return {
+      title: isMyTurn ? 'Выберите пешку' : 'Ход соперника',
+      subtitle: isMyTurn
+        ? actionCount > 0
+          ? 'Доступные пешки подсвечены на поле и в резерве.'
+          : 'Ожидаем следующее состояние матча.'
+        : 'Соперник выбирает действие.',
+    };
+  }
+
+  return {
+    title: isMyTurn ? 'Ваш ход' : 'Ход соперника',
+    subtitle: 'Состояние матча обновляется.',
+  };
 }
 
 function commandFromAction(action: LegalAction, matchId: string, expectedStateVersion: number) {
@@ -289,7 +356,9 @@ export function PlayableBetaPage({
   useEffect(() => {
     if (!room?.currentMatchId) {
       activeMatchRef.current = null;
-      setMatch({ status: 'idle' });
+      setMatch((current) =>
+        current.status === 'ready' && current.snapshot.status === 'FINISHED' ? current : { status: 'idle' },
+      );
       return;
     }
 
@@ -342,10 +411,15 @@ export function PlayableBetaPage({
   const occupiedCount = room?.counts.seatedCount ?? 0;
   const readyCount = room?.counts.readyCount ?? 0;
 
-  const legalActions =
-    match.status === 'ready'
-      ? getLegalActions(match.snapshot as GameState, authState.user.id)
-      : [];
+  const legalActions = match.status === 'ready' ? getLegalActions(match.snapshot as GameState, authState.user.id) : [];
+  const nonSurrenderActions = legalActions.filter((action) => action.type !== 'SURRENDER');
+  const rollAction = nonSurrenderActions.find((action) => action.type === 'ROLL_DICE') ?? null;
+  const surrenderAction = legalActions.find((action) => action.type === 'SURRENDER') ?? null;
+  const pawnActions = nonSurrenderActions.filter(
+    (action): action is Extract<LegalAction, { pawnId: string }> =>
+      action.type === 'ENTER_PAWN' || action.type === 'MOVE_PAWN',
+  );
+  const pawnActionsById = useMemo(() => new Map(pawnActions.map((action) => [action.pawnId, action])), [pawnActions]);
 
   const cellOccupants =
     match.status === 'ready'
@@ -363,6 +437,9 @@ export function PlayableBetaPage({
 
   const topPlayers = match.status === 'ready' ? match.snapshot.players.slice(0, 2) : [];
   const bottomPlayers = match.status === 'ready' ? match.snapshot.players.slice(2, 4) : [];
+  const status =
+    match.status === 'ready' ? statusCopy(match.snapshot, authState.user.id, nonSurrenderActions.length) : null;
+  const showFinishedMatch = match.status === 'ready' && match.snapshot.status === 'FINISHED';
 
   async function mutateRoom(action: (signal: AbortSignal) => Promise<unknown>) {
     const controller = new AbortController();
@@ -411,7 +488,7 @@ export function PlayableBetaPage({
   }
 
   async function startMatch() {
-    if (!room || !selectedRoomId) return;
+    if (!room || !selectedRoomId || roomPending) return;
 
     const controller = new AbortController();
     setRoomPending(true);
@@ -434,7 +511,7 @@ export function PlayableBetaPage({
   }
 
   async function submitAction(action: LegalAction) {
-    if (match.status !== 'ready') return;
+    if (match.status !== 'ready' || match.pending) return;
 
     setMatch({ ...match, pending: true, error: null });
 
@@ -561,7 +638,7 @@ export function PlayableBetaPage({
 
       {!room ? (
         <Panel as="section">Загрузка комнаты…</Panel>
-      ) : !room.currentMatchId ? (
+      ) : !room.currentMatchId && !showFinishedMatch ? (
         <div className="beta-room-page__lobby">
           <Panel as="section" className="beta-room-page__seats">
             <h2>Игроки</h2>
@@ -642,13 +719,8 @@ export function PlayableBetaPage({
             <div className="beta-room-page__match-header">
               <div>
                 <h2>Матч</h2>
-                <p>
-                  {match.snapshot.currentPlayerId === authState.user.id
-                    ? 'Ваш ход'
-                    : match.snapshot.currentPlayerId
-                      ? `Ход игрока ${(match.snapshot.players.find((player) => player.playerId === match.snapshot.currentPlayerId)?.seatIndex ?? 0) + 1}`
-                      : 'Матч завершён'}
-                </p>
+                <p>{status?.title}</p>
+                <p>{status?.subtitle}</p>
               </div>
 
               <div className="beta-room-page__dice">
@@ -667,18 +739,16 @@ export function PlayableBetaPage({
                     <strong>{colorLabels[player.color]}</strong>
                     <div className="beta-board__pawn-strip">
                       {(offBoardByPlayer[player.playerId] ?? []).map((pawn) => {
-                        const enterAction = legalActions.find(
-                          (candidate) => candidate.type === 'ENTER_PAWN' && candidate.pawnId === pawn.pawnId,
-                        );
+                        const action = pawnActionsById.get(pawn.pawnId);
 
                         return (
                           <button
                             key={pawn.pawnId}
                             type="button"
                             className={`beta-pawn beta-pawn--${player.color.toLowerCase()}`}
-                            onClick={() => enterAction && void submitAction(enterAction)}
-                            aria-label={enterAction ? 'Вывести пешку' : `Пешка ${pawn.pawnId}`}
-                            disabled={!enterAction}
+                            onClick={() => action && void submitAction(action)}
+                            aria-label={action ? pawnActionLabel(action, match.snapshot) : `Пешка ${pawn.pawnId}`}
+                            disabled={!action || match.pending}
                           />
                         );
                       })}
@@ -692,13 +762,7 @@ export function PlayableBetaPage({
                   const row = Math.floor(index / 8) as BoardCoord['row'];
                   const col = (index % 8) as BoardCoord['col'];
                   const occupant = cellOccupants.get(`${row}:${col}`)?.[0];
-                  const moveAction =
-                    occupant &&
-                    legalActions.find(
-                      (candidate) =>
-                        (candidate.type === 'MOVE_PAWN' || candidate.type === 'ENTER_PAWN') &&
-                        candidate.pawnId === occupant.pawnId,
-                    );
+                  const moveAction = occupant ? pawnActionsById.get(occupant.pawnId) ?? null : null;
 
                   return (
                     <div
@@ -711,8 +775,8 @@ export function PlayableBetaPage({
                           type="button"
                           className={`beta-pawn beta-pawn--${occupant.color.toLowerCase()}`}
                           onClick={() => moveAction && void submitAction(moveAction)}
-                          aria-label={moveAction ? actionLabel(moveAction) : occupant.pawnId}
-                          disabled={!moveAction}
+                          aria-label={moveAction ? pawnActionLabel(moveAction, match.snapshot) : `Пешка ${occupant.pawnId}`}
+                          disabled={!moveAction || match.pending}
                         />
                       ) : null}
                     </div>
@@ -729,18 +793,16 @@ export function PlayableBetaPage({
                     <strong>{colorLabels[player.color]}</strong>
                     <div className="beta-board__pawn-strip">
                       {(offBoardByPlayer[player.playerId] ?? []).map((pawn) => {
-                        const enterAction = legalActions.find(
-                          (candidate) => candidate.type === 'ENTER_PAWN' && candidate.pawnId === pawn.pawnId,
-                        );
+                        const action = pawnActionsById.get(pawn.pawnId);
 
                         return (
                           <button
                             key={pawn.pawnId}
                             type="button"
                             className={`beta-pawn beta-pawn--${player.color.toLowerCase()}`}
-                            onClick={() => enterAction && void submitAction(enterAction)}
-                            aria-label={enterAction ? 'Вывести пешку' : `Пешка ${pawn.pawnId}`}
-                            disabled={!enterAction}
+                            onClick={() => action && void submitAction(action)}
+                            aria-label={action ? pawnActionLabel(action, match.snapshot) : `Пешка ${pawn.pawnId}`}
+                            disabled={!action || match.pending}
                           />
                         );
                       })}
@@ -754,18 +816,39 @@ export function PlayableBetaPage({
           <Panel as="section" className="beta-room-page__controls-panel">
             <h2>Действия</h2>
 
-            <div className="beta-room-page__controls">
-              {legalActions.map((action, index) => (
-                <Button
-                  key={`${action.type}:${'pawnId' in action ? action.pawnId : index}`}
-                  variant={action.type === 'SURRENDER' ? 'secondary' : 'primary'}
-                  onClick={() => void submitAction(action)}
-                  loading={match.pending}
-                >
-                  {actionLabel(action)}
-                </Button>
-              ))}
-            </div>
+            {match.snapshot.status === 'FINISHED' ? (
+              <div className="beta-room-page__controls">
+                <p>{finishedReason(match.snapshot)}</p>
+                <Button onClick={() => navigateTo(roomRoute(selectedRoomId))}>Вернуться в комнату</Button>
+              </div>
+            ) : (
+              <>
+                <div className="beta-room-page__controls">
+                  {rollAction ? (
+                    <Button onClick={() => void submitAction(rollAction)} loading={match.pending} disabled={match.pending}>
+                      {actionLabel(rollAction)}
+                    </Button>
+                  ) : null}
+
+                  {!rollAction && pawnActions.length > 0 ? <p>Доступные пешки подсвечены на поле и в резерве.</p> : null}
+
+                  {nonSurrenderActions.length === 0 && !match.pending ? <p>Ожидаем следующее состояние матча.</p> : null}
+                </div>
+
+                {surrenderAction ? (
+                  <div className="beta-room-page__controls">
+                    <Button
+                      variant="secondary"
+                      onClick={() => void submitAction(surrenderAction)}
+                      loading={match.pending}
+                      disabled={match.pending}
+                    >
+                      {actionLabel(surrenderAction)}
+                    </Button>
+                  </div>
+                ) : null}
+              </>
+            )}
 
             {match.error ? <p className="beta-room-page__error">{match.error}</p> : null}
           </Panel>
