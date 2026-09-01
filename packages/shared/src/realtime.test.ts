@@ -131,6 +131,18 @@ describe('realtime contracts', () => {
       }),
     ).toEqual(expect.objectContaining({ type: 'extraRollGranted' }));
 
+    expect(
+      gameEventEnvelopeSchema.parse({
+        matchId: 'm1',
+        eventId: 'e-inactive-corner',
+        sequence: 2,
+        stateVersion: 2,
+        type: 'pawnRemoved',
+        payload: { pawnId: 'pawn-1', playerId: 'p1', reason: 'INACTIVE_CORNER_EXIT' },
+        createdAt: '2026-08-24T00:00:00.000Z',
+      }),
+    ).toEqual(expect.objectContaining({ type: 'pawnRemoved' }));
+
     expect(() =>
       gameEventEnvelopeSchema.parse({
         matchId: 'm1',

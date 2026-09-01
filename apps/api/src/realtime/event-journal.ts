@@ -30,15 +30,18 @@ function payload(
         playerId: event.playerId,
         toCoord: pawnCoordinate(after, event.pawnId),
       };
-    case 'pawnMoved':
+    case 'pawnMoved': {
+      const physicalPath = resolvePhysicalPath(before, event.pawnId, before.diceValue ?? 0) ?? [];
+      const toCoord = physicalPath.at(-1) ?? pawnCoordinate(after, event.pawnId);
       return {
         pawnId: event.pawnId,
         playerId: event.playerId,
         fromCoord: pawnCoordinate(before, event.pawnId),
-        toCoord: pawnCoordinate(after, event.pawnId),
-        physicalPath: resolvePhysicalPath(before, event.pawnId, before.diceValue ?? 0) ?? [],
+        toCoord,
+        physicalPath,
         capture: null,
       };
+    }
     case 'pawnEnteredHome':
       return {
         pawnId: event.pawnId,
@@ -47,16 +50,22 @@ function payload(
         fromCoord: pawnCoordinate(before, event.pawnId),
         toCoord: pawnCoordinate(after, event.pawnId),
       };
-    case 'pawnCaptured':
+    case 'pawnCaptured': {
+      const physicalPath = resolvePhysicalPath(before, event.pawnId, before.diceValue ?? 0) ?? [];
       return {
         byPawnId: event.pawnId,
         byPlayerId: event.playerId,
         capturedPawnId: event.capturedPawnId,
         capturedPlayerId: event.capturedPlayerId,
-        atCoord: pawnCoordinate(after, event.pawnId),
+        atCoord: physicalPath.at(-1) ?? pawnCoordinate(after, event.pawnId),
       };
+    }
     case 'pawnRemoved':
-      return { pawnId: event.pawnId, playerId: event.playerId, reason: 'SURRENDERED' };
+      return {
+        pawnId: event.pawnId,
+        playerId: event.playerId,
+        reason: event.reason ?? 'SURRENDERED',
+      };
     case 'playerSurrendered':
       return { playerId: event.playerId };
     case 'gameWon':

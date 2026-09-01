@@ -232,7 +232,13 @@ const pawnRemovedEventSchema = z
       .object({
         pawnId: id,
         playerId: id,
-        reason: z.enum(['OFF_BOARD_CAPTURED', 'HOME_CAPTURED', 'SURRENDERED', 'RESET']),
+        reason: z.enum([
+          'OFF_BOARD_CAPTURED',
+          'HOME_CAPTURED',
+          'SURRENDERED',
+          'INACTIVE_CORNER_EXIT',
+          'RESET',
+        ]),
       })
       .strict(),
     createdAt: z.string().min(1),

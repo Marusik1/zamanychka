@@ -132,7 +132,12 @@ export type GameEvent =
       capturedPawnId: string;
       capturedPlayerId: string;
     }>
-  | Readonly<{ type: 'pawnRemoved'; pawnId: string; playerId: string }>
+  | Readonly<{
+      type: 'pawnRemoved';
+      pawnId: string;
+      playerId: string;
+      reason?: 'INACTIVE_CORNER_EXIT';
+    }>
   | Readonly<{ type: 'playerSurrendered'; playerId: string }>
   | Readonly<{ type: 'gameWon'; winnerPlayerId: string; reason: WinReason }>;
 

@@ -1,6 +1,7 @@
 import { getLegalActions, getLegalTurnActions } from '../actions/legal-actions.js';
 import { getOccupancy } from '../board/occupancy.js';
 import { resolveHomeCoord } from '../board/home.js';
+import { resolvePerimeterCoord } from '../board/perimeter.js';
 import type {
   GameCommand,
   GameEvent,
@@ -8,6 +9,7 @@ import type {
   GameTransitionErrorCode,
   GameTransitionResult,
   PawnState,
+  PlayerColor,
   WinReason,
 } from '../domain/types.js';
 import { gameEvents } from '../events/events.js';
@@ -37,6 +39,21 @@ function isCoordEqual(
   right: { row: number; col: number },
 ): boolean {
   return left.row === right.row && left.col === right.col;
+}
+
+const PLAYER_COLORS: readonly PlayerColor[] = ['RED', 'BLUE', 'YELLOW', 'GREEN'];
+
+function isInactiveCornerLanding(
+  state: GameState,
+  pawnColor: PlayerColor,
+  position: PawnState['position'],
+): boolean {
+  if (position.zone !== 'PERIMETER') return false;
+  const destination = resolvePerimeterCoord(pawnColor, position.progress);
+  const cornerOwner = PLAYER_COLORS.find((color) =>
+    isCoordEqual(destination, resolveHomeCoord(color, 0)),
+  );
+  return cornerOwner !== undefined && !state.players.some((player) => player.color === cornerOwner);
 }
 
 function getOccupantsAtCoord(state: GameState, coord: { row: number; col: number }) {
@@ -296,22 +313,26 @@ function movePawnTransition(
     events.push(gameEvents.pawnEnteredHome(pawn.pawnId, pawn.playerId, nextPosition.homeIndex));
   }
 
+  if (isInactiveCornerLanding(state, pawn.color, nextPosition)) {
+    movedState = moveCapturedPawnOffBoard(movedState, pawn.pawnId);
+    events.push(gameEvents.pawnRemoved(pawn.pawnId, pawn.playerId, 'INACTIVE_CORNER_EXIT'));
+  }
+
   const grantsExtraRoll = state.diceValue === 6 || capturedOccupant !== null;
-  const nextStateWithoutVersion: GameState =
-    grantsExtraRoll
-      ? {
-          ...movedState,
-          diceValue: null,
-          turnPhase: 'WAITING_FOR_ROLL',
-          currentPlayerId: pawn.playerId,
-        }
-      : {
-          ...movedState,
-          diceValue: null,
-          turnPhase: 'WAITING_FOR_ROLL',
-          currentPlayerId: getNextActivePlayerId(movedState, pawn.playerId),
-          turnNumber: movedState.turnNumber + 1,
-        };
+  const nextStateWithoutVersion: GameState = grantsExtraRoll
+    ? {
+        ...movedState,
+        diceValue: null,
+        turnPhase: 'WAITING_FOR_ROLL',
+        currentPlayerId: pawn.playerId,
+      }
+    : {
+        ...movedState,
+        diceValue: null,
+        turnPhase: 'WAITING_FOR_ROLL',
+        currentPlayerId: getNextActivePlayerId(movedState, pawn.playerId),
+        turnNumber: movedState.turnNumber + 1,
+      };
 
   if (isWinningState(nextStateWithoutVersion, pawn.playerId)) {
     const reason = determineWinReason(nextStateWithoutVersion, pawn.playerId);

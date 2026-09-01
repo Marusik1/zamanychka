@@ -109,6 +109,7 @@ Position and physical coordinate are deliberately separate. `physicalCoord(PawnP
 - A real command recomputes legality; previously returned `LegalAction` is only a UI projection.
 - Domain events describe committed facts, not instructions to clients.
 - `extraRollGranted` carries one of `ROLLED_SIX`, `CAPTURE`, or `NO_LEGAL_ACTION_ON_SIX`; a successful capture always resolves to exactly one extra-roll event even when it also used a six.
+- Exact inactive-corner removal remains a normal `MOVE_PAWN` transition: it emits `pawnMoved` to the physical corner followed by `pawnRemoved(INACTIVE_CORNER_EXIT)`, then persists the pawn as `OFF_BOARD`.
 - Dice context is accepted only for `ROLL_DICE` and must be absent for every other command.
 
 ## Canonical rules

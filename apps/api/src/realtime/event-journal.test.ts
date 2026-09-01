@@ -29,6 +29,47 @@ describe('ordered event journal writer', () => {
       payload: { playerId: 'user-1', reason: 'CAPTURE' },
     });
   });
+
+  it('keeps the exact inactive-corner landing coordinate before the pawn returns OFF_BOARD', () => {
+    const pawn = {
+      pawnId: 'user-1-pawn-1',
+      playerId: 'user-1',
+      color: 'RED' as const,
+      position: { zone: 'PERIMETER' as const, progress: 6 },
+    };
+    const before = {
+      ...state(),
+      diceValue: 1 as const,
+      pawns: [pawn],
+    };
+    const after = {
+      ...before,
+      pawns: [{ ...pawn, position: { zone: 'OFF_BOARD' as const } }],
+    };
+
+    const events = createEventJournal().envelopes({
+      matchId: 'match-1',
+      stateVersion: 8,
+      lastSequence: 14,
+      actorPlayerId: 'user-1',
+      before,
+      after,
+      events: [
+        { type: 'pawnMoved', pawnId: 'user-1-pawn-1', playerId: 'user-1' },
+        {
+          type: 'pawnRemoved',
+          pawnId: 'user-1-pawn-1',
+          playerId: 'user-1',
+          reason: 'INACTIVE_CORNER_EXIT',
+        },
+      ],
+    });
+
+    expect(events).toMatchObject([
+      { type: 'pawnMoved', payload: { toCoord: { row: 0, col: 7 } } },
+      { type: 'pawnRemoved', payload: { reason: 'INACTIVE_CORNER_EXIT' } },
+    ]);
+  });
 });
 
 function state() {

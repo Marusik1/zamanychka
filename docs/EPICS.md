@@ -14,7 +14,7 @@ The project is delivered sequentially. An epic starts only after explicit approv
 - [EPIC-09 Board Skins](./epics/EPIC-09-BOARD-SKINS.md)
 - [EPIC-10 Tutorial](./epics/EPIC-10-TUTORIAL.md)
 - [EPIC-11 Extra Roll After Capture](./epics/EPIC-11-EXTRA-ROLL-AFTER-CAPTURE.md)
-- [EPIC-12 Inactive Corner Rule](./epics/EPIC-12-INACTIVE-CORNER.md) — decision required before implementation
+- [EPIC-12 Inactive Corner Rule](./epics/EPIC-12-INACTIVE-CORNER.md)
 - [EPIC-13 Match Timer and Winner Presentation](./epics/EPIC-13-MATCH-TIMER-WINNER.md)
 - [EPIC-15 Gameplay UI Cleanup](./epics/EPIC-15-GAMEPLAY-UI-CLEANUP.md)
 - [EPIC-17 Responsive Gameplay Shell](./epics/EPIC-17-RESPONSIVE-GAMEPLAY-SHELL.md)
@@ -25,7 +25,7 @@ The project is delivered sequentially. An epic starts only after explicit approv
 The remaining delivery order is strictly:
 
 1. EPIC-11 — Extra Roll After Capture
-2. EPIC-12 — Inactive Corner Rule (only after its explicit product decision)
+2. EPIC-12 — Inactive Corner Rule
 3. EPIC-13 — Match Timer and Winner Presentation
 4. EPIC-15 — Gameplay UI Cleanup
 5. EPIC-17 — Responsive Gameplay Shell
@@ -45,4 +45,4 @@ Each epic is an isolated checkpoint: inspect the current implementation, documen
 - EPIC-17: validate mobile and desktop composition with the existing gameplay shell.
 - EPIC-16: harden room/match lifecycle through the existing multi-room contracts and integration tests.
 
-Current authorization: implement EPIC-11 only, verify, report, and stop. EPIC-12 remains blocked on its explicit product decision.
+Current authorization: EPIC-12 is complete after verification. EPIC-13 requires separate approval.

@@ -30,8 +30,10 @@ export const gameEvents = {
   ): GameEvent {
     return { type: 'pawnCaptured', pawnId, playerId, capturedPawnId, capturedPlayerId };
   },
-  pawnRemoved(pawnId: string, playerId: string): GameEvent {
-    return { type: 'pawnRemoved', pawnId, playerId };
+  pawnRemoved(pawnId: string, playerId: string, reason?: 'INACTIVE_CORNER_EXIT'): GameEvent {
+    return reason
+      ? { type: 'pawnRemoved', pawnId, playerId, reason }
+      : { type: 'pawnRemoved', pawnId, playerId };
   },
   playerSurrendered(playerId: string): GameEvent {
     return { type: 'playerSurrendered', playerId };

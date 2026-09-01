@@ -22,6 +22,7 @@ This file is the single canonical source for gameplay rules.
 - Landing exactly on an opposing perimeter pawn captures it and returns it to `OFF_BOARD`.
 - A successful `MOVE_PAWN` capture grants the moving player one additional explicit roll, whether the consumed die was 1–5 or 6. A move that both rolls six and captures still grants exactly one additional roll.
 - `ENTER_PAWN` is never a capture and never receives this capture bonus.
+- In a two- or three-player match, exact landing on a corner owned by a color absent from the immutable match roster returns the moving pawn to `OFF_BOARD`. Passing through that corner does nothing. Active-player corners retain the normal occupancy and capture rules. The pawn re-enters only through the ordinary six/`ENTER_PAWN` rule.
 
 ## Rolling a six
 
