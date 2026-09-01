@@ -155,6 +155,21 @@ describe('GameBoard', () => {
     expect(screen.queryByText(/Р¤РёРЅР°Р»СЊРЅР°СЏ РїРѕР·РёС†РёСЏ СЃРѕС…СЂР°РЅРµРЅР°/i)).toBeNull();
     expect(container.querySelectorAll('.game-board-scene__victory-card')).toHaveLength(1);
   });
+
+  it('marks the authoritative turn surface as the mobile primary gameplay bar', () => {
+    render(
+      <GameBoard
+        pawns={pawns}
+        turnPanel={{
+          title: 'Ваш ход',
+          primaryAction: <button type="button">Бросить кубик</button>,
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId('mobile-gameplay-actions')).toHaveTextContent('Ваш ход');
+    expect(screen.getByRole('button', { name: 'Бросить кубик' })).toBeVisible();
+  });
   it('opens a mobile chat sheet without replacing the gameplay board state', () => {
     const close = vi.fn();
     render(

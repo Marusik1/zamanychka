@@ -666,6 +666,7 @@ export const GameBoard = forwardRef<PremiumPresentationHandle, GameBoardProps>(f
         <aside
           className="game-board-scene__panel game-board-scene__panel--right"
           data-region="right-rail"
+          data-testid="mobile-gameplay-actions"
           aria-label="Действия"
         >
           {rightPanel ?? <section className="game-board-scene__turn-card">

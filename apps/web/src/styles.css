@@ -2628,6 +2628,109 @@ a {
   margin: 0;
 }
 
+/* EPIC-17: the same gameplay scene adapts its geometry; no parallel mobile board. */
+.game-board-scene,
+.game-board-scene__frame,
+.game-board-scene__board-shell,
+.game-board-scene__panel {
+  min-width: 0;
+}
+
+@media (min-width: 901px) {
+  .shell-authenticated-layout:has(.game-board-scene) {
+    min-height: calc(var(--app-viewport-height) - 7.25rem);
+  }
+
+  .game-board-scene__frame {
+    grid-template-columns: minmax(13.5rem, 0.84fr) minmax(0, 2.25fr) minmax(14rem, 0.9fr);
+    min-height: min(73rem, calc(var(--app-viewport-height) - 8.5rem));
+    max-height: calc(var(--app-viewport-height) - 8.5rem);
+  }
+
+  .game-board-scene__board-shell {
+    display: grid;
+    place-items: start center;
+    min-height: 0;
+  }
+
+  .game-board-scene__board-object {
+    width: min(100%, calc(var(--app-viewport-height) - 10.5rem));
+  }
+
+  .game-board-scene__panel {
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+  }
+}
+
+@media (max-width: 900px) {
+  .game-board-scene {
+    box-sizing: border-box;
+    overflow-x: clip;
+  }
+
+  .game-board-scene__board-shell {
+    min-width: 0;
+  }
+
+  .game-board-scene__board-object {
+    width: 100%;
+    max-width: 100%;
+    aspect-ratio: 1 / 1;
+  }
+
+  .game-board-scene__panel--right {
+    position: sticky;
+    z-index: 18;
+    bottom: calc(max(var(--app-safe-area-bottom), var(--app-content-safe-area-bottom)) + 4.65rem);
+    box-shadow: 0 -0.6rem 1.5rem rgba(0, 0, 0, 0.26);
+  }
+
+  .game-board-scene__panel--right .game-board-scene__turn-card {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    min-height: 0;
+    padding: 0.72rem;
+    text-align: left;
+  }
+
+  .game-board-scene__turn-card .game-board-scene__panel-heading,
+  .game-board-scene__turn-card > p,
+  .game-board-scene__turn-card > span,
+  .game-board-scene__turn-card > strong,
+  .game-board-scene__turn-card > button,
+  .game-board-scene__turn-card > .game-board-scene__secondary-actions,
+  .game-board-scene__turn-card > .beta-room-page__controls {
+    grid-column: 1 / -1;
+  }
+
+  .game-board-scene__turn-card .game-die {
+    grid-column: 2;
+    grid-row: 2 / span 3;
+    width: clamp(3.85rem, 17vw, 5rem);
+  }
+
+  .game-board-scene__turn-card > button:not(.game-board-scene__secondary-actions button) {
+    min-height: 2.9rem;
+  }
+}
+
+@media (max-width: 600px) {
+  .game-board-scene {
+    margin-inline: 0;
+    width: 100%;
+  }
+
+  .game-board-scene__panel--left {
+    display: none;
+  }
+
+  .game-board-scene__panel--right {
+    border-radius: 0.7rem 0.7rem 0 0;
+  }
+}
+
 @media (max-width: 760px) {
   .beta-home-page,
   .beta-room-page__lobby,
