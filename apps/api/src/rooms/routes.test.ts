@@ -2,11 +2,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
 import {
+  roomChatHistorySchema,
   roomCommandSuccessSchema,
+  sendRoomChatMessageResponseSchema,
   roomStateSchema,
 } from '@zamanushka/shared';
 
 import type { AuthService } from '../auth/auth-service.js';
+import type { RoomChatService } from './room-chat.js';
 import type { RoomService } from './room-service.js';
 import { registerRoomRoutes } from './routes.js';
 
@@ -128,6 +131,31 @@ function roomService() {
   } as unknown as RoomService;
 }
 
+function roomChatService() {
+  return {
+    list: vi.fn(async () => ({
+      messages: [
+        {
+          id: 'msg-1',
+          roomId,
+          userId: user.id,
+          displayName: user.displayName,
+          text: 'Привет',
+          createdAt: '2026-08-31T10:00:00.000Z',
+        },
+      ],
+    })),
+    send: vi.fn(async () => ({
+      id: 'msg-2',
+      roomId,
+      userId: user.id,
+      displayName: user.displayName,
+      text: 'Готов играть',
+      createdAt: '2026-08-31T10:01:00.000Z',
+    })),
+  } as unknown as RoomChatService;
+}
+
 describe('room routes', () => {
   const apps: ReturnType<typeof Fastify>[] = [];
 
@@ -135,7 +163,7 @@ describe('room routes', () => {
     await Promise.all(apps.splice(0).map((instance) => instance.close()));
   });
 
-  async function app(service: RoomService = roomService()) {
+  async function app(service: RoomService = roomService(), chat: RoomChatService | undefined = roomChatService()) {
     const instance = Fastify();
     apps.push(instance);
 
@@ -143,6 +171,7 @@ describe('room routes', () => {
 
     registerRoomRoutes(instance, {
       service,
+      ...(chat ? { chat } : {}),
       auth: authService(),
       allowedOrigins: ['http://localhost:3000', 'https://app.test'],
     });
@@ -352,6 +381,32 @@ describe('room routes', () => {
     expect(reconnectBody).not.toHaveProperty('presence');
   });
 
+  it('returns canonical room chat history and send DTOs', async () => {
+    const service = roomService();
+    const chat = roomChatService();
+    const instance = await app(service, chat);
+
+    const historyResponse = await instance.inject({
+      method: 'GET',
+      url: `/api/rooms/${roomId}/chat`,
+      headers: authHeaders,
+    });
+    expect(historyResponse.statusCode).toBe(200);
+    expect(roomChatHistorySchema.safeParse(historyResponse.json()).success).toBe(true);
+
+    const sendResponse = await instance.inject({
+      method: 'POST',
+      url: `/api/rooms/${roomId}/chat`,
+      headers: mutationHeaders,
+      payload: { text: 'Готов играть' },
+    });
+    expect(sendResponse.statusCode).toBe(200);
+    expect(sendRoomChatMessageResponseSchema.safeParse(sendResponse.json()).success).toBe(true);
+
+    expect(chat.list).toHaveBeenCalledWith(user.id, roomId);
+    expect(chat.send).toHaveBeenCalledWith(user.id, roomId, { text: 'Готов играть' });
+  });
+
   it('maps room command errors to stable HTTP statuses', async () => {
     const service = {
       ...roomService(),
@@ -430,6 +485,40 @@ describe('room routes', () => {
         })
       ).statusCode,
     ).toBe(404);
+  });
+
+  it('maps room chat membership errors to stable HTTP statuses', async () => {
+    const service = roomService();
+    const chat = {
+      list: vi.fn(async () => {
+        throw new Error('NOT_ROOM_MEMBER');
+      }),
+      send: vi.fn(async () => {
+        throw new Error('NOT_ROOM_MEMBER');
+      }),
+    } as unknown as RoomChatService;
+    const instance = await app(service, chat);
+
+    expect(
+      (
+        await instance.inject({
+          method: 'GET',
+          url: `/api/rooms/${roomId}/chat`,
+          headers: authHeaders,
+        })
+      ).statusCode,
+    ).toBe(403);
+
+    expect(
+      (
+        await instance.inject({
+          method: 'POST',
+          url: `/api/rooms/${roomId}/chat`,
+          headers: mutationHeaders,
+          payload: { text: 'Привет' },
+        })
+      ).statusCode,
+    ).toBe(403);
   });
 
   it('fails closed for missing auth, disallowed origins, and malformed payloads', async () => {

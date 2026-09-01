@@ -1,15 +1,34 @@
 import {
   getLegalActions,
-  resolvePawnCoordinate,
-  type BoardCoord,
   type GameState,
   type LegalAction,
 } from '@zamanushka/game-engine';
-import type { MatchSnapshot, RoomState, TransitionEnvelope } from '@zamanushka/shared';
-import { Button, EmptyState, Panel } from '@zamanushka/ui';
+import type { MatchSnapshot, RoomChatMessage, RoomState, TransitionEnvelope } from '@zamanushka/shared';
+import { BottomSheet, Button, Dialog, EmptyState, Panel } from '@zamanushka/ui';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { AuthState } from '../auth/bootstrap.js';
+import {
+  buildGameplayAnimationFrames,
+  createIdleAnimationState,
+  runGameplayAnimationFrames,
+  type GameplayAnimationRuntimeState,
+} from '../game/animation-director.js';
+import { GameAvatar } from '../game/avatar.js';
+import { GameBoard } from '../game/board.js';
+import type { DieValue } from '../game/dice.js';
+import { projectGameScreenModel } from '../game/domain.js';
+import { createGameplayPresentationPlan } from '../game/event-presentation.js';
+import {
+  acceptCommittedTransition,
+  completeActivePresentation,
+  createPresentationController,
+  getActivePresentationToken,
+  reconcileAuthoritativeSnapshot,
+  type PresentationControllerState,
+} from '../game/presentation-controller.js';
+import { playPremiumTransition, type PremiumPresentationHandle } from '../game/premium-runtime.js';
+import { RulesPage } from '../rules/rules-page.js';
 import type { RealtimeClient } from './realtime-client.js';
 import type { RoomApi, RoomApiError } from './room-api.js';
 
@@ -35,6 +54,15 @@ type MatchViewState =
     }
   | { status: 'error'; message: string };
 
+type MatchHistoryItem = Readonly<{
+  id: string;
+  title: string;
+  detail: string;
+  createdAt: string;
+}>;
+
+type UtilityPanel = 'rules' | 'history' | 'settings' | null;
+
 const seatLabels = ['Место 1', 'Место 2', 'Место 3', 'Место 4'] as const;
 const colorLabels = {
   RED: 'Красные',
@@ -51,10 +79,6 @@ const colorActionLabels = {
 
 function seatLabel(index: 0 | 1 | 2 | 3) {
   return seatLabels[index];
-}
-
-function boardKey(coord: BoardCoord) {
-  return `${coord.row}:${coord.col}`;
 }
 
 function roomRoute(roomId: string) {
@@ -79,28 +103,36 @@ function roomErrorMessage(error: unknown, fallback: string) {
     'message' in error &&
     typeof (error as RoomApiError).message === 'string'
   ) {
-    return (error as RoomApiError).message;
+    const roomError = error as RoomApiError;
+    return roomError.code === 'INVALID_RESPONSE' ? fallback : roomError.message;
   }
 
   return fallback;
 }
 
-function buildCellOccupants(snapshot: MatchSnapshot) {
-  const players = new Map(snapshot.players.map((player) => [player.playerId, player]));
-  const occupied = new Map<string, typeof snapshot.pawns>();
-
-  for (const pawn of snapshot.pawns) {
-    const owner = players.get(pawn.playerId);
-    if (!owner) continue;
-
-    const coord = resolvePawnCoordinate(pawn.position, owner);
-    if (!coord) continue;
-
-    const key = boardKey(coord);
-    occupied.set(key, [...(occupied.get(key) ?? []), pawn]);
+function friendlyRoomError(code: string, fallback: string) {
+  switch (code) {
+    case 'ROOM_ALREADY_ACTIVE':
+      return 'Матч уже идёт. Возвращаем вас в текущую игру.';
+    default:
+      return fallback;
   }
+}
 
-  return occupied;
+function friendlyGameError(code: string, fallback: string) {
+  switch (code) {
+    case 'NOT_YOUR_TURN':
+      return 'Ход соперника. Ждём его действие.';
+    case 'STALE_STATE_VERSION':
+      return 'Состояние матча обновилось. Синхронизируем текущий ход.';
+    case 'MATCH_FINISHED':
+      return 'Матч уже завершён.';
+    case 'PAWN_NOT_MOVABLE':
+    case 'INVALID_ACTION':
+      return 'Это действие сейчас недоступно.';
+    default:
+      return fallback;
+  }
 }
 
 function actionLabel(action: LegalAction) {
@@ -143,6 +175,122 @@ function finishedReason(snapshot: MatchSnapshot) {
   return 'Матч завершён.';
 }
 
+function useCompactViewport() {
+  const [compact, setCompact] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const media = window.matchMedia('(max-width: 900px)');
+    const sync = () => setCompact(media.matches);
+    sync();
+    media.addEventListener('change', sync);
+    return () => media.removeEventListener('change', sync);
+  }, []);
+
+  return compact;
+}
+
+function mergeHistoryItems(
+  current: readonly MatchHistoryItem[],
+  incoming: readonly MatchHistoryItem[],
+): MatchHistoryItem[] {
+  const seen = new Set<string>();
+  const merged: MatchHistoryItem[] = [];
+
+  for (const item of [...current, ...incoming]) {
+    if (seen.has(item.id)) continue;
+    seen.add(item.id);
+    merged.push(item);
+  }
+
+  return merged
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+    .slice(-120);
+}
+
+function actorLabel(snapshot: MatchSnapshot, playerId: string) {
+  const player = snapshot.players.find((candidate) => candidate.playerId === playerId);
+  return player ? colorLabels[player.color] : 'Игрок';
+}
+
+function describeEvent(snapshot: MatchSnapshot, event: TransitionEnvelope['events'][number]): MatchHistoryItem {
+  switch (event.type) {
+    case 'diceRolled':
+      return {
+        id: event.eventId,
+        title: `${actorLabel(snapshot, event.payload.playerId)} бросили кубик`,
+        detail: `Выпало ${event.payload.diceValue}.`,
+        createdAt: event.createdAt,
+      };
+    case 'pawnEntered':
+      return {
+        id: event.eventId,
+        title: `${actorLabel(snapshot, event.payload.playerId)} вывели пешку`,
+        detail: 'Пешка вошла на поле.',
+        createdAt: event.createdAt,
+      };
+    case 'pawnMoved':
+      return {
+        id: event.eventId,
+        title: `${actorLabel(snapshot, event.payload.playerId)} сделали ход`,
+        detail: event.payload.capture ? 'Ход завершился взятием.' : `Путь: ${event.payload.physicalPath.length} клеток.`,
+        createdAt: event.createdAt,
+      };
+    case 'pawnCaptured':
+      return {
+        id: event.eventId,
+        title: `${actorLabel(snapshot, event.payload.byPlayerId)} сбили пешку`,
+        detail: 'Пешка соперника снята с поля.',
+        createdAt: event.createdAt,
+      };
+    case 'pawnEnteredHome':
+      return {
+        id: event.eventId,
+        title: `${actorLabel(snapshot, event.payload.playerId)} вошли в дом`,
+        detail: `Домашняя позиция ${event.payload.homeIndex + 1}.`,
+        createdAt: event.createdAt,
+      };
+    case 'playerSurrendered':
+      return {
+        id: event.eventId,
+        title: `${actorLabel(snapshot, event.payload.playerId)} сдались`,
+        detail: 'Игрок больше не участвует в матче.',
+        createdAt: event.createdAt,
+      };
+    case 'pawnRemoved':
+      return {
+        id: event.eventId,
+        title: `${actorLabel(snapshot, event.payload.playerId)} потеряли пешку`,
+        detail: 'Пешка убрана из активной игры.',
+        createdAt: event.createdAt,
+      };
+    case 'extraRollGranted':
+      return {
+        id: event.eventId,
+        title: `${actorLabel(snapshot, event.payload.playerId)} получают ещё бросок`,
+        detail: 'После шестёрки ход сохраняется.',
+        createdAt: event.createdAt,
+      };
+    case 'turnChanged':
+      return {
+        id: event.eventId,
+        title: `Ход переходит к ${actorLabel(snapshot, event.payload.toPlayerId)}`,
+        detail: 'Очередь хода обновлена.',
+        createdAt: event.createdAt,
+      };
+    case 'gameWon':
+      return {
+        id: event.eventId,
+        title: `${actorLabel(snapshot, event.payload.winnerPlayerId)} победили`,
+        detail:
+          event.payload.reason === 'LAST_ACTIVE_PLAYER'
+            ? 'Победа как последний активный игрок.'
+            : 'Победа по домашней диагонали.',
+        createdAt: event.createdAt,
+      };
+  }
+}
+
 function statusCopy(snapshot: MatchSnapshot, currentUserId: string, actionCount: number) {
   const isMyTurn = snapshot.currentPlayerId === currentUserId;
 
@@ -175,6 +323,24 @@ function statusCopy(snapshot: MatchSnapshot, currentUserId: string, actionCount:
     title: isMyTurn ? 'Ваш ход' : 'Ход соперника',
     subtitle: 'Состояние матча обновляется.',
   };
+}
+
+function usePrefersReducedMotion() {
+  const [reduced, setReduced] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      return;
+    }
+
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const sync = () => setReduced(media.matches);
+    sync();
+    media.addEventListener('change', sync);
+    return () => media.removeEventListener('change', sync);
+  }, []);
+
+  return reduced;
 }
 
 function commandFromAction(action: LegalAction, matchId: string, expectedStateVersion: number) {
@@ -218,6 +384,21 @@ export function PlayableBetaPage({
   const [roomError, setRoomError] = useState<string | null>(null);
   const [match, setMatch] = useState<MatchViewState>({ status: 'idle' });
   const activeMatchRef = useRef<string | null>(null);
+  const boardRef = useRef<PremiumPresentationHandle | null>(null);
+  const ackSyncTimeoutRef = useRef<number | null>(null);
+  const [presentationController, setPresentationController] = useState<PresentationControllerState | null>(null);
+  const [presentationRuntime, setPresentationRuntime] = useState<GameplayAnimationRuntimeState | null>(null);
+  const reducedMotion = usePrefersReducedMotion();
+  const compactViewport = useCompactViewport();
+  const [utilityPanel, setUtilityPanel] = useState<UtilityPanel>(null);
+  const [chatMessages, setChatMessages] = useState<readonly RoomChatMessage[]>([]);
+  const [chatDraft, setChatDraft] = useState('');
+  const [chatPending, setChatPending] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
+  const [mobileChatOpen, setMobileChatOpen] = useState(false);
+  const [lastSeenChatMessageId, setLastSeenChatMessageId] = useState<string | null>(null);
+  const chatInitializedRoomIdRef = useRef<string | null>(null);
+  const [historyItems, setHistoryItems] = useState<readonly MatchHistoryItem[]>([]);
 
   const loadRoomList = useCallback(
     async (signal?: AbortSignal) => {
@@ -239,6 +420,16 @@ export function PlayableBetaPage({
     [roomApi],
   );
 
+  const loadChat = useCallback(
+    async (roomId: string, signal?: AbortSignal) => {
+      const next = await roomApi.getChat(roomId, signal);
+      setChatMessages(next.messages);
+      setChatError(null);
+      return next.messages;
+    },
+    [roomApi],
+  );
+
   const refreshRoom = useCallback(
     async (roomId: string, signal?: AbortSignal) => {
       setRoomPending(true);
@@ -254,6 +445,15 @@ export function PlayableBetaPage({
     },
     [loadRoom],
   );
+
+  function reconcilePresentation(matchId: string, snapshot: MatchSnapshot) {
+    setPresentationController((current) =>
+      current && current.matchId === matchId
+        ? reconcileAuthoritativeSnapshot(current, matchId, snapshot)
+        : createPresentationController(matchId, snapshot),
+    );
+    setPresentationRuntime(createIdleAnimationState(snapshot));
+  }
 
   const syncMatch = useCallback(
     async (matchId: string, stateVersion = 0, lastSequence = 0) => {
@@ -271,6 +471,15 @@ export function PlayableBetaPage({
         if (response.mode === 'events') {
           const latest = response.transitions.at(-1);
           if (!latest) throw new Error('SYNC_EMPTY_EVENTS');
+          reconcilePresentation(matchId, latest.snapshot);
+          setHistoryItems((current) =>
+            mergeHistoryItems(
+              current,
+              response.transitions.flatMap((transition) =>
+                transition.events.map((event) => describeEvent(transition.snapshot, event)),
+              ),
+            ),
+          );
 
           setMatch({
             status: 'ready',
@@ -283,6 +492,7 @@ export function PlayableBetaPage({
           return;
         }
 
+        reconcilePresentation(matchId, response.snapshot);
         setMatch({
           status: 'ready',
           matchId,
@@ -356,6 +566,12 @@ export function PlayableBetaPage({
   useEffect(() => {
     if (!room?.currentMatchId) {
       activeMatchRef.current = null;
+      setPresentationController(null);
+      setPresentationRuntime(null);
+      if (ackSyncTimeoutRef.current !== null) {
+        window.clearTimeout(ackSyncTimeoutRef.current);
+        ackSyncTimeoutRef.current = null;
+      }
       setMatch((current) =>
         current.status === 'ready' && current.snapshot.status === 'FINISHED' ? current : { status: 'idle' },
       );
@@ -368,8 +584,83 @@ export function PlayableBetaPage({
     void syncMatch(room.currentMatchId);
   }, [room?.currentMatchId, syncMatch]);
 
+  const presentedSnapshot =
+    presentationController?.presentationSnapshot ?? (match.status === 'ready' ? match.snapshot : null);
+  const presentedPlayers = useMemo(
+    () =>
+      presentedSnapshot
+        ? projectGameScreenModel(presentedSnapshot as GameState, authState.user.id).players
+        : [],
+    [authState.user.id, presentedSnapshot],
+  );
+
+  useEffect(() => {
+    if (!presentationController) return;
+
+    const active = presentationController.queue.active;
+    const token = getActivePresentationToken(presentationController);
+
+    if (!active || !token) {
+      setPresentationRuntime(createIdleAnimationState(presentationController.presentationSnapshot));
+      return;
+    }
+
+    const abort = new AbortController();
+    const frames = buildGameplayAnimationFrames({
+      transition: active,
+      initialSnapshot: presentationController.presentationSnapshot,
+      reducedMotion,
+    });
+
+    const plan = createGameplayPresentationPlan(active);
+
+    void Promise.all([
+      runGameplayAnimationFrames(frames, {
+        signal: abort.signal,
+        onFrame: setPresentationRuntime,
+      }),
+      playPremiumTransition(
+        boardRef.current,
+        active,
+        presentationController.presentationSnapshot,
+        presentedPlayers,
+        plan,
+        abort.signal,
+      ),
+    ]).then(() => {
+      if (abort.signal.aborted) return;
+      setPresentationController((current) => {
+        if (!current) return current;
+        const completion = completeActivePresentation(current, token);
+        return completion.kind === 'completed' ? completion.state : current;
+      });
+    });
+
+    return () => {
+      abort.abort();
+      boardRef.current?.snapToAuthoritativeState(presentationController.authoritativeSnapshot);
+    };
+  }, [presentationController, presentedPlayers, reducedMotion]);
+
   useEffect(() => {
     return realtimeClient.subscribe((transition: TransitionEnvelope) => {
+      if (ackSyncTimeoutRef.current !== null) {
+        window.clearTimeout(ackSyncTimeoutRef.current);
+        ackSyncTimeoutRef.current = null;
+      }
+
+      setPresentationController((current) => {
+        if (!current || current.matchId !== transition.matchId) {
+          return current;
+        }
+
+        const accepted = acceptCommittedTransition(current, transition);
+        if (accepted.kind === 'recovery_required') {
+          void syncMatch(transition.matchId, current.authoritativeSnapshot.stateVersion, current.authoritativeWatermark.lastSequence);
+        }
+        return accepted.state;
+      });
+
       setMatch((current) => {
         if (current.status !== 'ready' || current.matchId !== transition.matchId) {
           return current;
@@ -383,6 +674,10 @@ export function PlayableBetaPage({
           void syncMatch(current.matchId, current.snapshot.stateVersion, current.lastSequence);
           return current;
         }
+
+        setHistoryItems((items) =>
+          mergeHistoryItems(items, transition.events.map((event) => describeEvent(transition.snapshot, event))),
+        );
 
         return {
           ...current,
@@ -403,6 +698,45 @@ export function PlayableBetaPage({
     void refreshRoom(selectedRoomId);
   }, [match, refreshRoom, selectedRoomId]);
 
+  useEffect(() => {
+    if (!selectedRoomId || !room?.currentUser.isMember) {
+      setChatMessages([]);
+      setChatError(null);
+      setLastSeenChatMessageId(null);
+      chatInitializedRoomIdRef.current = null;
+      return;
+    }
+
+    const controller = new AbortController();
+    void loadChat(selectedRoomId, controller.signal).catch(() => {
+      setChatError('Не удалось загрузить сообщения комнаты.');
+    });
+
+    return () => controller.abort();
+  }, [loadChat, room?.currentUser.isMember, selectedRoomId]);
+
+  useEffect(() => {
+    if (!selectedRoomId || !room?.currentUser.isMember) return;
+    if (compactViewport && !mobileChatOpen) return;
+
+    const intervalId = window.setInterval(() => {
+      const controller = new AbortController();
+      void loadChat(selectedRoomId, controller.signal).catch(() => undefined);
+    }, 2_000);
+
+    return () => window.clearInterval(intervalId);
+  }, [compactViewport, loadChat, mobileChatOpen, room?.currentUser.isMember, selectedRoomId]);
+
+  useEffect(() => {
+    const newestMessageId = chatMessages.at(-1)?.id ?? null;
+    if (!selectedRoomId || !newestMessageId) return;
+
+    if (chatInitializedRoomIdRef.current !== selectedRoomId || mobileChatOpen) {
+      chatInitializedRoomIdRef.current = selectedRoomId;
+      setLastSeenChatMessageId(newestMessageId);
+    }
+  }, [chatMessages, mobileChatOpen, selectedRoomId]);
+
   const membersById = useMemo(
     () => new Map((room?.members ?? []).map((member) => [member.userId, member])),
     [room?.members],
@@ -410,8 +744,14 @@ export function PlayableBetaPage({
   const mySeatIndex = room?.currentUser.seatIndex ?? null;
   const occupiedCount = room?.counts.seatedCount ?? 0;
   const readyCount = room?.counts.readyCount ?? 0;
+  const unreadChatCount = useMemo(() => {
+    if (!compactViewport || mobileChatOpen || !lastSeenChatMessageId) return 0;
+    const seenIndex = chatMessages.findIndex((message) => message.id === lastSeenChatMessageId);
+    return seenIndex < 0 ? 0 : Math.max(0, chatMessages.length - seenIndex - 1);
+  }, [chatMessages, compactViewport, lastSeenChatMessageId, mobileChatOpen]);
 
-  const legalActions = match.status === 'ready' ? getLegalActions(match.snapshot as GameState, authState.user.id) : [];
+  const displaySnapshot = presentedSnapshot;
+  const legalActions = displaySnapshot ? getLegalActions(displaySnapshot as GameState, authState.user.id) : [];
   const nonSurrenderActions = legalActions.filter((action) => action.type !== 'SURRENDER');
   const rollAction = nonSurrenderActions.find((action) => action.type === 'ROLL_DICE') ?? null;
   const surrenderAction = legalActions.find((action) => action.type === 'SURRENDER') ?? null;
@@ -420,26 +760,101 @@ export function PlayableBetaPage({
       action.type === 'ENTER_PAWN' || action.type === 'MOVE_PAWN',
   );
   const pawnActionsById = useMemo(() => new Map(pawnActions.map((action) => [action.pawnId, action])), [pawnActions]);
-
-  const cellOccupants =
-    match.status === 'ready'
-      ? buildCellOccupants(match.snapshot)
-      : new Map<string, MatchSnapshot['pawns']>();
-
-  const offBoardByPlayer =
-    match.status === 'ready'
-      ? match.snapshot.pawns.reduce<Record<string, MatchSnapshot['pawns']>>((acc, pawn) => {
-          if (pawn.position.zone !== 'OFF_BOARD') return acc;
-          acc[pawn.playerId] = [...(acc[pawn.playerId] ?? []), pawn];
-          return acc;
-        }, {})
+  const gameScreen = displaySnapshot ? projectGameScreenModel(displaySnapshot as GameState, authState.user.id) : null;
+  const playerNamesById = useMemo(
+    () =>
+      Object.fromEntries(
+        (room?.members ?? []).map((member) => [
+          member.userId,
+          member.userId === authState.user.id ? `${member.displayName} (Вы)` : member.displayName,
+        ]),
+      ),
+    [authState.user.id, room?.members],
+  );
+  const playerAvatarUrlsById = useMemo(
+    () =>
+      Object.fromEntries(
+        (room?.members ?? []).map((member) => [
+          member.userId,
+          member.userId === authState.user.id ? (authState.user.photoUrl ?? null) : null,
+        ]),
+      ),
+    [authState.user.photoUrl, authState.user.id, room?.members],
+  );
+  const pawnActionLabels = useMemo(
+    () => (displaySnapshot
+      ? Object.fromEntries(pawnActions.map((action) => [action.pawnId, pawnActionLabel(action, displaySnapshot)]))
+      : {}),
+    [displaySnapshot, pawnActions],
+  );
+  const status = displaySnapshot ? statusCopy(displaySnapshot, authState.user.id, nonSurrenderActions.length) : null;
+  const showFinishedMatch = displaySnapshot?.status === 'FINISHED';
+  const readyMatchBoardProps =
+    displaySnapshot && displaySnapshot.diceValue !== null
+      ? { dieValue: displaySnapshot.diceValue as DieValue }
       : {};
-
-  const topPlayers = match.status === 'ready' ? match.snapshot.players.slice(0, 2) : [];
-  const bottomPlayers = match.status === 'ready' ? match.snapshot.players.slice(2, 4) : [];
-  const status =
-    match.status === 'ready' ? statusCopy(match.snapshot, authState.user.id, nonSurrenderActions.length) : null;
-  const showFinishedMatch = match.status === 'ready' && match.snapshot.status === 'FINISHED';
+  const utilityActions = room ? (
+    <div className="beta-room-page__utility-actions">
+      <button type="button" onClick={() => setUtilityPanel('rules')}>▤ Правила игры</button>
+      <button type="button" onClick={() => setUtilityPanel('history')}>◴ История ходов</button>
+      <button type="button" onClick={() => setUtilityPanel('settings')}>⚙ Настройки комнаты</button>
+      {compactViewport ? (
+        <button type="button" onClick={() => setMobileChatOpen(true)}>
+          💬 {unreadChatCount > 0 ? `Чат • ${unreadChatCount}` : 'Чат'}
+        </button>
+      ) : null}
+    </div>
+  ) : null;
+  const chatPanel = room ? (
+    <section className="game-board-scene__chat-card game-board-scene__chat-card--live">
+      <div className="game-board-scene__panel-heading">
+        <h2>Чат комнаты</h2>
+        <span>{room.code}</span>
+      </div>
+      <div className="game-board-scene__messages">
+        {chatMessages.length === 0 ? <p className="game-board-scene__chat-empty">Пока нет сообщений. Начните разговор.</p> : null}
+        {chatMessages.map((message) => (
+          <div className="game-board-scene__message" key={message.id}>
+            <GameAvatar
+              color={gameScreen?.players.find((player) => player.playerId === message.userId)?.color ?? 'GREEN'}
+              name={message.displayName}
+              photoUrl={message.userId === authState.user.id ? authState.user.photoUrl ?? null : null}
+            />
+            <div>
+              <strong>{message.displayName}</strong>
+              <p>{message.text}</p>
+            </div>
+            <time>{new Date(message.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</time>
+          </div>
+        ))}
+      </div>
+      <label className="game-board-scene__chat-input">
+        <input
+          type="text"
+          value={chatDraft}
+          onChange={(event) => setChatDraft(event.currentTarget.value)}
+          placeholder={room.currentUser.isMember ? 'Сообщение' : 'Войдите в комнату для чата'}
+          maxLength={1000}
+          disabled={!room.currentUser.isMember || chatPending}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              void submitChat();
+            }
+          }}
+        />
+        <button
+          type="button"
+          aria-label="Отправить"
+          onClick={() => void submitChat()}
+          disabled={!room.currentUser.isMember || chatPending || !chatDraft.trim()}
+        >
+          ➤
+        </button>
+      </label>
+      {chatError ? <p className="beta-room-page__error">{chatError}</p> : null}
+    </section>
+  ) : null;
 
   async function mutateRoom(action: (signal: AbortSignal) => Promise<unknown>) {
     const controller = new AbortController();
@@ -447,7 +862,16 @@ export function PlayableBetaPage({
     setRoomError(null);
 
     try {
-      await action(controller.signal);
+      const result = await action(controller.signal);
+      if (
+        typeof result === 'object' &&
+        result !== null &&
+        'ok' in result &&
+        result.ok === true &&
+        'room' in result
+      ) {
+        setRoom(result.room as RoomState);
+      }
       if (selectedRoomId) {
         await loadRoom(selectedRoomId, controller.signal);
       } else {
@@ -497,7 +921,12 @@ export function PlayableBetaPage({
     try {
       const result = await roomApi.startMatch(selectedRoomId, room.version, controller.signal);
       if (!result.ok) {
-        setRoomError(result.error.message);
+        if (result.error.code === 'ROOM_ALREADY_ACTIVE' && room.currentMatchId) {
+          setRoomError(null);
+          await syncMatch(room.currentMatchId);
+          return;
+        }
+        setRoomError(friendlyRoomError(result.error.code, result.error.message));
         return;
       }
 
@@ -513,6 +942,10 @@ export function PlayableBetaPage({
   async function submitAction(action: LegalAction) {
     if (match.status !== 'ready' || match.pending) return;
 
+    if (action.type === 'SURRENDER' && !window.confirm('Сдаться?\nМатч будет засчитан как поражение.')) {
+      return;
+    }
+
     setMatch({ ...match, pending: true, error: null });
 
     try {
@@ -521,23 +954,56 @@ export function PlayableBetaPage({
       );
 
       if (!result.ok) {
-        setMatch({ ...match, pending: false, error: result.message });
+        setMatch({ ...match, pending: false, error: friendlyGameError(result.code, result.message) });
         if (result.code === 'STALE_STATE_VERSION') {
           await syncMatch(match.matchId, match.snapshot.stateVersion, match.lastSequence);
         }
         return;
       }
 
-      setMatch({
-        status: 'ready',
-        matchId: result.matchId,
-        snapshot: result.snapshot,
-        lastSequence: result.lastSequence,
-        error: null,
-        pending: false,
-      });
+      setMatch((current) =>
+        current.status === 'ready' && current.matchId === result.matchId
+          ? { ...current, pending: false, error: null }
+          : current,
+      );
+      if (ackSyncTimeoutRef.current !== null) {
+        window.clearTimeout(ackSyncTimeoutRef.current);
+      }
+      ackSyncTimeoutRef.current = window.setTimeout(() => {
+        setMatch((current) => {
+          if (
+            current.status === 'ready' &&
+            current.matchId === result.matchId &&
+            current.lastSequence < result.lastSequence
+          ) {
+            void syncMatch(current.matchId, current.snapshot.stateVersion, current.lastSequence);
+          }
+          return current;
+        });
+      }, 1200);
     } catch {
       setMatch({ ...match, pending: false, error: 'Не удалось выполнить игровой ход.' });
+    }
+  }
+
+  async function submitChat() {
+    if (!selectedRoomId || !room?.currentUser.isMember || !chatDraft.trim() || chatPending) return;
+
+    const controller = new AbortController();
+    const text = chatDraft.trim();
+    setChatPending(true);
+    setChatError(null);
+
+    try {
+      const message = await roomApi.sendChat(selectedRoomId, text, controller.signal);
+      setChatMessages((current) =>
+        current.some((candidate) => candidate.id === message.id) ? current : [...current, message],
+      );
+      setChatDraft('');
+    } catch {
+      setChatError('Не удалось отправить сообщение.');
+    } finally {
+      setChatPending(false);
     }
   }
 
@@ -609,11 +1075,201 @@ export function PlayableBetaPage({
     );
   }
 
+  if (room && match.status === 'ready') {
+    if (!gameScreen) {
+      return (
+        <section className="beta-room-page">
+          <EmptyState title="Матч временно недоступен" description="Не удалось подготовить игровой экран. Обновите комнату." />
+        </section>
+      );
+    }
+
+    return (
+      <section className="beta-room-page">
+        <GameBoard
+          pawns={gameScreen.pawns}
+          players={gameScreen.players}
+          {...readyMatchBoardProps}
+          playerNamesById={playerNamesById}
+          playerAvatarUrlsById={playerAvatarUrlsById}
+          actionablePawnIds={pawnActions.map((action) => action.pawnId)}
+          pawnActionLabels={pawnActionLabels}
+          onPawnSelect={(pawnId) => {
+            const action = pawnActionsById.get(pawnId);
+            if (action) {
+              void submitAction(action);
+            }
+          }}
+          ref={boardRef}
+          interactionDisabled={
+            match.pending ||
+            Boolean(presentationController?.queue.active) ||
+            (presentationController?.queue.queued.length ?? 0) > 0
+          }
+          dieRolling={match.pending && Boolean(rollAction)}
+          presentation={presentationRuntime ?? undefined}
+          victoryPlayerId={displaySnapshot?.winnerPlayerId ?? null}
+          victoryReason={displaySnapshot?.winReason ?? null}
+          roomPanel={
+            <section className="game-board-scene__room">
+              <div className="game-board-scene__panel-heading">
+                <h2>О комнате</h2>
+                <span>{room.code}</span>
+              </div>
+              <div className="game-board-scene__room-meta">
+                <p>{`Комната: ${room.code}`}</p>
+                <p>{`Участники: ${room.counts.memberCount}`}</p>
+                <p>{`Места: ${room.counts.seatedCount} / 4`}</p>
+                <p>{`Готовы: ${room.counts.readyCount} / ${Math.max(room.counts.seatedCount, 1)}`}</p>
+                <p>{room.currentUser.startBlockedReason ?? 'Матч можно продолжать по текущему authoritative состоянию.'}</p>
+              </div>
+            </section>
+          }
+          turnPanel={{
+            heading: 'Матч',
+            badge: `Ход #${displaySnapshot?.turnNumber ?? 1}`,
+            title: status?.title,
+            subtitle: status?.subtitle,
+            dieLabel: displaySnapshot?.diceValue === null ? 'Кубик: ожидание броска' : `Кубик: ${displaySnapshot?.diceValue}`,
+            dieValueText:
+              displaySnapshot?.diceValue === null
+                ? 'Кубик ещё не брошен'
+                : `Выпало: ${displaySnapshot?.diceValue ?? '—'}`,
+            primaryAction:
+              displaySnapshot?.status === 'FINISHED' ? undefined : rollAction ? (
+                <Button onClick={() => void submitAction(rollAction)} loading={match.pending} disabled={match.pending}>
+                  {actionLabel(rollAction)}
+                </Button>
+              ) : undefined,
+            secondaryActions:
+              displaySnapshot?.status === 'FINISHED' ? undefined : surrenderAction ? (
+                <Button
+                  variant="secondary"
+                  onClick={() => void submitAction(surrenderAction)}
+                  loading={match.pending}
+                  disabled={match.pending}
+                >
+                  {actionLabel(surrenderAction)}
+                </Button>
+              ) : undefined,
+            footer:
+              displaySnapshot?.status === 'FINISHED' ? (
+                <div className="beta-room-page__controls">
+                  <p>{finishedReason(displaySnapshot)}</p>
+                  <Button onClick={() => navigateTo(roomRoute(selectedRoomId))}>Вернуться в комнату</Button>
+                  {utilityActions}
+                </div>
+              ) : (
+                <div className="beta-room-page__controls">
+                  {!rollAction && pawnActions.length > 0 ? <p>Доступные пешки подсвечены на поле и в резерве.</p> : null}
+                  {nonSurrenderActions.length === 0 && !match.pending ? <p>Ожидаем следующее состояние матча.</p> : null}
+                  {utilityActions}
+                </div>
+              ),
+            error: match.error ? <p className="beta-room-page__error">{match.error}</p> : null,
+          }}
+          chatPanel={chatPanel}
+          mobileChatOpen={mobileChatOpen}
+          onMobileChatClose={() => setMobileChatOpen(false)}
+        />
+        {compactViewport ? (
+          <BottomSheet
+            open={utilityPanel === 'rules'}
+            onOpenChange={(open) => setUtilityPanel(open ? 'rules' : null)}
+            title="Правила игры"
+          >
+            <RulesPage />
+          </BottomSheet>
+        ) : (
+          <Dialog
+            open={utilityPanel === 'rules'}
+            onOpenChange={(open) => setUtilityPanel(open ? 'rules' : null)}
+            title="Правила игры"
+          >
+            <RulesPage />
+          </Dialog>
+        )}
+        {compactViewport ? (
+          <BottomSheet
+            open={utilityPanel === 'history'}
+            onOpenChange={(open) => setUtilityPanel(open ? 'history' : null)}
+            title="История ходов"
+          >
+            <div className="beta-room-page__history-panel">
+              {historyItems.length === 0 ? <p>История появится после первых событий матча.</p> : null}
+              {historyItems.map((item) => (
+                <article key={item.id} className="beta-room-page__history-item">
+                  <strong>{item.title}</strong>
+                  <p>{item.detail}</p>
+                </article>
+              ))}
+            </div>
+          </BottomSheet>
+        ) : (
+          <Dialog
+            open={utilityPanel === 'history'}
+            onOpenChange={(open) => setUtilityPanel(open ? 'history' : null)}
+            title="История ходов"
+          >
+            <div className="beta-room-page__history-panel">
+              {historyItems.length === 0 ? <p>История появится после первых событий матча.</p> : null}
+              {historyItems.map((item) => (
+                <article key={item.id} className="beta-room-page__history-item">
+                  <strong>{item.title}</strong>
+                  <p>{item.detail}</p>
+                </article>
+              ))}
+            </div>
+          </Dialog>
+        )}
+        {compactViewport ? (
+          <BottomSheet
+            open={utilityPanel === 'settings'}
+            onOpenChange={(open) => setUtilityPanel(open ? 'settings' : null)}
+            title="Настройки комнаты"
+          >
+            <div className="beta-room-page__settings-panel">
+              <p>{`Код комнаты: ${room.code}`}</p>
+              <p>{`Участников: ${room.counts.memberCount}`}</p>
+              <Button variant="secondary" onClick={() => void navigator.clipboard?.writeText(room.code)}>
+                Копировать код
+              </Button>
+              {displaySnapshot?.status !== 'ACTIVE' && room.currentUser.isMember ? (
+                <Button variant="ghost" onClick={() => void mutateRoom((signal) => roomApi.leaveRoom(selectedRoomId, room.version, signal))}>
+                  Покинуть комнату
+                </Button>
+              ) : null}
+            </div>
+          </BottomSheet>
+        ) : (
+          <Dialog
+            open={utilityPanel === 'settings'}
+            onOpenChange={(open) => setUtilityPanel(open ? 'settings' : null)}
+            title="Настройки комнаты"
+          >
+            <div className="beta-room-page__settings-panel">
+              <p>{`Код комнаты: ${room.code}`}</p>
+              <p>{`Участников: ${room.counts.memberCount}`}</p>
+              <Button variant="secondary" onClick={() => void navigator.clipboard?.writeText(room.code)}>
+                Копировать код
+              </Button>
+              {displaySnapshot?.status !== 'ACTIVE' && room.currentUser.isMember ? (
+                <Button variant="ghost" onClick={() => void mutateRoom((signal) => roomApi.leaveRoom(selectedRoomId, room.version, signal))}>
+                  Покинуть комнату
+                </Button>
+              ) : null}
+            </div>
+          </Dialog>
+        )}
+      </section>
+    );
+  }
+
   return (
     <section className="beta-room-page">
       <header className="beta-room-page__header">
         <div>
-          <p className="beta-room-page__eyebrow">Room {room?.id ?? selectedRoomId}</p>
+          <p className="beta-room-page__eyebrow">Multi-room beta</p>
           <h1>{room ? `Комната ${room.code}` : 'Комната'}</h1>
         </div>
 
@@ -713,147 +1369,7 @@ export function PlayableBetaPage({
         <EmptyState title="Матч временно недоступен" description={match.message} />
       ) : match.status !== 'ready' ? (
         <Panel as="section">Подключение к матчу…</Panel>
-      ) : (
-        <div className="beta-room-page__match">
-          <Panel as="section" className="beta-room-page__board-panel">
-            <div className="beta-room-page__match-header">
-              <div>
-                <h2>Матч</h2>
-                <p>{status?.title}</p>
-                <p>{status?.subtitle}</p>
-              </div>
-
-              <div className="beta-room-page__dice">
-                <span>{`Выпало: ${match.snapshot.diceValue ?? '—'}`}</span>
-                <span>{`Ход #${match.snapshot.turnNumber}`}</span>
-              </div>
-            </div>
-
-            <div className="beta-board">
-              <div className="beta-board__reserves beta-board__reserves--top">
-                {topPlayers.map((player) => (
-                  <div
-                    key={player.playerId}
-                    className={`beta-board__reserve beta-board__reserve--${player.color.toLowerCase()}`}
-                  >
-                    <strong>{colorLabels[player.color]}</strong>
-                    <div className="beta-board__pawn-strip">
-                      {(offBoardByPlayer[player.playerId] ?? []).map((pawn) => {
-                        const action = pawnActionsById.get(pawn.pawnId);
-
-                        return (
-                          <button
-                            key={pawn.pawnId}
-                            type="button"
-                            className={`beta-pawn beta-pawn--${player.color.toLowerCase()}`}
-                            onClick={() => action && void submitAction(action)}
-                            aria-label={action ? pawnActionLabel(action, match.snapshot) : `Пешка ${pawn.pawnId}`}
-                            disabled={!action || match.pending}
-                          />
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="beta-board__grid" role="grid" aria-label="Игровое поле">
-                {Array.from({ length: 64 }, (_, index) => {
-                  const row = Math.floor(index / 8) as BoardCoord['row'];
-                  const col = (index % 8) as BoardCoord['col'];
-                  const occupant = cellOccupants.get(`${row}:${col}`)?.[0];
-                  const moveAction = occupant ? pawnActionsById.get(occupant.pawnId) ?? null : null;
-
-                  return (
-                    <div
-                      key={`${row}:${col}`}
-                      role="gridcell"
-                      className={`beta-board__cell ${(row + col) % 2 === 0 ? 'is-light' : 'is-dark'}`}
-                    >
-                      {occupant ? (
-                        <button
-                          type="button"
-                          className={`beta-pawn beta-pawn--${occupant.color.toLowerCase()}`}
-                          onClick={() => moveAction && void submitAction(moveAction)}
-                          aria-label={moveAction ? pawnActionLabel(moveAction, match.snapshot) : `Пешка ${occupant.pawnId}`}
-                          disabled={!moveAction || match.pending}
-                        />
-                      ) : null}
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="beta-board__reserves beta-board__reserves--bottom">
-                {bottomPlayers.map((player) => (
-                  <div
-                    key={player.playerId}
-                    className={`beta-board__reserve beta-board__reserve--${player.color.toLowerCase()}`}
-                  >
-                    <strong>{colorLabels[player.color]}</strong>
-                    <div className="beta-board__pawn-strip">
-                      {(offBoardByPlayer[player.playerId] ?? []).map((pawn) => {
-                        const action = pawnActionsById.get(pawn.pawnId);
-
-                        return (
-                          <button
-                            key={pawn.pawnId}
-                            type="button"
-                            className={`beta-pawn beta-pawn--${player.color.toLowerCase()}`}
-                            onClick={() => action && void submitAction(action)}
-                            aria-label={action ? pawnActionLabel(action, match.snapshot) : `Пешка ${pawn.pawnId}`}
-                            disabled={!action || match.pending}
-                          />
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </Panel>
-
-          <Panel as="section" className="beta-room-page__controls-panel">
-            <h2>Действия</h2>
-
-            {match.snapshot.status === 'FINISHED' ? (
-              <div className="beta-room-page__controls">
-                <p>{finishedReason(match.snapshot)}</p>
-                <Button onClick={() => navigateTo(roomRoute(selectedRoomId))}>Вернуться в комнату</Button>
-              </div>
-            ) : (
-              <>
-                <div className="beta-room-page__controls">
-                  {rollAction ? (
-                    <Button onClick={() => void submitAction(rollAction)} loading={match.pending} disabled={match.pending}>
-                      {actionLabel(rollAction)}
-                    </Button>
-                  ) : null}
-
-                  {!rollAction && pawnActions.length > 0 ? <p>Доступные пешки подсвечены на поле и в резерве.</p> : null}
-
-                  {nonSurrenderActions.length === 0 && !match.pending ? <p>Ожидаем следующее состояние матча.</p> : null}
-                </div>
-
-                {surrenderAction ? (
-                  <div className="beta-room-page__controls">
-                    <Button
-                      variant="secondary"
-                      onClick={() => void submitAction(surrenderAction)}
-                      loading={match.pending}
-                      disabled={match.pending}
-                    >
-                      {actionLabel(surrenderAction)}
-                    </Button>
-                  </div>
-                ) : null}
-              </>
-            )}
-
-            {match.error ? <p className="beta-room-page__error">{match.error}</p> : null}
-          </Panel>
-        </div>
-      )}
+      ) : null}
     </section>
   );
 }

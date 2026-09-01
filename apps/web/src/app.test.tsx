@@ -105,6 +105,8 @@ function roomApi(): RoomApi {
     setReady: vi.fn(),
     startMatch: vi.fn(),
     reconnect: vi.fn().mockResolvedValue(room),
+    getChat: vi.fn().mockResolvedValue({ messages: [] }),
+    sendChat: vi.fn().mockResolvedValue({ messages: [] }),
   };
 }
 

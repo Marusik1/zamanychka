@@ -5,6 +5,16 @@ export {
   type ReadinessResponse,
 } from './health.js';
 export {
+  roomChatHistorySchema,
+  roomChatMessageSchema,
+  sendRoomChatMessageRequestSchema,
+  sendRoomChatMessageResponseSchema,
+  type RoomChatHistory,
+  type RoomChatMessage,
+  type SendRoomChatMessageRequest,
+  type SendRoomChatMessageResponse,
+} from './room-chat.js';
+export {
   createRoomRequestSchema,
   joinRoomRequestSchema,
   leaveRoomRequestSchema,

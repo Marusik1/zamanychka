@@ -16,6 +16,10 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': apiTarget,
+      '/socket.io': {
+        target: apiTarget,
+        ws: true,
+      },
       '/health': apiTarget,
       '/ready': apiTarget,
     },

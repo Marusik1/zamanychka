@@ -148,4 +148,28 @@ describe('playable beta room API', () => {
       }),
     );
   });
+
+  it('returns the committed chat message directly from POST without a follow-up history request', async () => {
+    const message = {
+      id: 'message-1',
+      roomId: 'room-1',
+      userId: 'user-a',
+      displayName: 'Анна',
+      text: 'Готова',
+      createdAt: '2026-08-31T12:00:00.000Z',
+    };
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ ok: true, message }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+
+    await expect(createRoomApi(fetcher).sendChat('room-1', 'Готова')).resolves.toEqual(message);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher).toHaveBeenCalledWith(
+      '/api/rooms/room-1/chat',
+      expect.objectContaining({ method: 'POST', body: JSON.stringify({ text: 'Готова' }) }),
+    );
+  });
 });

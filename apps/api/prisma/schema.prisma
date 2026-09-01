@@ -28,6 +28,7 @@ model User {
   sessions     AuthSession[]
   roomSeats    RoomSeat[]
   roomMembership RoomMembership?
+  roomChatMessages RoomChatMessage[]
 }
 
 model AuthSession {
@@ -54,6 +55,7 @@ model Room {
   updatedAt     DateTime   @updatedAt
   seats         RoomSeat[]
   memberships   RoomMembership[]
+  chatMessages  RoomChatMessage[]
   matches       Match[]     @relation("RoomMatches")
   currentMatch  Match?      @relation("RoomCurrentMatch", fields: [currentMatchId], references: [id], onDelete: SetNull)
 }
@@ -181,4 +183,18 @@ model RoomSeat {
 
   @@id([roomKey, seatIndex])
   @@index([roomKey])
+}
+
+model RoomChatMessage {
+  id         String   @id @default(cuid())
+  roomKey    String
+  userId     String
+  text       String
+  createdAt  DateTime @default(now())
+
+  room       Room     @relation(fields: [roomKey], references: [key], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([roomKey, createdAt])
+  @@index([userId, createdAt])
 }

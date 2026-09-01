@@ -16,6 +16,10 @@
     "@zamanushka/ui": "workspace:*",
     "react": "latest",
     "react-dom": "latest",
+    "three": "^0.180.0",
     "socket.io-client": "^4.8.3"
+  },
+  "devDependencies": {
+    "@types/three": "^0.180.0"
   }
 }

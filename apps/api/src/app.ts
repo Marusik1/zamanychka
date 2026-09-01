@@ -10,6 +10,7 @@ import { registerOperationalRoutes } from './health/routes.js';
 import { registerProfileRoutes } from './profile/routes.js';
 import { registerRoomRoutes } from './rooms/routes.js';
 import type { ProfileService } from './profile/profile-service.js';
+import type { RoomChatService } from './rooms/room-chat.js';
 import type { RoomService } from './rooms/room-service.js';
 
 export type DependencyName = 'postgres' | 'redis';
@@ -23,7 +24,7 @@ export interface BuildAppOptions {
   probes: ReadinessProbe[];
   logger?: boolean;
   auth?: { config: AuthRuntimeConfig; service: AuthService };
-  rooms?: { service: RoomService };
+  rooms?: { service: RoomService; chat?: RoomChatService };
   profile?: { service: ProfileService };
   productionWebRoot?: string;
 }
@@ -95,6 +96,7 @@ export function buildApp({
       if (rooms)
         registerRoomRoutes(scope, {
           service: rooms.service,
+          ...(rooms.chat ? { chat: rooms.chat } : {}),
           auth: auth.service,
           allowedOrigins: auth.config.allowedOrigins,
         });

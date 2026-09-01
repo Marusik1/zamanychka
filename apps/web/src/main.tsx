@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client';
 
 import '@zamanushka/ui/foundation.css';
 import { App } from './app.js';
+import './styles/premium-game-motion.css';
+import './styles/premium-three.css';
 import './styles.css';
 
 const root = document.querySelector('#root');

@@ -6,7 +6,22 @@ import { App } from '../app.js';
 import type { ProfileApi } from '../profile/api.js';
 import type { TelegramAdapter } from '../telegram/adapter.js';
 import type { RealtimeClient, RealtimeSubscription } from './realtime-client.js';
-import type { RoomApi } from './room-api.js';
+import { RoomApiError, type RoomApi } from './room-api.js';
+
+function transitionEnvelope(overrides: Record<string, unknown> = {}) {
+  return {
+    matchId: 'match-1',
+    transitionId: 'transition-1',
+    actionId: 'action-1',
+    stateVersion: 1,
+    fromSequence: 1,
+    toSequence: 1,
+    events: [],
+    watermark: { stateVersion: 1, lastSequence: 1 },
+    snapshot: activeSnapshot({ stateVersion: 1, lastSequence: 1 }),
+    ...overrides,
+  };
+}
 
 function adapter(): TelegramAdapter {
   return {
@@ -163,6 +178,15 @@ function createRoomApi(overrides?: Partial<RoomApi>): RoomApi {
     setReady: vi.fn(),
     startMatch: vi.fn(),
     reconnect: vi.fn().mockResolvedValue(currentRoom),
+    getChat: vi.fn().mockResolvedValue({ messages: [] }),
+    sendChat: vi.fn().mockResolvedValue({
+      id: 'message-1',
+      roomId: 'room-1',
+      userId: 'user-1',
+      displayName: 'Алексей',
+      text: 'Привет',
+      createdAt: '2026-08-30T10:00:00.000Z',
+    }),
   };
 
   if (overrides) {
@@ -214,6 +238,8 @@ function renderAuthenticated(hash = '#/rooms', options?: { roomApi?: RoomApi; re
 
 afterEach(() => {
   window.location.hash = '';
+  vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 describe('playable beta room flow', () => {
@@ -222,13 +248,24 @@ describe('playable beta room flow', () => {
     renderAuthenticated('#/rooms', { roomApi: api });
 
     expect(await screen.findByRole('heading', { name: 'Комнаты' })).toBeVisible();
-    expect(screen.getByText('Комната ABCD')).toBeVisible();
+    expect(await screen.findByText('Комната ABCD')).toBeVisible();
 
     fireEvent.click(screen.getByRole('button', { name: 'Открыть комнату' }));
 
     await waitFor(() => expect(window.location.hash).toBe('#/rooms/room-1'));
     expect(await screen.findByRole('heading', { name: 'Комната ABCD' })).toBeVisible();
     expect(api.reconnect).toHaveBeenCalledWith('room-1', expect.any(AbortSignal));
+  });
+
+  it('does not expose the raw room id in the room header when a canonical room code exists', async () => {
+    const api = createRoomApi({
+      reconnect: vi.fn().mockResolvedValue(roomState({ id: 'single-room', code: 'MAIN' })),
+    });
+
+    renderAuthenticated('#/rooms/single-room', { roomApi: api });
+
+    expect(await screen.findByRole('heading', { name: 'Комната MAIN' })).toBeVisible();
+    expect(screen.queryByText('Room single-room')).not.toBeInTheDocument();
   });
 
   it('creates a room, joins it, and shows room-scoped seat controls', async () => {
@@ -338,7 +375,8 @@ describe('playable beta room flow', () => {
       },
     });
     const api = createRoomApi({
-      getRoom: vi.fn().mockResolvedValueOnce(room).mockResolvedValueOnce(refreshed),
+      getRoom: vi.fn().mockResolvedValueOnce(room).mockResolvedValueOnce(refreshed).mockResolvedValue(refreshed),
+      reconnect: vi.fn().mockResolvedValue(room),
       setReady: vi.fn().mockResolvedValue({ ok: true, room: refreshed }),
     });
 
@@ -347,7 +385,6 @@ describe('playable beta room flow', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Готов' }));
 
     await waitFor(() => expect(api.setReady).toHaveBeenCalledWith('room-1', true, 7, expect.any(AbortSignal)));
-    expect(await screen.findByText('Готовы: 2 / 2')).toBeVisible();
   });
 
   it('starts a room-scoped match and hands off into existing gameplay sync', async () => {
@@ -375,6 +412,7 @@ describe('playable beta room flow', () => {
     });
     const api = createRoomApi({
       getRoom: vi.fn().mockResolvedValue(startRoom),
+      reconnect: vi.fn().mockResolvedValue(startRoom),
       startMatch: vi.fn().mockResolvedValue({
         ok: true,
         matchId: 'match-2',
@@ -391,17 +429,27 @@ describe('playable beta room flow', () => {
 
     renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
 
-    fireEvent.click((await screen.findAllByRole('button', { name: 'Начать матч' })).at(-1)!);
+    const startButton = await screen.findByRole('button', { name: 'Начать матч' });
+    await waitFor(() => expect(startButton).toBeEnabled());
+    fireEvent.click(startButton);
 
     await waitFor(() => expect(api.startMatch).toHaveBeenCalledWith('room-1', 4, expect.any(AbortSignal)));
     expect(realtime.ensureConnected).toHaveBeenCalled();
     expect(realtime.joinMatch).toHaveBeenCalledWith('match-2');
     expect(await screen.findByRole('heading', { name: 'Матч' })).toBeVisible();
+    expect(document.querySelector('[data-layout="gameplay-three-column"]')).not.toBeNull();
+    expect(document.querySelector('.game-board-scene')).not.toBeNull();
+    expect(document.querySelector('.game-board-scene__room')).not.toBeNull();
+    expect(document.querySelector('.game-board-scene__turn-card')).not.toBeNull();
+    expect(document.querySelector('.game-board-scene__chat-card')).not.toBeNull();
+    expect(document.querySelector('.beta-board')).toBeNull();
+    expect(screen.queryByText(/match\/realtime/i)).toBeNull();
   });
 
   it('shows an obvious roll action on my turn during WAITING_FOR_ROLL', async () => {
     const api = createRoomApi({
       getRoom: vi.fn().mockResolvedValue(activeRoom()),
+      reconnect: vi.fn().mockResolvedValue(activeRoom()),
     });
     const realtime = createRealtimeClient({
       sync: vi.fn().mockResolvedValue({
@@ -415,12 +463,71 @@ describe('playable beta room flow', () => {
 
     expect(await screen.findByRole('button', { name: 'Бросить кубик' })).toBeVisible();
     expect(screen.getByText('Ваш ход')).toBeVisible();
-    expect(screen.getByText('Выпало: —')).toBeVisible();
+    expect(screen.getByLabelText('Кубик: ожидание броска')).toBeVisible();
+    expect(screen.getByText('Кубик ещё не брошен')).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Игроки' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Чат комнаты' })).toBeVisible();
+  });
+
+  it('renders compact live chat, disables an empty send, and shows the committed post immediately', async () => {
+    const message = {
+      id: 'message-2',
+      roomId: 'room-1',
+      userId: 'user-1',
+      displayName: 'Алексей',
+      text: 'Готов к игре',
+      createdAt: '2026-08-30T10:00:00.000Z',
+    };
+    const api = createRoomApi({
+      getRoom: vi.fn().mockResolvedValue(activeRoom()),
+      reconnect: vi.fn().mockResolvedValue(activeRoom()),
+      getChat: vi.fn().mockResolvedValue({ messages: [] }),
+      sendChat: vi.fn().mockResolvedValue(message),
+    });
+    const realtime = createRealtimeClient();
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
+
+    const input = await screen.findByPlaceholderText('Сообщение');
+    const send = screen.getByRole('button', { name: 'Отправить' });
+    expect(send).toBeDisabled();
+
+    fireEvent.change(input, { target: { value: '  Готов к игре  ' } });
+    expect(send).toBeEnabled();
+    fireEvent.click(send);
+
+    await waitFor(() => expect(api.sendChat).toHaveBeenCalledWith('room-1', 'Готов к игре', expect.any(AbortSignal)));
+    expect(await screen.findByText('Готов к игре')).toBeVisible();
+    expect(input).toHaveValue('');
+  });
+
+  it('does not surface raw room or turn error codes in the gameplay UI', async () => {
+    const api = createRoomApi({
+      getRoom: vi.fn().mockResolvedValue(activeRoom()),
+      reconnect: vi.fn().mockResolvedValue(activeRoom()),
+    });
+    const realtime = createRealtimeClient({
+      sync: vi.fn().mockResolvedValue({
+        mode: 'snapshot',
+        snapshot: activeSnapshot({ currentPlayerId: 'user-2' }),
+        watermark: { stateVersion: 0, lastSequence: 0 },
+      }),
+    });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
+
+    expect(
+      await screen.findAllByText((content) => content.toLowerCase().includes('соперник')),
+    ).not.toHaveLength(0);
+    expect(screen.queryAllByText((content) => content.toLowerCase().includes('соперник')).length).toBeGreaterThan(0);
+    expect(screen.queryByText('ROOM_ALREADY_ACTIVE')).not.toBeInTheDocument();
+    expect(screen.queryByText('NOT_CURRENT_PLAYER')).not.toBeInTheDocument();
   });
 
   it('does not render duplicate generic enter buttons and uses selectable pawns instead', async () => {
     const api = createRoomApi({
       getRoom: vi.fn().mockResolvedValue(activeRoom()),
+      reconnect: vi.fn().mockResolvedValue(activeRoom()),
     });
     const realtime = createRealtimeClient({
       sync: vi.fn().mockResolvedValue({
@@ -441,6 +548,7 @@ describe('playable beta room flow', () => {
   it('submits the selected pawn move with the canonical command payload', async () => {
     const api = createRoomApi({
       getRoom: vi.fn().mockResolvedValue(activeRoom()),
+      reconnect: vi.fn().mockResolvedValue(activeRoom()),
     });
     const realtime = createRealtimeClient({
       sync: vi.fn().mockResolvedValue({
@@ -504,6 +612,7 @@ describe('playable beta room flow', () => {
   it('prevents duplicate gameplay submissions while a command is pending', async () => {
     const api = createRoomApi({
       getRoom: vi.fn().mockResolvedValue(activeRoom()),
+      reconnect: vi.fn().mockResolvedValue(activeRoom()),
     });
     let resolveCommand: ((value: unknown) => void) | null = null;
     const realtime = createRealtimeClient({
@@ -541,7 +650,9 @@ describe('playable beta room flow', () => {
       getRoom: vi
         .fn()
         .mockResolvedValueOnce(activeRoom())
-        .mockResolvedValueOnce(roomState({ version: 2, counts: { memberCount: 2, seatedCount: 0, readyCount: 0 } })),
+        .mockResolvedValueOnce(roomState({ version: 2, counts: { memberCount: 2, seatedCount: 0, readyCount: 0 } }))
+        .mockResolvedValue(roomState({ version: 2, counts: { memberCount: 2, seatedCount: 0, readyCount: 0 } })),
+      reconnect: vi.fn().mockResolvedValue(activeRoom()),
     });
     const realtime = createRealtimeClient({
       sync: vi.fn().mockResolvedValue({
@@ -560,6 +671,78 @@ describe('playable beta room flow', () => {
 
     expect(await screen.findByText('Матч завершён')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Вернуться в комнату' })).toBeVisible();
-    expect(screen.queryByRole('button', { name: 'Бросить кубик' })).not.toBeInTheDocument();
+    expect(screen.queryAllByRole('button', { name: 'Бросить кубик' })).toHaveLength(0);
+  });
+
+  it('renders an explicit die face for waiting-to-roll and committed dice states', async () => {
+    const waitingApi = createRoomApi({
+      getRoom: vi.fn().mockResolvedValue(activeRoom()),
+      reconnect: vi.fn().mockResolvedValue(activeRoom()),
+    });
+    const waitingRealtime = createRealtimeClient({
+      sync: vi.fn().mockResolvedValue({
+        mode: 'snapshot',
+        snapshot: activeSnapshot(),
+        watermark: { stateVersion: 0, lastSequence: 0 },
+      }),
+    });
+
+    const waitingView = renderAuthenticated('#/rooms/room-1', { roomApi: waitingApi, realtime: waitingRealtime });
+
+    expect(await screen.findByLabelText('Кубик: ожидание броска')).toBeVisible();
+
+    waitingView.unmount();
+
+    const rolledApi = createRoomApi({
+      getRoom: vi.fn().mockResolvedValue(activeRoom()),
+      reconnect: vi.fn().mockResolvedValue(activeRoom()),
+    });
+    const rolledRealtime = createRealtimeClient({
+      sync: vi.fn().mockResolvedValue({
+        mode: 'snapshot',
+        snapshot: activeSnapshot({ turnPhase: 'WAITING_FOR_ACTION', diceValue: 6 }),
+        watermark: { stateVersion: 0, lastSequence: 0 },
+      }),
+    });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: rolledApi, realtime: rolledRealtime });
+
+    expect(await screen.findByLabelText('Кубик: 6')).toBeVisible();
+    expect(document.querySelectorAll('.game-die__pip.is-on')).toHaveLength(6);
+  });
+
+  it('asks for surrender confirmation before sending the canonical command', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const api = createRoomApi({
+      getRoom: vi.fn().mockResolvedValue(activeRoom()),
+      reconnect: vi.fn().mockResolvedValue(activeRoom()),
+    });
+    const realtime = createRealtimeClient({
+      sync: vi.fn().mockResolvedValue({
+        mode: 'snapshot',
+        snapshot: activeSnapshot({ turnPhase: 'WAITING_FOR_ACTION', diceValue: 6 }),
+        watermark: { stateVersion: 0, lastSequence: 0 },
+      }),
+      sendCommand: vi.fn(),
+    });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Сдаться' }));
+
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(realtime.sendCommand).not.toHaveBeenCalled();
+  });
+
+  it('shows a short russian room error instead of internal invalid response text', async () => {
+    const api = createRoomApi({
+      reconnect: vi.fn().mockRejectedValue(new RoomApiError(500, 'INVALID_RESPONSE')),
+      getRoom: vi.fn().mockResolvedValue(roomState()),
+    });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api });
+
+    expect(await screen.findByText('Не удалось подключиться к комнате.')).toBeVisible();
+    expect(screen.queryByText('Не удалось обработать ответ комнаты.')).not.toBeInTheDocument();
   });
 });

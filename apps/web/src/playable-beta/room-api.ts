@@ -1,10 +1,14 @@
 import {
   listRoomsResponseSchema,
+  roomChatHistorySchema,
   roomCommandErrorSchema,
   roomCommandResultSchema,
   roomStateSchema,
+  sendRoomChatMessageResponseSchema,
   startMatchResultSchema,
   type ListRoomsResponse,
+  type RoomChatMessage,
+  type RoomChatHistory,
   type RoomCommandErrorCode,
   type RoomCommandResult,
   type RoomState,
@@ -21,7 +25,7 @@ export class RoomApiError extends Error {
   constructor(
     readonly status: number,
     readonly code: RoomCommandErrorCode | 'INVALID_RESPONSE' = 'INVALID_RESPONSE',
-    message = 'Unexpected room response',
+    message = 'Не удалось обработать ответ комнаты.',
   ) {
     super(message);
   }
@@ -95,6 +99,8 @@ export interface RoomApi {
   ): Promise<RoomCommandResult>;
   startMatch(roomId: string, expectedRoomVersion: number, signal?: AbortSignal): Promise<StartMatchResult>;
   reconnect(roomId: string, signal?: AbortSignal): Promise<RoomView>;
+  getChat(roomId: string, signal?: AbortSignal): Promise<RoomChatHistory>;
+  sendChat(roomId: string, text: string, signal?: AbortSignal): Promise<RoomChatMessage>;
 }
 
 export function createRoomApi(fetcher: Fetcher = fetch): RoomApi {
@@ -149,6 +155,16 @@ export function createRoomApi(fetcher: Fetcher = fetch): RoomApi {
         await fetcher(`/api/rooms/${roomId}/reconnect`, post({}, signal)),
         roomStateSchema,
       );
+    },
+    async getChat(roomId, signal) {
+      return parse(await fetcher(`/api/rooms/${roomId}/chat`, getOptions(signal)), roomChatHistorySchema);
+    },
+    async sendChat(roomId, text, signal) {
+      const response = await parse(
+        await fetcher(`/api/rooms/${roomId}/chat`, post({ text }, signal)),
+        sendRoomChatMessageResponseSchema,
+      );
+      return response.message;
     },
   };
 }

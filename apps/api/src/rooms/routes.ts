@@ -4,7 +4,9 @@ import {
   joinRoomRequestSchema,
   leaveRoomRequestSchema,
   leaveSeatRequestSchema,
+  roomChatHistorySchema,
   roomReconnectRequestSchema,
+  sendRoomChatMessageRequestSchema,
   setReadyRequestSchema,
   startMatchRequestSchema,
   takeSeatRequestSchema,
@@ -14,11 +16,13 @@ import {
 
 import type { AuthService } from '../auth/auth-service.js';
 import { isAllowedOrigin } from '../auth/origin-guard.js';
+import type { RoomChatService } from './room-chat.js';
 import type { RoomService } from './room-service.js';
 import type { RoomView } from './room-service.js';
 
 export interface RoomRoutesOptions {
   service: RoomService;
+  chat?: RoomChatService;
   auth: AuthService;
   allowedOrigins: string[];
 }
@@ -164,6 +168,27 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
     }
   });
 
+  app.get('/api/rooms/:roomId/chat', async (request, reply) => {
+    if (!options.chat) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: messages.NOT_FOUND } });
+
+    const userId = await actorId(request, reply, options.auth);
+    if (!userId) return;
+
+    const roomId = String((request.params as { roomId: string }).roomId);
+
+    try {
+      return reply.send(roomChatHistorySchema.parse(await options.chat.list(userId, roomId)));
+    } catch (error) {
+      if (isRoomNotFoundError(error)) {
+        return roomError(reply, 404, 'ROOM_NOT_FOUND');
+      }
+      if (error instanceof Error && error.message === 'NOT_ROOM_MEMBER') {
+        return roomError(reply, 403, 'NOT_ROOM_MEMBER');
+      }
+      throw error;
+    }
+  });
+
   app.post('/api/rooms/:roomId/join', async (request, reply) => {
     if (!requireOrigin(request, reply, options.allowedOrigins) || !requireJson(request, reply)) {
       return;
@@ -277,6 +302,32 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
     } catch (error) {
       if (isRoomNotFoundError(error)) {
         return roomError(reply, 404, 'ROOM_NOT_FOUND');
+      }
+      throw error;
+    }
+  });
+
+  app.post('/api/rooms/:roomId/chat', async (request, reply) => {
+    if (!options.chat) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: messages.NOT_FOUND } });
+    if (!requireOrigin(request, reply, options.allowedOrigins) || !requireJson(request, reply)) {
+      return;
+    }
+
+    const userId = await actorId(request, reply, options.auth);
+    if (!userId) return;
+
+    const roomId = String((request.params as { roomId: string }).roomId);
+    const parsed = sendRoomChatMessageRequestSchema.safeParse(request.body);
+    if (!parsed.success) return publicError(reply, 400, 'VALIDATION_ERROR');
+
+    try {
+      return reply.send({ ok: true, message: await options.chat.send(userId, roomId, parsed.data) });
+    } catch (error) {
+      if (isRoomNotFoundError(error)) {
+        return roomError(reply, 404, 'ROOM_NOT_FOUND');
+      }
+      if (error instanceof Error && error.message === 'NOT_ROOM_MEMBER') {
+        return roomError(reply, 403, 'NOT_ROOM_MEMBER');
       }
       throw error;
     }
