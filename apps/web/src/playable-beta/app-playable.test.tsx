@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import type { MatchSnapshot, RoomState, TransitionEnvelope } from '@zamanushka/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { AuthApi } from '../auth/api.js';
@@ -8,7 +9,7 @@ import type { TelegramAdapter } from '../telegram/adapter.js';
 import type { RealtimeClient, RealtimeSubscription } from './realtime-client.js';
 import { RoomApiError, type RoomApi } from './room-api.js';
 
-function transitionEnvelope(overrides: Record<string, unknown> = {}) {
+function transitionEnvelope(overrides: Record<string, unknown> = {}): TransitionEnvelope {
   return {
     matchId: 'match-1',
     transitionId: 'transition-1',
@@ -20,7 +21,7 @@ function transitionEnvelope(overrides: Record<string, unknown> = {}) {
     watermark: { stateVersion: 1, lastSequence: 1 },
     snapshot: activeSnapshot({ stateVersion: 1, lastSequence: 1 }),
     ...overrides,
-  };
+  } as TransitionEnvelope;
 }
 
 function adapter(): TelegramAdapter {
@@ -56,7 +57,7 @@ function profileApi(): ProfileApi {
   } as unknown as ProfileApi;
 }
 
-function roomState(overrides: Record<string, unknown> = {}) {
+function roomState(overrides: Record<string, unknown> = {}): RoomState {
   return {
     id: 'room-1',
     code: 'ABCD',
@@ -90,10 +91,10 @@ function roomState(overrides: Record<string, unknown> = {}) {
       startBlockedReason: 'Нужно минимум 2 игрока.',
     },
     ...overrides,
-  };
+  } as RoomState;
 }
 
-function activeSnapshot(overrides: Record<string, unknown> = {}) {
+function activeSnapshot(overrides: Record<string, unknown> = {}): MatchSnapshot {
   return {
     status: 'ACTIVE',
     stateVersion: 0,
@@ -161,7 +162,7 @@ function activeSnapshot(overrides: Record<string, unknown> = {}) {
     ],
     lastSequence: 0,
     ...overrides,
-  };
+  } as MatchSnapshot;
 }
 
 function activeRoom(overrides: Record<string, unknown> = {}) {
@@ -1063,6 +1064,207 @@ describe('playable beta room flow', () => {
       expect(screen.getByRole('heading', { name: 'Комната WXYZ' })).toBeVisible(),
     );
     expect(screen.queryByRole('heading', { name: 'Комната ABCD' })).not.toBeInTheDocument();
+  });
+
+  it('does not let a late rooms-list membership projection from Room A replace Room B context', async () => {
+    const listA = deferred<Awaited<ReturnType<RoomApi['listRooms']>>>();
+    const roomB = roomState({
+      id: 'room-2',
+      code: 'WXYZ',
+      currentUser: {
+        ...roomState().currentUser,
+        isMember: false,
+        seatIndex: null,
+        canLeave: false,
+      },
+    });
+    const api = createRoomApi({
+      reconnect: vi.fn((roomId: string) =>
+        Promise.resolve(roomId === 'room-1' ? roomState() : roomB),
+      ),
+      listRooms: vi
+        .fn()
+        .mockImplementationOnce(() => listA.promise)
+        .mockResolvedValueOnce({ rooms: [], currentMembershipRoom: null }),
+    });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api });
+    await waitFor(() => expect(api.listRooms).toHaveBeenCalledTimes(1));
+
+    window.location.hash = '#/rooms/room-2';
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    expect(await screen.findByRole('heading', { name: 'Комната WXYZ' })).toBeVisible();
+    await waitFor(() => expect(api.listRooms).toHaveBeenCalledTimes(2));
+
+    listA.resolve({
+      rooms: [],
+      currentMembershipRoom: {
+        roomId: 'room-1',
+        code: 'ABCD',
+        status: 'WAITING',
+        version: 1,
+        currentMatchId: null,
+      },
+    });
+
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Комната WXYZ' })).toBeVisible(),
+    );
+    expect(screen.queryByText('Вы уже находитесь в комнате ABCD.')).not.toBeInTheDocument();
+  });
+
+  it('keeps Room B chat when an aborted Room A chat request resolves late', async () => {
+    const chatA = deferred<Awaited<ReturnType<RoomApi['getChat']>>>();
+    const roomA = activeRoom({ id: 'room-1', code: 'ABCD', currentMatchId: 'match-1' });
+    const roomB = activeRoom({ id: 'room-2', code: 'WXYZ', currentMatchId: 'match-2' });
+    const api = createRoomApi({
+      reconnect: vi.fn((roomId: string) => Promise.resolve(roomId === 'room-1' ? roomA : roomB)),
+      getChat: vi.fn((roomId: string) =>
+        roomId === 'room-1'
+          ? chatA.promise
+          : Promise.resolve({
+              messages: [
+                {
+                  id: 'message-b',
+                  roomId: 'room-2',
+                  userId: 'user-2',
+                  displayName: 'Таисия',
+                  text: 'Сообщение B',
+                  createdAt: '2026-09-02T10:00:00.000Z',
+                },
+              ],
+            }),
+      ),
+    });
+    const realtime = createRealtimeClient();
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
+    await waitFor(() => expect(api.getChat).toHaveBeenCalledWith('room-1', expect.any(AbortSignal)));
+
+    window.location.hash = '#/rooms/room-2';
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    expect(await screen.findByText('Сообщение B')).toBeVisible();
+
+    chatA.resolve({
+      messages: [
+        {
+          id: 'message-a',
+          roomId: 'room-1',
+          userId: 'user-1',
+          displayName: 'Алексей',
+          text: 'Сообщение A',
+          createdAt: '2026-09-02T10:00:00.000Z',
+        },
+      ],
+    });
+
+    await waitFor(() => expect(screen.getByText('Сообщение B')).toBeVisible());
+    expect(screen.queryByText('Сообщение A')).not.toBeInTheDocument();
+  });
+
+  it('ignores a late Match A realtime transition after Match B becomes current', async () => {
+    const roomA = activeRoom({ id: 'room-1', code: 'ABCD', currentMatchId: 'match-1' });
+    const roomB = activeRoom({ id: 'room-2', code: 'WXYZ', currentMatchId: 'match-2' });
+    const api = createRoomApi({
+      reconnect: vi.fn((roomId: string) => Promise.resolve(roomId === 'room-1' ? roomA : roomB)),
+    });
+    const realtime = createRealtimeClient({
+      sync: vi.fn((request) =>
+        Promise.resolve({
+          mode: 'snapshot' as const,
+          snapshot: activeSnapshot({ diceValue: request.matchId === 'match-1' ? 6 : 3 }),
+          watermark: { stateVersion: 0, lastSequence: 0 },
+        }),
+      ),
+    });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
+    expect(await screen.findByText('Выпало: 6')).toBeVisible();
+
+    window.location.hash = '#/rooms/room-2';
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    expect(await screen.findByText('Выпало: 3')).toBeVisible();
+
+    realtime.__emitTransition?.(
+      transitionEnvelope({
+        matchId: 'match-1',
+        snapshot: activeSnapshot({ diceValue: 1 }),
+      }),
+    );
+
+    await waitFor(() => expect(screen.getByText('Выпало: 3')).toBeVisible());
+    expect(screen.queryByText('Выпало: 1')).not.toBeInTheDocument();
+  });
+
+  it('keeps Room B displayed while current membership identifies Room A', async () => {
+    const roomB = roomState({ id: 'room-2', code: 'WXYZ', currentUser: { ...roomState().currentUser, isMember: false, seatIndex: null, canLeave: false } });
+    const api = createRoomApi({
+      reconnect: vi.fn().mockResolvedValue(roomB),
+      listRooms: vi.fn().mockResolvedValue({
+        rooms: [],
+        currentMembershipRoom: {
+          roomId: 'room-1',
+          code: 'ABCD',
+          status: 'WAITING',
+          version: 7,
+          currentMatchId: null,
+        },
+      }),
+    });
+
+    renderAuthenticated('#/rooms/room-2', { roomApi: api });
+
+    expect(await screen.findByRole('heading', { name: 'Комната WXYZ' })).toBeVisible();
+    expect(await screen.findByText('Вы уже находитесь в комнате ABCD.')).toBeVisible();
+    expect(screen.queryByRole('heading', { name: 'Комната ABCD' })).not.toBeInTheDocument();
+    expect(screen.queryByText('USER_ALREADY_IN_ANOTHER_ROOM')).not.toBeInTheDocument();
+  });
+
+  it('does not join Room B when leaving the fresh Room A membership fails', async () => {
+    const source = roomState({ id: 'room-1', code: 'ABCD', version: 14 });
+    const target = roomState({ id: 'room-2', code: 'WXYZ', currentUser: { ...roomState().currentUser, isMember: false, seatIndex: null, canLeave: false } });
+    const api = createRoomApi({
+      reconnect: vi.fn().mockResolvedValue(target),
+      listRooms: vi.fn().mockResolvedValue({ rooms: [], currentMembershipRoom: { roomId: 'room-1', code: 'ABCD', status: 'WAITING', version: 10, currentMatchId: null } }),
+      getRoom: vi.fn().mockResolvedValue(source),
+      leaveRoom: vi.fn().mockRejectedValue(new RoomApiError(409, 'STALE_ROOM_VERSION', 'STALE_ROOM_VERSION')),
+      joinRoom: vi.fn(),
+    });
+    renderAuthenticated('#/rooms/room-2', { roomApi: api });
+    fireEvent.click(await screen.findByRole('button', { name: 'Покинуть её и войти сюда' }));
+    await waitFor(() => expect(api.leaveRoom).toHaveBeenCalledWith('room-1', 14, expect.any(AbortSignal)));
+    expect(api.joinRoom).not.toHaveBeenCalled();
+    expect(screen.queryByText('STALE_ROOM_VERSION')).not.toBeInTheDocument();
+  });
+
+  it('blocks a switch when the fresh source room became active', async () => {
+    const active = activeRoom({ id: 'room-1', code: 'ABCD' });
+    const target = roomState({ id: 'room-2', code: 'WXYZ', currentUser: { ...roomState().currentUser, isMember: false, seatIndex: null, canLeave: false } });
+    const api = createRoomApi({
+      reconnect: vi.fn().mockResolvedValue(target),
+      listRooms: vi.fn().mockResolvedValue({ rooms: [], currentMembershipRoom: { roomId: 'room-1', code: 'ABCD', status: 'WAITING', version: 10, currentMatchId: null } }),
+      getRoom: vi.fn().mockResolvedValue(active), leaveRoom: vi.fn(), joinRoom: vi.fn(),
+    });
+    renderAuthenticated('#/rooms/room-2', { roomApi: api });
+    fireEvent.click(await screen.findByRole('button', { name: 'Покинуть её и войти сюда' }));
+    expect(await screen.findByRole('button', { name: 'Вернуться в матч' })).toBeVisible();
+    expect(api.leaveRoom).not.toHaveBeenCalled();
+    expect(api.joinRoom).not.toHaveBeenCalled();
+  });
+
+  it('offers return to the authoritative active Room A without leaving or joining Room B', async () => {
+    const target = roomState({ id: 'room-2', code: 'WXYZ', currentUser: { ...roomState().currentUser, isMember: false, seatIndex: null, canLeave: false } });
+    const api = createRoomApi({
+      reconnect: vi.fn().mockResolvedValue(target),
+      listRooms: vi.fn().mockResolvedValue({ rooms: [], currentMembershipRoom: { roomId: 'room-1', code: 'ABCD', status: 'ACTIVE', version: 11, currentMatchId: 'match-1' } }),
+      leaveRoom: vi.fn(), joinRoom: vi.fn(),
+    });
+    renderAuthenticated('#/rooms/room-2', { roomApi: api });
+    expect(await screen.findByText('У вас идёт активный матч в другой комнате.')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Вернуться в матч' }));
+    expect(window.location.hash).toBe('#/rooms/room-1');
+    expect(api.leaveRoom).not.toHaveBeenCalled();
+    expect(api.joinRoom).not.toHaveBeenCalled();
   });
 
   it('leaves a terminally reset room with the freshly loaded room version', async () => {

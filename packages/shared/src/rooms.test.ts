@@ -119,6 +119,7 @@ describe('room contracts', () => {
         ],
       }),
     ).toEqual({
+      currentMembershipRoom: null,
       rooms: [
         {
           id: 'room-1',

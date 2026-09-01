@@ -206,9 +206,12 @@ export function createRoomService(options: {
   }
 
   return {
-    async listRooms(_actorUserId) {
-      const rooms = await options.repository.listRooms();
-      return { rooms: rooms.map(toRoomSummary) };
+    async listRooms(actorUserId) {
+      const [rooms, currentMembershipRoom] = await Promise.all([
+        options.repository.listRooms(),
+        options.repository.loadCurrentMembershipRoom(actorUserId),
+      ]);
+      return { rooms: rooms.map(toRoomSummary), currentMembershipRoom };
     },
 
     async createRoom(actorUserId, _request) {

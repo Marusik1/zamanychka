@@ -156,6 +156,21 @@ export function createRoomRepository(prisma: AppPrismaClient) {
       return prisma.roomMembership.findUnique({ where: { userId } });
     },
 
+    async loadCurrentMembershipRoom(userId: string) {
+      const membership = await prisma.roomMembership.findUnique({
+        where: { userId },
+        include: { room: true },
+      });
+      if (!membership) return null;
+      return {
+        roomId: membership.room.key,
+        code: membership.room.code,
+        status: membership.room.status as PersistedRoom['status'],
+        version: membership.room.version,
+        currentMatchId: membership.room.currentMatchId,
+      };
+    },
+
     async loadMatchRoomKey(matchId: string) {
       return prisma.match.findUnique({
         where: { id: matchId },

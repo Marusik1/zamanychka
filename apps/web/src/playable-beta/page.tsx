@@ -32,7 +32,7 @@ import {
 import { playPremiumTransition, type PremiumPresentationHandle } from '../game/premium-runtime.js';
 import { RulesPage } from '../rules/rules-page.js';
 import type { RealtimeClient } from './realtime-client.js';
-import type { RoomApi, RoomApiError } from './room-api.js';
+import { RoomApiError, type RoomApi } from './room-api.js';
 
 type Variant = 'home' | 'rooms';
 
@@ -413,6 +413,9 @@ export function PlayableBetaPage({
 }: PlayableBetaPageProps) {
   const selectedRoomId = variant === 'rooms' ? parseRoomId(routeHash) : null;
   const [roomList, setRoomList] = useState<Awaited<ReturnType<RoomApi['listRooms']>>['rooms']>([]);
+  const [currentMembershipRoom, setCurrentMembershipRoom] = useState<
+    Awaited<ReturnType<RoomApi['listRooms']>>['currentMembershipRoom']
+  >(null);
   const [room, setRoom] = useState<RoomState | null>(null);
   const [roomPending, setRoomPending] = useState(false);
   const [roomError, setRoomError] = useState<string | null>(null);
@@ -463,6 +466,7 @@ export function PlayableBetaPage({
     roomScopeRef.current += 1;
     clearMatchPresentation();
     setRoom(null);
+    setCurrentMembershipRoom(null);
     setRoomError(null);
     setRoomPending(Boolean(selectedRoomId));
     setUtilityPanel(null);
@@ -477,9 +481,13 @@ export function PlayableBetaPage({
 
   const loadRoomList = useCallback(
     async (signal?: AbortSignal) => {
+      const scope = roomScopeRef.current;
       const next = await roomApi.listRooms(signal);
-      setRoomList(next.rooms);
-      setRoomError(null);
+      if (roomScopeRef.current === scope) {
+        setRoomList(next.rooms);
+        setCurrentMembershipRoom(next.currentMembershipRoom ?? null);
+        setRoomError(null);
+      }
       return next.rooms;
     },
     [roomApi],
@@ -604,6 +612,7 @@ export function PlayableBetaPage({
 
     if (selectedRoomId) {
       const scope = roomScopeRef.current;
+      void loadRoomList(controller.signal).catch(() => undefined);
       void roomApi
         .reconnect(selectedRoomId, controller.signal)
         .then((next) => {
@@ -1033,6 +1042,44 @@ export function PlayableBetaPage({
       }
     } finally {
       if (isCurrentRoomScope(roomId, scope)) setRoomPending(false);
+    }
+  }
+
+  async function switchFromCurrentMembershipTo(targetRoomId: string) {
+    const membership = currentMembershipRoom;
+    if (!membership || membership.roomId === targetRoomId) return;
+    if (membership.status === 'ACTIVE' || membership.currentMatchId) {
+      setRoomError('У вас идёт активный матч в другой комнате.');
+      return;
+    }
+
+    const controller = new AbortController();
+    setRoomPending(true);
+    setRoomError(null);
+    try {
+      const source = await roomApi.getRoom(membership.roomId, controller.signal);
+      if (!source.currentUser.isMember || source.status === 'ACTIVE' || source.currentMatchId) {
+        setCurrentMembershipRoom({
+          roomId: source.id,
+          code: source.code,
+          status: source.status,
+          version: source.version,
+          currentMatchId: source.currentMatchId,
+        });
+        setRoomError('У вас идёт активный матч в другой комнате.');
+        return;
+      }
+      const left = await roomApi.leaveRoom(source.id, source.version, controller.signal);
+      if (!left.ok) throw new RoomApiError(409, left.error.code, left.error.message);
+      setCurrentMembershipRoom(null);
+      const joined = await roomApi.joinRoom(targetRoomId, controller.signal);
+      if (!joined.ok) throw new RoomApiError(409, joined.error.code, joined.error.message);
+      navigateTo(roomRoute(targetRoomId));
+    } catch (error) {
+      setRoomError(roomErrorMessage(error, 'Не удалось сменить комнату.'));
+      await loadRoomList(controller.signal).catch(() => undefined);
+    } finally {
+      setRoomPending(false);
     }
   }
 
@@ -1538,7 +1585,29 @@ export function PlayableBetaPage({
           <Panel as="section" className="beta-room-page__seats">
             <h2>Игроки</h2>
 
-            {!room.currentUser.isMember ? (
+            {!room.currentUser.isMember && currentMembershipRoom && currentMembershipRoom.roomId !== room.id ? (
+              <div className="beta-room-page__seat-actions">
+                <p>
+                  {currentMembershipRoom.status === 'ACTIVE' || currentMembershipRoom.currentMatchId
+                    ? 'У вас идёт активный матч в другой комнате.'
+                    : `Вы уже находитесь в комнате ${currentMembershipRoom.code}.`}
+                </p>
+                <Button onClick={() => navigateTo(roomRoute(currentMembershipRoom.roomId))}>
+                  {currentMembershipRoom.status === 'ACTIVE' || currentMembershipRoom.currentMatchId
+                    ? 'Вернуться в матч'
+                    : 'Перейти в мою комнату'}
+                </Button>
+                {currentMembershipRoom.status !== 'ACTIVE' && !currentMembershipRoom.currentMatchId ? (
+                  <Button
+                    variant="secondary"
+                    loading={roomPending}
+                    onClick={() => void switchFromCurrentMembershipTo(selectedRoomId)}
+                  >
+                    Покинуть её и войти сюда
+                  </Button>
+                ) : null}
+              </div>
+            ) : !room.currentUser.isMember ? (
               <div className="beta-room-page__seat-actions">
                 <Button
                   onClick={() =>

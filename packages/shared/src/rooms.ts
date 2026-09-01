@@ -76,6 +76,16 @@ export const roomSummarySchema = z
   })
   .strict();
 
+export const currentMembershipRoomSchema = z
+  .object({
+    roomId: z.string().min(1),
+    code: z.string().min(1),
+    status: roomStatusSchema,
+    version: z.number().int().nonnegative(),
+    currentMatchId: z.string().min(1).nullable(),
+  })
+  .strict();
+
 export const roomStateSchema = z
   .object({
     id: z.string().min(1),
@@ -93,6 +103,7 @@ export const roomStateSchema = z
 export const listRoomsResponseSchema = z
   .object({
     rooms: z.array(roomSummarySchema),
+    currentMembershipRoom: currentMembershipRoomSchema.nullable().default(null),
   })
   .strict();
 
