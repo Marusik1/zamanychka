@@ -43,10 +43,8 @@ interface GameBoardProps {
   presentation?: GameplayAnimationRuntimeState | undefined;
   mobileChatOpen?: boolean;
   onMobileChatClose?: (() => void) | undefined;
-  roomPanel?: ReactNode | undefined;
   rightPanel?: ReactNode | undefined;
   chatPanel?: ReactNode | undefined;
-  footerActions?: ReactNode | undefined;
   hideChat?: boolean;
   turnPanel?: Readonly<{
     heading?: string | undefined;
@@ -74,13 +72,6 @@ interface BoardCell {
   grain: number;
 }
 
-const fixtureNames: Record<GameScreenPawnView['color'], string> = {
-  RED: 'Мария',
-  BLUE: 'Дмитрий',
-  YELLOW: 'Ольга',
-  GREEN: 'Алексей',
-};
-
 const previewHomeGuides = new Map<string, GameScreenPawnView['color']>([
   ['0:0', 'RED'],
   ['1:1', 'RED'],
@@ -99,25 +90,6 @@ const previewHomeGuides = new Map<string, GameScreenPawnView['color']>([
   ['5:2', 'GREEN'],
   ['4:3', 'GREEN'],
 ]);
-
-const chatMessages: readonly {
-  color: GameScreenPawnView['color'];
-  name: string;
-  message: string;
-  time: string;
-  index: number;
-}[] = [
-  { color: 'BLUE', name: 'Дмитрий', message: 'Всем удачи! 👋', time: '14:31', index: 1 },
-  { color: 'RED', name: 'Мария', message: 'Спасибо! 🙂', time: '14:31', index: 0 },
-  { color: 'YELLOW', name: 'Ольга', message: 'Удачной игры!', time: '14:31', index: 2 },
-  {
-    color: 'GREEN',
-    name: 'Алексей (вы)',
-    message: 'Давайте сыграем честно и весело!',
-    time: '14:31',
-    index: 3,
-  },
-];
 
 function createBoardCells(): BoardCell[] {
   const cells: BoardCell[] = [];
@@ -306,31 +278,7 @@ function ChatPanel({
   onClose?: (() => void) | undefined;
   content?: ReactNode;
 }) {
-  if (content) {
-    return (
-      <section
-        className={[
-          'game-board-scene__chat-card',
-          mobile ? 'game-board-scene__chat-card--mobile-sheet' : '',
-        ]
-          .filter(Boolean)
-          .join(' ')}
-        aria-label="Р§Р°С‚ РєРѕРјРЅР°С‚С‹"
-      >
-        {mobile && onClose ? (
-          <button
-            type="button"
-            className="game-board-scene__chat-close"
-            onClick={onClose}
-            aria-label="Вернуться к игре"
-          >
-            Назад
-          </button>
-        ) : null}
-        {content}
-      </section>
-    );
-  }
+  if (!content) return null;
 
   return (
     <section
@@ -342,40 +290,17 @@ function ChatPanel({
         .join(' ')}
       aria-label="Чат комнаты"
     >
-      <div className="game-board-scene__panel-heading">
-        <h2>Чат комнаты</h2>
-        <div className="game-board-scene__chat-heading-actions">
-          <span>56 участников</span>
-          {mobile && onClose ? (
-            <button
-              type="button"
-              className="game-board-scene__chat-close"
-              onClick={onClose}
-              aria-label="Вернуться к игре"
-            >
-              Назад
-            </button>
-          ) : null}
-        </div>
-      </div>
-      <div className="game-board-scene__messages">
-        {chatMessages.map((message) => (
-          <div className="game-board-scene__message" key={`${message.name}-${message.message}`}>
-            <GameAvatar color={message.color} name={message.name} index={message.index} />
-            <div>
-              <strong className={`is-${message.color.toLowerCase()}`}>{message.name}</strong>
-              <p>{message.message}</p>
-            </div>
-            <time>{message.time}</time>
-          </div>
-        ))}
-      </div>
-      <label className="game-board-scene__chat-input">
-        <input type="text" placeholder="Напишите сообщение..." />
-        <button type="button" aria-label="Отправить">
-          ➤
+      {mobile && onClose ? (
+        <button
+          type="button"
+          className="game-board-scene__chat-close"
+          onClick={onClose}
+          aria-label="Вернуться к игре"
+        >
+          Назад
         </button>
-      </label>
+      ) : null}
+      {content}
     </section>
   );
 }
@@ -397,10 +322,8 @@ export const GameBoard = forwardRef<PremiumPresentationHandle, GameBoardProps>(f
   presentation,
   mobileChatOpen = false,
   onMobileChatClose,
-  roomPanel,
   rightPanel,
   chatPanel,
-  footerActions,
   hideChat = false,
   turnPanel,
   actionablePawnIds = [],
@@ -426,7 +349,9 @@ export const GameBoard = forwardRef<PremiumPresentationHandle, GameBoardProps>(f
   const victoryPlayer = effectiveVictoryPlayerId
     ? visiblePlayers.find((player) => player.playerId === effectiveVictoryPlayerId) ?? null
     : null;
-  const victoryName = victoryPlayer ? fixtureNames[victoryPlayer.color] : 'Игрок';
+  const victoryName = victoryPlayer
+    ? playerNamesById[victoryPlayer.playerId] ?? reserveTitle(victoryPlayer.color)
+    : 'Игрок';
   const victorySubtitle =
     effectiveVictoryReason === 'LAST_ACTIVE_PLAYER'
       ? 'Остался последним активным игроком'
@@ -583,14 +508,14 @@ export const GameBoard = forwardRef<PremiumPresentationHandle, GameBoardProps>(f
 
                     <GameAvatar
                       color={player.color}
-                      name={playerNamesById[player.playerId] ?? fixtureNames[player.color]}
+                      name={playerNamesById[player.playerId] ?? reserveTitle(player.color)}
                       photoUrl={playerAvatarUrlsById[player.playerId]}
                       index={player.seatIndex}
                     />
 
                   <div className="game-board-scene__player-copy">
                     <strong>
-                      {playerNamesById[player.playerId] ?? fixtureNames[player.color]}
+                      {playerNamesById[player.playerId] ?? reserveTitle(player.color)}
                       {player.isLocalPlayer ? ' (вы)' : ''}
                     </strong>
                     <span>
@@ -619,28 +544,6 @@ export const GameBoard = forwardRef<PremiumPresentationHandle, GameBoardProps>(f
             })}
           </div>
 
-          {roomPanel ?? <section className="game-board-scene__room">
-            <h2>О комнате</h2>
-            <dl>
-              <div>
-                <dt>Комната</dt>
-                <dd>#12845</dd>
-              </div>
-              <div>
-                <dt>Режим</dt>
-                <dd>Классическая</dd>
-              </div>
-              <div>
-                <dt>Правило</dt>
-                <dd>По часовой стрелке</dd>
-              </div>
-              <div>
-                <dt>Создана</dt>
-                <dd>Сегодня, 14:20</dd>
-              </div>
-            </dl>
-            <button type="button">Покинуть комнату</button>
-          </section>}
         </aside>
 
         <div className="game-board-scene__board-shell premium-board-frame">
@@ -796,33 +699,7 @@ export const GameBoard = forwardRef<PremiumPresentationHandle, GameBoardProps>(f
             {turnPanel?.error}
           </section>}
 
-          {hideChat ? null : chatPanel ? <ChatPanel content={chatPanel} /> : <section className="game-board-scene__chat-card">
-            <div className="game-board-scene__panel-heading">
-              <h2>Чат комнаты</h2>
-              <span>56 участников</span>
-            </div>
-            <div className="game-board-scene__messages">
-              {chatMessages.map((message) => (
-                <div
-                  className="game-board-scene__message"
-                  key={`${message.name}-${message.message}`}
-                >
-                  <GameAvatar color={message.color} name={message.name} index={message.index} />
-                  <div>
-                    <strong className={`is-${message.color.toLowerCase()}`}>{message.name}</strong>
-                    <p>{message.message}</p>
-                  </div>
-                  <time>{message.time}</time>
-                </div>
-              ))}
-            </div>
-            <div className="game-board-scene__chat-input">
-              <span>Напишите сообщение...</span>
-              <button type="button" aria-label="Отправить">
-                ➤
-              </button>
-            </div>
-          </section>}
+          {hideChat ? null : <ChatPanel content={chatPanel} />}
 
           {removedPawns.length > 0 ? (
             <section className="game-board-scene__reserve game-board-scene__reserve--removed">
@@ -834,22 +711,6 @@ export const GameBoard = forwardRef<PremiumPresentationHandle, GameBoardProps>(f
           ) : null}
         </aside>
       </div>
-
-      <footer className="game-board-scene__footer" aria-label="Информация о партии">
-        <div className="game-board-scene__footer-status">
-          <span>
-            ◷ <b>Время на ход:</b> 60 сек
-          </span>
-          <span>
-            Ход: <b>12</b> / ∞
-          </span>
-        </div>
-        <div className="game-board-scene__footer-links">
-          <span>▤ Правила игры</span>
-          <span>◴ История ходов</span>
-          <span>⚙ Настройки комнаты</span>
-        </div>
-      </footer>
 
       {mobileChatOpen ? <ChatPanel mobile onClose={onMobileChatClose} content={chatPanel} /> : null}
     </section>

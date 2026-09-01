@@ -106,7 +106,9 @@ function roomErrorMessage(error: unknown, fallback: string) {
     typeof (error as RoomApiError).message === 'string'
   ) {
     const roomError = error as RoomApiError;
-    return roomError.code === 'INVALID_RESPONSE' ? fallback : roomError.message;
+    return roomError.code === 'INVALID_RESPONSE'
+      ? fallback
+      : friendlyRoomError(roomError.code, roomError.message);
   }
 
   return fallback;
@@ -116,6 +118,22 @@ function friendlyRoomError(code: string, fallback: string) {
   switch (code) {
     case 'ROOM_ALREADY_ACTIVE':
       return 'Матч уже идёт. Возвращаем вас в текущую игру.';
+    case 'USER_ALREADY_IN_ANOTHER_ROOM':
+      return 'Вы уже находитесь в другой комнате.';
+    case 'STALE_ROOM_VERSION':
+      return 'Состояние комнаты изменилось. Обновляем данные…';
+    case 'SEAT_TAKEN':
+      return 'Это место уже занято.';
+    case 'NOT_ROOM_MEMBER':
+      return 'Сначала войдите в комнату.';
+    case 'ROOM_NOT_READY':
+      return 'Для начала матча все игроки за местами должны быть готовы.';
+    case 'ROOM_FULL':
+      return 'В комнате больше нет свободных мест.';
+    case 'ROOM_CLOSED':
+      return 'Эта комната сейчас недоступна.';
+    case 'NOT_ALLOWED':
+      return 'Это действие сейчас недоступно.';
     default:
       return fallback;
   }
@@ -1299,24 +1317,6 @@ export function PlayableBetaPage({
           presentation={presentationRuntime ?? undefined}
           victoryPlayerId={displaySnapshot?.winnerPlayerId ?? null}
           victoryReason={displaySnapshot?.winReason ?? null}
-          roomPanel={
-            <section className="game-board-scene__room">
-              <div className="game-board-scene__panel-heading">
-                <h2>О комнате</h2>
-                <span>{room.code}</span>
-              </div>
-              <div className="game-board-scene__room-meta">
-                <p>{`Комната: ${room.code}`}</p>
-                <p>{`Участники: ${room.counts.memberCount}`}</p>
-                <p>{`Места: ${room.counts.seatedCount} / 4`}</p>
-                <p>{`Готовы: ${room.counts.readyCount} / ${Math.max(room.counts.seatedCount, 1)}`}</p>
-                <p>
-                  {room.currentUser.startBlockedReason ??
-                    'Матч можно продолжать по текущему authoritative состоянию.'}
-                </p>
-              </div>
-            </section>
-          }
           turnPanel={{
             heading: 'Матч',
             badge: `Время ${matchDuration}`,
@@ -1444,6 +1444,7 @@ export function PlayableBetaPage({
             <div className="beta-room-page__settings-panel">
               <p>{`Код комнаты: ${room.code}`}</p>
               <p>{`Участников: ${room.counts.memberCount}`}</p>
+              <p>{`Мест занято: ${room.counts.seatedCount} / 4`}</p>
               <Button
                 variant="secondary"
                 onClick={() => void navigator.clipboard?.writeText(room.code)}
@@ -1454,6 +1455,8 @@ export function PlayableBetaPage({
                 <Button variant="ghost" onClick={() => void leaveCurrentRoom()}>
                   Покинуть комнату
                 </Button>
+              ) : room.currentUser.isMember ? (
+                <p>Сначала завершите матч или сдайте партию.</p>
               ) : null}
             </div>
           </BottomSheet>
@@ -1466,6 +1469,7 @@ export function PlayableBetaPage({
             <div className="beta-room-page__settings-panel">
               <p>{`Код комнаты: ${room.code}`}</p>
               <p>{`Участников: ${room.counts.memberCount}`}</p>
+              <p>{`Мест занято: ${room.counts.seatedCount} / 4`}</p>
               <Button
                 variant="secondary"
                 onClick={() => void navigator.clipboard?.writeText(room.code)}
@@ -1476,6 +1480,8 @@ export function PlayableBetaPage({
                 <Button variant="ghost" onClick={() => void leaveCurrentRoom()}>
                   Покинуть комнату
                 </Button>
+              ) : room.currentUser.isMember ? (
+                <p>Сначала завершите матч или сдайте партию.</p>
               ) : null}
             </div>
           </Dialog>

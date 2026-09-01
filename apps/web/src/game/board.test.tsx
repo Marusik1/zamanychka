@@ -140,6 +140,15 @@ describe('GameBoard', () => {
     expect(board.querySelector('[data-pawn-id="p3-1"]')).toBeNull();
     expect(board.querySelector('[data-pawn-id="p4-1"]')).toBeNull();
   });
+
+  it('does not render fixture room or chat content without real supplied panels', () => {
+    render(<GameBoard pawns={pawns} />);
+
+    expect(screen.queryByRole('heading', { name: 'О комнате' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Чат комнаты' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Всем удачи! 👋')).not.toBeInTheDocument();
+    expect(screen.queryByText('Время на ход:')).not.toBeInTheDocument();
+  });
   it('keeps victory reveal inside the board zone instead of duplicating it in the action rail', () => {
     const { container } = render(<GameBoard pawns={pawns} victoryPlayerId="p1" />);
 
@@ -254,7 +263,7 @@ describe('GameBoard exact-reference cues', () => {
   });
 
   it('renders an exact-reference victory card with winner name and home-diagonal copy', () => {
-    render(<GameBoard pawns={pawns} victoryPlayerId="p1" />);
+    render(<GameBoard pawns={pawns} victoryPlayerId="p1" playerNamesById={{ p1: 'Мария' }} />);
 
     expect(screen.getByText('ПОБЕДА!')).toBeVisible();
     expect(screen.getByText(/Мария победил/i)).toBeVisible();

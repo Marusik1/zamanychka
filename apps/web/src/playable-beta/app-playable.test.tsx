@@ -506,9 +506,10 @@ describe('playable beta room flow', () => {
     expect(await screen.findByRole('heading', { name: 'Матч' })).toBeVisible();
     expect(document.querySelector('[data-layout="gameplay-three-column"]')).not.toBeNull();
     expect(document.querySelector('.game-board-scene')).not.toBeNull();
-    expect(document.querySelector('.game-board-scene__room')).not.toBeNull();
+    expect(document.querySelector('.game-board-scene__room')).toBeNull();
     expect(document.querySelector('.game-board-scene__turn-card')).not.toBeNull();
     expect(document.querySelector('.game-board-scene__chat-card')).not.toBeNull();
+    expect(screen.queryByRole('heading', { name: 'О комнате' })).not.toBeInTheDocument();
     expect(document.querySelector('.beta-board')).toBeNull();
     expect(screen.queryByText(/match\/realtime/i)).toBeNull();
   });
@@ -534,6 +535,37 @@ describe('playable beta room flow', () => {
     expect(screen.getByText('Кубик ещё не брошен')).toBeVisible();
     expect(screen.getByRole('heading', { name: 'Игроки' })).toBeVisible();
     expect(screen.getByRole('heading', { name: 'Чат комнаты' })).toBeVisible();
+  });
+
+  it('opens Rules, History, and Settings from real secondary gameplay controls', async () => {
+    const api = createRoomApi({
+      getRoom: vi.fn().mockResolvedValue(activeRoom()),
+      reconnect: vi.fn().mockResolvedValue(activeRoom()),
+    });
+    const realtime = createRealtimeClient({
+      sync: vi.fn().mockResolvedValue({
+        mode: 'snapshot',
+        snapshot: activeSnapshot(),
+        watermark: { stateVersion: 0, lastSequence: 0 },
+      }),
+    });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
+
+    fireEvent.click(await screen.findByRole('button', { name: '▤ Правила игры' }));
+    expect(await screen.findByText('Справочник матча')).toBeVisible();
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    fireEvent.click(screen.getByRole('button', { name: '◴ История ходов' }));
+    expect(await screen.findByText('История появится после первых событий матча.')).toBeVisible();
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    fireEvent.click(screen.getByRole('button', { name: '⚙ Настройки комнаты' }));
+    expect(await screen.findByText('Код комнаты: ABCD')).toBeVisible();
+    expect(
+      screen.getByText('Сначала завершите матч или сдайте партию.'),
+    ).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Покинуть комнату' })).not.toBeInTheDocument();
   });
 
   it('renders compact live chat, disables an empty send, and shows the committed post immediately', async () => {
@@ -593,6 +625,17 @@ describe('playable beta room flow', () => {
     ).toBeGreaterThan(0);
     expect(screen.queryByText('ROOM_ALREADY_ACTIVE')).not.toBeInTheDocument();
     expect(screen.queryByText('NOT_CURRENT_PLAYER')).not.toBeInTheDocument();
+  });
+
+  it('maps an unavailable room response to Russian UI copy', async () => {
+    const api = createRoomApi({
+      reconnect: vi.fn().mockRejectedValue(new RoomApiError(409, 'ROOM_CLOSED', 'ROOM_CLOSED')),
+    });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api });
+
+    expect(await screen.findByText('Эта комната сейчас недоступна.')).toBeVisible();
+    expect(screen.queryByText('ROOM_CLOSED')).not.toBeInTheDocument();
   });
 
   it('does not render duplicate generic enter buttons and uses selectable pawns instead', async () => {
