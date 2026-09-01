@@ -637,6 +637,10 @@ a {
   isolation: isolate;
 }
 
+.game-board-scene__board-object--width-driven-square {
+  min-height: 0;
+}
+
 .game-board-scene__board-object::before {
   content: '';
   position: absolute;
@@ -1583,22 +1587,39 @@ a {
 
   .game-board-scene__board-shell {
     order: -1;
+    width: 100%;
+    flex: 0 0 auto;
     padding: 0.3rem;
   }
 
-  .game-board-scene__board-object {
-    width: min(100%, calc(var(--app-viewport-width) - 1rem));
+  .game-board-scene__board-object--width-driven-square {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
     padding: 0.66rem;
     border-radius: 0.72rem;
+    aspect-ratio: 1 / 1;
+    height: auto;
+    min-height: 0;
+    flex: 0 0 auto;
   }
 
   .game-board-scene__board-rail {
+    box-sizing: border-box;
+    min-height: 0;
+    height: auto;
+    align-self: stretch;
     padding: 0.3rem;
   }
 
   .game-board-scene__board {
     width: 100%;
-    height: 100%;
+    height: auto;
+    min-height: 0;
+    align-self: stretch;
     padding: 0;
     min-width: 0;
   }
@@ -1652,11 +1673,6 @@ a {
   .game-board-scene__room,
   .game-board-scene__chat-card {
     display: none;
-  }
-
-  .game-board-scene__board-object {
-    width: calc(var(--app-viewport-width) - 1.05rem);
-    max-width: 100%;
   }
 
   .game-pawn--board {

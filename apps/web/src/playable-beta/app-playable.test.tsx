@@ -224,6 +224,14 @@ function createRealtimeClient(overrides?: Partial<RealtimeClient>): RealtimeClie
   } as RealtimeClient;
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
+}
+
 function renderAuthenticated(hash = '#/rooms', options?: { roomApi?: RoomApi; realtime?: RealtimeClient }) {
   window.location.hash = hash;
   const props = {
@@ -744,5 +752,96 @@ describe('playable beta room flow', () => {
 
     expect(await screen.findByText('Не удалось подключиться к комнате.')).toBeVisible();
     expect(screen.queryByText('Не удалось обработать ответ комнаты.')).not.toBeInTheDocument();
+  });
+
+  it('clears a finished presentation and reloads the current room after returning', async () => {
+    const waitingRoom = roomState({ version: 8, counts: { memberCount: 2, seatedCount: 0, readyCount: 0 } });
+    const api = createRoomApi({
+      reconnect: vi.fn().mockResolvedValue(activeRoom()),
+      getRoom: vi.fn().mockResolvedValue(waitingRoom),
+    });
+    const realtime = createRealtimeClient({
+      sync: vi.fn().mockResolvedValue({
+        mode: 'snapshot',
+        snapshot: activeSnapshot({
+          status: 'FINISHED',
+          currentPlayerId: null,
+          winnerPlayerId: 'user-1',
+          winReason: 'LAST_ACTIVE_PLAYER',
+        }),
+        watermark: { stateVersion: 0, lastSequence: 0 },
+      }),
+    });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
+    fireEvent.click(await screen.findByTestId('return-to-room'));
+
+    await waitFor(() => expect(api.getRoom).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText('Игроков: 0 / 4')).toBeVisible();
+    expect(screen.queryByTestId('return-to-room')).not.toBeInTheDocument();
+  });
+
+  it('does not let a late Room A response overwrite the current Room B route', async () => {
+    const roomA = deferred<Awaited<ReturnType<RoomApi['reconnect']>>>();
+    const roomB = roomState({ id: 'room-2', code: 'WXYZ' }) as Awaited<ReturnType<RoomApi['reconnect']>>;
+    const api = createRoomApi({
+      reconnect: vi.fn((roomId: string) => (roomId === 'room-1' ? roomA.promise : Promise.resolve(roomB))),
+      getRoom: vi.fn(),
+    });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api });
+    await waitFor(() => expect(api.reconnect).toHaveBeenCalledWith('room-1', expect.any(AbortSignal)));
+
+    window.location.hash = '#/rooms/room-2';
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    expect(await screen.findByRole('heading', { name: 'Комната WXYZ' })).toBeVisible();
+
+    roomA.resolve(roomState({ id: 'room-1', code: 'ABCD' }) as Awaited<ReturnType<RoomApi['reconnect']>>);
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Комната WXYZ' })).toBeVisible());
+    expect(screen.queryByRole('heading', { name: 'Комната ABCD' })).not.toBeInTheDocument();
+  });
+
+  it('leaves a terminally reset room with the freshly loaded room version', async () => {
+    const resetRoom = roomState({ version: 8, counts: { memberCount: 2, seatedCount: 0, readyCount: 0 } });
+    const api = createRoomApi({
+      reconnect: vi.fn().mockResolvedValue(resetRoom),
+      getRoom: vi.fn().mockResolvedValue(resetRoom),
+      leaveRoom: vi.fn().mockResolvedValue({ ok: true, room: resetRoom }),
+    });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api });
+    fireEvent.click(await screen.findByRole('button', { name: 'Покинуть комнату' }));
+
+    await waitFor(() => expect(api.leaveRoom).toHaveBeenCalledWith('room-1', 8, expect.any(AbortSignal)));
+    expect(await screen.findByRole('heading', { name: 'Комнаты' })).toBeVisible();
+  });
+
+  it('opens settings for the authoritative room after leaving a finished match', async () => {
+    const waitingRoom = roomState({ version: 8, counts: { memberCount: 2, seatedCount: 0, readyCount: 0 } });
+    const api = createRoomApi({
+      reconnect: vi.fn().mockResolvedValue(activeRoom()),
+      getRoom: vi.fn().mockResolvedValue(waitingRoom),
+    });
+    const realtime = createRealtimeClient({
+      sync: vi.fn().mockResolvedValue({
+        mode: 'snapshot',
+        snapshot: activeSnapshot({
+          status: 'FINISHED',
+          currentPlayerId: null,
+          winnerPlayerId: 'user-1',
+          winReason: 'LAST_ACTIVE_PLAYER',
+        }),
+        watermark: { stateVersion: 0, lastSequence: 0 },
+      }),
+    });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
+    fireEvent.click(await screen.findByTestId('return-to-room'));
+    await screen.findByText('Игроков: 0 / 4');
+    fireEvent.click(screen.getByRole('button', { name: '⚙ Настройки комнаты' }));
+
+    expect(await screen.findByText('Код комнаты: ABCD')).toBeVisible();
+    expect(screen.queryByTestId('return-to-room')).not.toBeInTheDocument();
   });
 });

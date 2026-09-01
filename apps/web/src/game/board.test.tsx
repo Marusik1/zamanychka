@@ -78,6 +78,18 @@ describe('GameBoard', () => {
     expect(container.querySelectorAll('.game-board-scene__home-tile')).toHaveLength(16);
   });
 
+  it('keeps the mobile board layers inside one width-driven square coordinate space', () => {
+    const { container } = render(<GameBoard pawns={pawns} />);
+
+    const square = container.querySelector('.game-board-scene__board-object--width-driven-square');
+    expect(square).not.toBeNull();
+    expect(square?.querySelector('.game-board-scene__board-rail')).not.toBeNull();
+    expect(square?.querySelector('.game-board-scene__board.premium-board-grid')).not.toBeNull();
+    expect(square?.querySelectorAll('[role="gridcell"]')).toHaveLength(64);
+    expect(square?.querySelectorAll('.game-board-scene__home-tile')).toHaveLength(16);
+    expect(square?.querySelector('.game-board-scene__overlay')).not.toBeNull();
+  });
+
   it('keeps ENTER, MOVE, CAPTURE, and HOME visuals inside one board-contained overlay layer', () => {
     const { container } = render(
       <GameBoard

@@ -644,7 +644,7 @@ export const GameBoard = forwardRef<PremiumPresentationHandle, GameBoardProps>(f
         </aside>
 
         <div className="game-board-scene__board-shell premium-board-frame">
-          <div className="game-board-scene__board-object">
+          <div className="game-board-scene__board-object game-board-scene__board-object--width-driven-square">
             <div className="game-board-scene__board-rail" data-animation-layer="board-contained">
               {toast ? (
                 <div

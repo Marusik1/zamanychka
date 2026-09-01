@@ -382,6 +382,10 @@ export function PlayableBetaPage({
   const [room, setRoom] = useState<RoomState | null>(null);
   const [roomPending, setRoomPending] = useState(false);
   const [roomError, setRoomError] = useState<string | null>(null);
+  const selectedRoomIdRef = useRef<string | null>(selectedRoomId);
+  const roomScopeRef = useRef(0);
+  const matchScopeRef = useRef(0);
+  selectedRoomIdRef.current = selectedRoomId;
   const [match, setMatch] = useState<MatchViewState>({ status: 'idle' });
   const activeMatchRef = useRef<string | null>(null);
   const boardRef = useRef<PremiumPresentationHandle | null>(null);
@@ -400,6 +404,39 @@ export function PlayableBetaPage({
   const chatInitializedRoomIdRef = useRef<string | null>(null);
   const [historyItems, setHistoryItems] = useState<readonly MatchHistoryItem[]>([]);
 
+  const isCurrentRoomScope = useCallback((roomId: string, scope: number) => (
+    selectedRoomIdRef.current === roomId && roomScopeRef.current === scope
+  ), []);
+
+  const clearMatchPresentation = useCallback(() => {
+    matchScopeRef.current += 1;
+    activeMatchRef.current = null;
+    if (ackSyncTimeoutRef.current !== null) {
+      window.clearTimeout(ackSyncTimeoutRef.current);
+      ackSyncTimeoutRef.current = null;
+    }
+    setMatch({ status: 'idle' });
+    setPresentationController(null);
+    setPresentationRuntime(null);
+    setHistoryItems([]);
+  }, []);
+
+  useEffect(() => {
+    roomScopeRef.current += 1;
+    clearMatchPresentation();
+    setRoom(null);
+    setRoomError(null);
+    setRoomPending(Boolean(selectedRoomId));
+    setUtilityPanel(null);
+    setMobileChatOpen(false);
+    setChatMessages([]);
+    setChatDraft('');
+    setChatError(null);
+    setChatPending(false);
+    setLastSeenChatMessageId(null);
+    chatInitializedRoomIdRef.current = null;
+  }, [clearMatchPresentation, selectedRoomId]);
+
   const loadRoomList = useCallback(
     async (signal?: AbortSignal) => {
       const next = await roomApi.listRooms(signal);
@@ -412,38 +449,47 @@ export function PlayableBetaPage({
 
   const loadRoom = useCallback(
     async (roomId: string, signal?: AbortSignal) => {
+      const scope = roomScopeRef.current;
       const next = await roomApi.getRoom(roomId, signal);
-      setRoom(next);
-      setRoomError(null);
+      if (isCurrentRoomScope(roomId, scope)) {
+        setRoom(next);
+        setRoomError(null);
+      }
       return next;
     },
-    [roomApi],
+    [isCurrentRoomScope, roomApi],
   );
 
   const loadChat = useCallback(
     async (roomId: string, signal?: AbortSignal) => {
+      const scope = roomScopeRef.current;
       const next = await roomApi.getChat(roomId, signal);
-      setChatMessages(next.messages);
-      setChatError(null);
+      if (isCurrentRoomScope(roomId, scope)) {
+        setChatMessages(next.messages);
+        setChatError(null);
+      }
       return next.messages;
     },
-    [roomApi],
+    [isCurrentRoomScope, roomApi],
   );
 
   const refreshRoom = useCallback(
     async (roomId: string, signal?: AbortSignal) => {
+      const scope = roomScopeRef.current;
       setRoomPending(true);
 
       try {
         return await loadRoom(roomId, signal);
       } catch (error) {
-        setRoomError(roomErrorMessage(error, 'Не удалось загрузить комнату.'));
+        if (isCurrentRoomScope(roomId, scope)) {
+          setRoomError(roomErrorMessage(error, 'Не удалось загрузить комнату.'));
+        }
         return null;
       } finally {
-        setRoomPending(false);
+        if (isCurrentRoomScope(roomId, scope)) setRoomPending(false);
       }
     },
-    [loadRoom],
+    [isCurrentRoomScope, loadRoom],
   );
 
   function reconcilePresentation(matchId: string, snapshot: MatchSnapshot) {
@@ -457,6 +503,8 @@ export function PlayableBetaPage({
 
   const syncMatch = useCallback(
     async (matchId: string, stateVersion = 0, lastSequence = 0) => {
+      const scope = matchScopeRef.current;
+      if (activeMatchRef.current !== matchId) return;
       setMatch((current) =>
         current.status === 'ready'
           ? { ...current, pending: true, error: null }
@@ -467,6 +515,7 @@ export function PlayableBetaPage({
         await realtimeClient.ensureConnected();
         await realtimeClient.joinMatch(matchId);
         const response = await realtimeClient.sync({ matchId, stateVersion, lastSequence });
+        if (matchScopeRef.current !== scope || activeMatchRef.current !== matchId) return;
 
         if (response.mode === 'events') {
           const latest = response.transitions.at(-1);
@@ -502,7 +551,9 @@ export function PlayableBetaPage({
           pending: false,
         });
       } catch {
-        setMatch({ status: 'error', message: 'Не удалось подключить матч.' });
+        if (matchScopeRef.current === scope && activeMatchRef.current === matchId) {
+          setMatch({ status: 'error', message: 'Не удалось подключить матч.' });
+        }
       }
     },
     [realtimeClient],
@@ -514,14 +565,19 @@ export function PlayableBetaPage({
     const controller = new AbortController();
 
     if (selectedRoomId) {
+      const scope = roomScopeRef.current;
       void roomApi
         .reconnect(selectedRoomId, controller.signal)
         .then((next) => {
+          if (!isCurrentRoomScope(selectedRoomId, scope)) return;
           setRoom(next);
           setRoomError(null);
+          setRoomPending(false);
         })
         .catch((error) => {
+          if (!isCurrentRoomScope(selectedRoomId, scope)) return;
           setRoomError(roomErrorMessage(error, 'Не удалось подключиться к комнате.'));
+          setRoomPending(false);
         });
     } else {
       void loadRoomList(controller.signal).catch((error) => {
@@ -530,18 +586,23 @@ export function PlayableBetaPage({
     }
 
     return () => controller.abort();
-  }, [loadRoomList, roomApi, selectedRoomId, variant]);
+  }, [isCurrentRoomScope, loadRoomList, roomApi, selectedRoomId, variant]);
 
   useEffect(() => {
     if (variant !== 'rooms') return;
 
+    let activeRequest: AbortController | null = null;
     const intervalId = window.setInterval(() => {
+      activeRequest?.abort();
       const controller = new AbortController();
+      activeRequest = controller;
+      const scope = roomScopeRef.current;
 
       if (selectedRoomId && !room?.currentMatchId) {
         void roomApi
           .getRoom(selectedRoomId, controller.signal)
           .then((next) => {
+            if (!isCurrentRoomScope(selectedRoomId, scope)) return;
             setRoom(next);
             setRoomError(null);
           })
@@ -553,6 +614,7 @@ export function PlayableBetaPage({
         void roomApi
           .listRooms(controller.signal)
           .then((next) => {
+            if (roomScopeRef.current !== scope || selectedRoomIdRef.current !== null) return;
             setRoomList(next.rooms);
             setRoomError(null);
           })
@@ -560,8 +622,11 @@ export function PlayableBetaPage({
       }
     }, 2_000);
 
-    return () => window.clearInterval(intervalId);
-  }, [room?.currentMatchId, roomApi, selectedRoomId, variant]);
+    return () => {
+      window.clearInterval(intervalId);
+      activeRequest?.abort();
+    };
+  }, [isCurrentRoomScope, room?.currentMatchId, roomApi, selectedRoomId, variant]);
 
   useEffect(() => {
     if (!room?.currentMatchId) {
@@ -856,7 +921,38 @@ export function PlayableBetaPage({
     </section>
   ) : null;
 
+  async function returnToRoom() {
+    if (!selectedRoomId) return;
+
+    clearMatchPresentation();
+    setUtilityPanel(null);
+    await refreshRoom(selectedRoomId);
+  }
+
+  async function leaveCurrentRoom() {
+    if (!room || !selectedRoomId || roomPending) return;
+    const roomId = selectedRoomId;
+    const scope = roomScopeRef.current;
+    const controller = new AbortController();
+    setRoomPending(true);
+    setRoomError(null);
+
+    try {
+      const result = await roomApi.leaveRoom(roomId, room.version, controller.signal);
+      if (!result.ok || !isCurrentRoomScope(roomId, scope)) return;
+      navigateTo('#/rooms');
+    } catch (error) {
+      if (isCurrentRoomScope(roomId, scope)) {
+        setRoomError(roomErrorMessage(error, 'РќРµ СѓРґР°Р»РѕСЃСЊ РїРѕРєРёРЅСѓС‚СЊ РєРѕРјРЅР°С‚Сѓ.'));
+      }
+    } finally {
+      if (isCurrentRoomScope(roomId, scope)) setRoomPending(false);
+    }
+  }
+
   async function mutateRoom(action: (signal: AbortSignal) => Promise<unknown>) {
+    const roomId = selectedRoomId;
+    const scope = roomScopeRef.current;
     const controller = new AbortController();
     setRoomPending(true);
     setRoomError(null);
@@ -870,17 +966,21 @@ export function PlayableBetaPage({
         result.ok === true &&
         'room' in result
       ) {
-        setRoom(result.room as RoomState);
+        if (!roomId || isCurrentRoomScope(roomId, scope)) {
+          setRoom(result.room as RoomState);
+        }
       }
-      if (selectedRoomId) {
-        await loadRoom(selectedRoomId, controller.signal);
+      if (roomId) {
+        await loadRoom(roomId, controller.signal);
       } else {
         await loadRoomList(controller.signal);
       }
     } catch (error) {
-      setRoomError(roomErrorMessage(error, 'Команду комнаты не удалось выполнить.'));
+      if (!roomId || isCurrentRoomScope(roomId, scope)) {
+        setRoomError(roomErrorMessage(error, 'Команду комнаты не удалось выполнить.'));
+      }
     } finally {
-      setRoomPending(false);
+      if (!roomId || isCurrentRoomScope(roomId, scope)) setRoomPending(false);
     }
   }
 
@@ -914,12 +1014,15 @@ export function PlayableBetaPage({
   async function startMatch() {
     if (!room || !selectedRoomId || roomPending) return;
 
+    const roomId = selectedRoomId;
+    const scope = roomScopeRef.current;
     const controller = new AbortController();
     setRoomPending(true);
     setRoomError(null);
 
     try {
-      const result = await roomApi.startMatch(selectedRoomId, room.version, controller.signal);
+      const result = await roomApi.startMatch(roomId, room.version, controller.signal);
+      if (!isCurrentRoomScope(roomId, scope)) return;
       if (!result.ok) {
         if (result.error.code === 'ROOM_ALREADY_ACTIVE' && room.currentMatchId) {
           setRoomError(null);
@@ -930,12 +1033,15 @@ export function PlayableBetaPage({
         return;
       }
 
+      activeMatchRef.current = result.matchId;
       setRoom(result.room);
       await syncMatch(result.matchId);
     } catch (error) {
-      setRoomError(roomErrorMessage(error, 'Не удалось начать матч.'));
+      if (isCurrentRoomScope(roomId, scope)) {
+        setRoomError(roomErrorMessage(error, 'Не удалось начать матч.'));
+      }
     } finally {
-      setRoomPending(false);
+      if (isCurrentRoomScope(roomId, scope)) setRoomPending(false);
     }
   }
 
@@ -1156,7 +1262,7 @@ export function PlayableBetaPage({
               displaySnapshot?.status === 'FINISHED' ? (
                 <div className="beta-room-page__controls">
                   <p>{finishedReason(displaySnapshot)}</p>
-                  <Button onClick={() => navigateTo(roomRoute(selectedRoomId))}>Вернуться в комнату</Button>
+                  <Button data-testid="return-to-room" onClick={() => void returnToRoom()}>Вернуться в комнату</Button>
                   {utilityActions}
                 </div>
               ) : (
@@ -1235,7 +1341,7 @@ export function PlayableBetaPage({
                 Копировать код
               </Button>
               {displaySnapshot?.status !== 'ACTIVE' && room.currentUser.isMember ? (
-                <Button variant="ghost" onClick={() => void mutateRoom((signal) => roomApi.leaveRoom(selectedRoomId, room.version, signal))}>
+                <Button variant="ghost" onClick={() => void leaveCurrentRoom()}>
                   Покинуть комнату
                 </Button>
               ) : null}
@@ -1254,7 +1360,7 @@ export function PlayableBetaPage({
                 Копировать код
               </Button>
               {displaySnapshot?.status !== 'ACTIVE' && room.currentUser.isMember ? (
-                <Button variant="ghost" onClick={() => void mutateRoom((signal) => roomApi.leaveRoom(selectedRoomId, room.version, signal))}>
+                <Button variant="ghost" onClick={() => void leaveCurrentRoom()}>
                   Покинуть комнату
                 </Button>
               ) : null}
@@ -1277,6 +1383,12 @@ export function PlayableBetaPage({
           <Button variant="secondary" onClick={() => void refreshRoom(selectedRoomId)} loading={roomPending}>
             Обновить
           </Button>
+
+          {room?.currentUser.isMember && !room.currentMatchId ? (
+            <Button variant="ghost" onClick={() => setUtilityPanel('settings')}>
+              ⚙ Настройки комнаты
+            </Button>
+          ) : null}
 
           {room?.currentMatchId ? null : (
             <Button onClick={() => void startMatch()} loading={roomPending} disabled={!room?.currentUser.canStart}>
@@ -1359,7 +1471,7 @@ export function PlayableBetaPage({
             <p>{room.currentUser.startBlockedReason ?? 'Можно начинать матч.'}</p>
 
             {room.currentUser.isMember ? (
-              <Button variant="secondary" onClick={() => void mutateRoom((signal) => roomApi.leaveRoom(selectedRoomId, room.version, signal))}>
+              <Button variant="secondary" onClick={() => void leaveCurrentRoom()}>
                 Покинуть комнату
               </Button>
             ) : null}
@@ -1369,6 +1481,27 @@ export function PlayableBetaPage({
         <EmptyState title="Матч временно недоступен" description={match.message} />
       ) : match.status !== 'ready' ? (
         <Panel as="section">Подключение к матчу…</Panel>
+      ) : null}
+
+      {room && !room.currentMatchId && !showFinishedMatch ? (
+        <Dialog
+          open={utilityPanel === 'settings'}
+          onOpenChange={(open) => setUtilityPanel(open ? 'settings' : null)}
+          title="Настройки комнаты"
+        >
+          <div className="beta-room-page__settings-panel">
+            <p>{`Код комнаты: ${room.code}`}</p>
+            <p>{`Участников: ${room.counts.memberCount}`}</p>
+            <Button variant="secondary" onClick={() => void navigator.clipboard?.writeText(room.code)}>
+              Копировать код
+            </Button>
+            {room.currentUser.isMember ? (
+              <Button variant="ghost" onClick={() => void leaveCurrentRoom()}>
+                Покинуть комнату
+              </Button>
+            ) : null}
+          </div>
+        </Dialog>
       ) : null}
     </section>
   );
