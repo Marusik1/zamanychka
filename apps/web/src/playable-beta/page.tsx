@@ -268,7 +268,10 @@ function describeEvent(snapshot: MatchSnapshot, event: TransitionEnvelope['event
       return {
         id: event.eventId,
         title: `${actorLabel(snapshot, event.payload.playerId)} получают ещё бросок`,
-        detail: 'После шестёрки ход сохраняется.',
+        detail:
+          event.payload.reason === 'CAPTURE'
+            ? 'Пешка сбита — бросайте ещё раз.'
+            : 'После шестёрки ход сохраняется.',
         createdAt: event.createdAt,
       };
     case 'turnChanged':

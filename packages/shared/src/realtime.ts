@@ -249,6 +249,7 @@ const extraRollGrantedEventSchema = z
     payload: z
       .object({
         playerId: id,
+        reason: z.enum(['ROLLED_SIX', 'CAPTURE', 'NO_LEGAL_ACTION_ON_SIX']),
       })
       .strict(),
     createdAt: z.string().min(1),

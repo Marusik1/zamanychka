@@ -67,7 +67,7 @@ describe('pawn transitions', () => {
       }),
       events: [
         { type: 'pawnEntered', pawnId: 'p1-pawn-1', playerId: 'p1' },
-        { type: 'extraRollGranted', playerId: 'p1' },
+        { type: 'extraRollGranted', playerId: 'p1', reason: 'ROLLED_SIX' },
       ],
       legalActions: [{ type: 'ROLL_DICE' }, { type: 'SURRENDER' }],
     });
@@ -160,7 +160,7 @@ describe('pawn transitions', () => {
       }),
       events: [
         { type: 'pawnMoved', pawnId: 'p1-pawn-1', playerId: 'p1' },
-        { type: 'extraRollGranted', playerId: 'p1' },
+        { type: 'extraRollGranted', playerId: 'p1', reason: 'ROLLED_SIX' },
       ],
       legalActions: [{ type: 'ROLL_DICE' }, { type: 'SURRENDER' }],
     });
@@ -212,7 +212,7 @@ describe('pawn transitions', () => {
     expect(intermediateResult.ok).toBe(false);
   });
 
-  it('captures an ordinary opponent perimeter destination and returns the opponent to OFF_BOARD', () => {
+  it('captures an ordinary opponent perimeter destination, returns the opponent to OFF_BOARD, and grants exactly one extra roll', () => {
     const state = moveIntoActionState(
       setPawnPosition(baseState(), 'p1-pawn-1', { zone: 'PERIMETER', progress: 1 } as const),
       2,
@@ -243,10 +243,10 @@ describe('pawn transitions', () => {
       ok: true,
       state: expect.objectContaining({
         stateVersion: 1,
-        currentPlayerId: 'p2',
+        currentPlayerId: 'p1',
         turnPhase: 'WAITING_FOR_ROLL',
         diceValue: null,
-        turnNumber: 2,
+        turnNumber: 1,
       }),
       events: [
         { type: 'pawnMoved', pawnId: 'p1-pawn-1', playerId: 'p1' },
@@ -257,13 +257,46 @@ describe('pawn transitions', () => {
           capturedPawnId: 'p2-pawn-1',
           capturedPlayerId: 'p2',
         },
-        { type: 'turnChanged', fromPlayerId: 'p1', toPlayerId: 'p2', turnNumber: 2 },
+        { type: 'extraRollGranted', playerId: 'p1', reason: 'CAPTURE' },
       ],
       legalActions: expect.arrayContaining([{ type: 'ROLL_DICE' }, { type: 'SURRENDER' }]),
     });
     expect(
       result.ok && result.state.pawns.find((pawn) => pawn.pawnId === 'p2-pawn-1')?.position,
     ).toEqual({ zone: 'OFF_BOARD' });
+  });
+
+  it('grants exactly one extra roll when a six also captures', () => {
+    const state = moveIntoActionState(
+      setPawnPosition(baseState(), 'p1-pawn-1', { zone: 'PERIMETER', progress: 1 } as const),
+      6,
+    );
+    const opponentProgress = findPerimeterProgress('BLUE', resolvePerimeterCoord('RED', 7));
+    expect(opponentProgress).not.toBeNull();
+    if (opponentProgress === null) throw new Error('expected opponent progress');
+
+    const result = transition(
+      setPawnPosition(state, 'p2-pawn-1', {
+        zone: 'PERIMETER',
+        progress: opponentProgress,
+      } as const),
+      {
+        type: 'MOVE_PAWN',
+        actorPlayerId: 'p1',
+        matchId: 'm1',
+        pawnId: 'p1-pawn-1',
+        expectedStateVersion: 0,
+      },
+      { actorPlayerId: 'p1', diceValue: 6 },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      state: { currentPlayerId: 'p1', turnPhase: 'WAITING_FOR_ROLL', turnNumber: 1 },
+    });
+    expect(result.ok && result.events.filter((event) => event.type === 'extraRollGranted')).toEqual([
+      { type: 'extraRollGranted', playerId: 'p1', reason: 'CAPTURE' },
+    ]);
   });
 
   it('enters HOME from the perimeter, emits pawnEnteredHome once, and supports exact landing up to HOME(3)', () => {
@@ -382,10 +415,10 @@ describe('pawn transitions', () => {
       ok: true,
       state: expect.objectContaining({
         stateVersion: 1,
-        currentPlayerId: 'p2',
+        currentPlayerId: 'p1',
         turnPhase: 'WAITING_FOR_ROLL',
         diceValue: null,
-        turnNumber: 2,
+        turnNumber: 1,
       }),
       events: [
         { type: 'pawnMoved', pawnId: 'p1-pawn-1', playerId: 'p1' },
@@ -397,7 +430,7 @@ describe('pawn transitions', () => {
           capturedPlayerId: 'p2',
         },
         { type: 'pawnEnteredHome', pawnId: 'p1-pawn-1', playerId: 'p1', homeIndex: 0 },
-        { type: 'turnChanged', fromPlayerId: 'p1', toPlayerId: 'p2', turnNumber: 2 },
+        { type: 'extraRollGranted', playerId: 'p1', reason: 'CAPTURE' },
       ],
       legalActions: expect.arrayContaining([{ type: 'ROLL_DICE' }, { type: 'SURRENDER' }]),
     });

@@ -21,7 +21,7 @@ function payload(
     case 'diceRolled':
       return { playerId: actorPlayerId, diceValue: event.diceValue };
     case 'extraRollGranted':
-      return { playerId: event.playerId };
+      return { playerId: event.playerId, reason: event.reason };
     case 'turnChanged':
       return { fromPlayerId: event.fromPlayerId, toPlayerId: event.toPlayerId };
     case 'pawnEntered':

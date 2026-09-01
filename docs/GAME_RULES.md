@@ -20,6 +20,8 @@ This file is the single canonical source for gameplay rules.
 - A pawn may not jump over any pawn, friendly or opposing.
 - A pawn may not land on a friendly pawn.
 - Landing exactly on an opposing perimeter pawn captures it and returns it to `OFF_BOARD`.
+- A successful `MOVE_PAWN` capture grants the moving player one additional explicit roll, whether the consumed die was 1–5 or 6. A move that both rolls six and captures still grants exactly one additional roll.
+- `ENTER_PAWN` is never a capture and never receives this capture bonus.
 
 ## Rolling a six
 

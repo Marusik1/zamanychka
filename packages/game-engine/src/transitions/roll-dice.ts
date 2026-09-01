@@ -120,7 +120,10 @@ export function rollDiceTransition(
     };
     return success(
       nextState,
-      [diceRolledEvent, gameEvents.extraRollGranted(command.actorPlayerId)],
+      [
+        diceRolledEvent,
+        gameEvents.extraRollGranted(command.actorPlayerId, 'NO_LEGAL_ACTION_ON_SIX'),
+      ],
       getLegalActions(nextState, command.actorPlayerId),
     );
   }

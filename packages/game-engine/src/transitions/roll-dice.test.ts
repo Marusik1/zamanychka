@@ -148,7 +148,7 @@ describe('ROLL_DICE transition', () => {
       }),
       events: [
         { type: 'diceRolled', diceValue: 6 },
-        { type: 'extraRollGranted', playerId: 'p1' },
+        { type: 'extraRollGranted', playerId: 'p1', reason: 'NO_LEGAL_ACTION_ON_SIX' },
       ],
       legalActions: [{ type: 'ROLL_DICE' }, { type: 'SURRENDER' }],
     });

@@ -162,7 +162,7 @@ describe('final engine hardening', () => {
         state: expect.objectContaining({ stateVersion: 1, turnNumber: 1, diceValue: null }),
         events: [
           { type: 'diceRolled', diceValue: 6 },
-          { type: 'extraRollGranted', playerId: 'p1' },
+          { type: 'extraRollGranted', playerId: 'p1', reason: 'NO_LEGAL_ACTION_ON_SIX' },
         ],
       }),
     );

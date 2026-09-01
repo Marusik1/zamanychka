@@ -14,7 +14,7 @@ describe('ordered event journal writer', () => {
       after: state(),
       events: [
         { type: 'diceRolled', diceValue: 6 },
-        { type: 'extraRollGranted', playerId: 'user-1' },
+        { type: 'extraRollGranted', playerId: 'user-1', reason: 'CAPTURE' },
       ],
     });
 
@@ -24,6 +24,10 @@ describe('ordered event journal writer', () => {
       { eventId: 'match-1:13', sequence: 13, createdAt: '2026-08-25T00:00:00.000Z' },
       { eventId: 'match-1:14', sequence: 14, createdAt: '2026-08-25T00:00:00.000Z' },
     ]);
+    expect(events[1]).toMatchObject({
+      type: 'extraRollGranted',
+      payload: { playerId: 'user-1', reason: 'CAPTURE' },
+    });
   });
 });
 

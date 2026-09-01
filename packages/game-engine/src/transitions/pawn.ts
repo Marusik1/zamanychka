@@ -178,7 +178,7 @@ function enterPawnTransition(
 
   const events: GameEvent[] = [
     gameEvents.pawnEntered(pawn.pawnId, pawn.playerId),
-    gameEvents.extraRollGranted(pawn.playerId),
+    gameEvents.extraRollGranted(pawn.playerId, 'ROLLED_SIX'),
   ];
 
   if (isWinningState(enteredState, pawn.playerId)) {
@@ -296,8 +296,9 @@ function movePawnTransition(
     events.push(gameEvents.pawnEnteredHome(pawn.pawnId, pawn.playerId, nextPosition.homeIndex));
   }
 
+  const grantsExtraRoll = state.diceValue === 6 || capturedOccupant !== null;
   const nextStateWithoutVersion: GameState =
-    state.diceValue === 6
+    grantsExtraRoll
       ? {
           ...movedState,
           diceValue: null,
@@ -323,8 +324,10 @@ function movePawnTransition(
     };
   }
 
-  if (state.diceValue === 6) {
-    events.push(gameEvents.extraRollGranted(pawn.playerId));
+  if (grantsExtraRoll) {
+    events.push(
+      gameEvents.extraRollGranted(pawn.playerId, capturedOccupant ? 'CAPTURE' : 'ROLLED_SIX'),
+    );
   } else {
     events.push(
       gameEvents.turnChanged(

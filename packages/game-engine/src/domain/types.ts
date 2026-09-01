@@ -111,7 +111,11 @@ export type LegalAction =
 
 export type GameEvent =
   | Readonly<{ type: 'diceRolled'; diceValue: 1 | 2 | 3 | 4 | 5 | 6 }>
-  | Readonly<{ type: 'extraRollGranted'; playerId: string }>
+  | Readonly<{
+      type: 'extraRollGranted';
+      playerId: string;
+      reason: 'ROLLED_SIX' | 'CAPTURE' | 'NO_LEGAL_ACTION_ON_SIX';
+    }>
   | Readonly<{ type: 'turnChanged'; fromPlayerId: string; toPlayerId: string; turnNumber: number }>
   | Readonly<{ type: 'pawnEntered'; pawnId: string; playerId: string }>
   | Readonly<{ type: 'pawnMoved'; pawnId: string; playerId: string }>

@@ -105,7 +105,7 @@ type GameEventPayloadByType = {
     from: PawnPosition;
     fromCoord: BoardCoord | null;
   };
-  extraRollGranted: { playerId: string; reason: 'ROLLED_SIX' | 'NO_LEGAL_ACTION_ON_SIX' };
+  extraRollGranted: { playerId: string; reason: 'ROLLED_SIX' | 'CAPTURE' | 'NO_LEGAL_ACTION_ON_SIX' };
   turnChanged: { fromPlayerId: string; toPlayerId: string; turnNumber: number };
   gameWon: { winnerPlayerId: string; reason: 'HOME_DIAGONAL_COMPLETED' | 'LAST_ACTIVE_PLAYER' };
 };

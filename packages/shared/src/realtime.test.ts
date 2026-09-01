@@ -119,6 +119,30 @@ describe('realtime contracts', () => {
       }),
     ).toEqual(expect.objectContaining({ type: 'diceRolled' }));
 
+    expect(
+      gameEventEnvelopeSchema.parse({
+        matchId: 'm1',
+        eventId: 'e-capture',
+        sequence: 2,
+        stateVersion: 2,
+        type: 'extraRollGranted',
+        payload: { playerId: 'p1', reason: 'CAPTURE' },
+        createdAt: '2026-08-24T00:00:00.000Z',
+      }),
+    ).toEqual(expect.objectContaining({ type: 'extraRollGranted' }));
+
+    expect(() =>
+      gameEventEnvelopeSchema.parse({
+        matchId: 'm1',
+        eventId: 'e-missing-reason',
+        sequence: 2,
+        stateVersion: 2,
+        type: 'extraRollGranted',
+        payload: { playerId: 'p1' },
+        createdAt: '2026-08-24T00:00:00.000Z',
+      }),
+    ).toThrow();
+
     const transition = transitionEnvelopeSchema.parse({
       matchId: 'm1',
       transitionId: 'm1:a1',

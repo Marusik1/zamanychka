@@ -4,7 +4,11 @@ import { gameEvents } from './events.js';
 describe('game event helpers', () => {
   it('create canonical runtime events with stable shapes', () => {
     expect(gameEvents.diceRolled(6)).toEqual({ type: 'diceRolled', diceValue: 6 });
-    expect(gameEvents.extraRollGranted('p1')).toEqual({ type: 'extraRollGranted', playerId: 'p1' });
+    expect(gameEvents.extraRollGranted('p1', 'CAPTURE')).toEqual({
+      type: 'extraRollGranted',
+      playerId: 'p1',
+      reason: 'CAPTURE',
+    });
     expect(gameEvents.turnChanged('p1', 'p2', 2)).toEqual({
       type: 'turnChanged',
       fromPlayerId: 'p1',

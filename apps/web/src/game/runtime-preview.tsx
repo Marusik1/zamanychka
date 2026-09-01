@@ -474,7 +474,7 @@ export function createRuntimePreviewFixture(localPlayerId: string): PreviewFixtu
           sequence: 6,
           stateVersion: 4,
           type: 'extraRollGranted',
-          payload: { playerId: 'blue-seat' },
+          payload: { playerId: 'blue-seat', reason: 'ROLLED_SIX' as const },
           createdAt: '2026-08-26T00:00:00.000Z',
         },
       ],

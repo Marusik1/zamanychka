@@ -4,8 +4,11 @@ export const gameEvents = {
   diceRolled(diceValue: 1 | 2 | 3 | 4 | 5 | 6): GameEvent {
     return { type: 'diceRolled', diceValue };
   },
-  extraRollGranted(playerId: string): GameEvent {
-    return { type: 'extraRollGranted', playerId };
+  extraRollGranted(
+    playerId: string,
+    reason: 'ROLLED_SIX' | 'CAPTURE' | 'NO_LEGAL_ACTION_ON_SIX',
+  ): GameEvent {
+    return { type: 'extraRollGranted', playerId, reason };
   },
   turnChanged(fromPlayerId: string, toPlayerId: string, turnNumber: number): GameEvent {
     return { type: 'turnChanged', fromPlayerId, toPlayerId, turnNumber };
