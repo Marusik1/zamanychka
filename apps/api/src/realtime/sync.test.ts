@@ -5,6 +5,8 @@ import { createGameSyncService } from './sync.js';
 function createService() {
   const match = {
     id: 'match-1',
+    createdAt: new Date('2026-09-01T10:00:00.000Z'),
+    finishedAt: null as Date | null,
     stateVersion: 2,
     lastSequence: 3,
     snapshot: {
@@ -127,6 +129,22 @@ describe('game sync recovery', () => {
     if (response.mode === 'snapshot') {
       expect(response.snapshot.lastSequence).toBe(3);
       expect(response.watermark).toEqual({ stateVersion: 2, lastSequence: 3 });
+    }
+  });
+
+  it('projects persisted match timing into a reconnect snapshot', async () => {
+    const { service, match } = createService();
+    match.finishedAt = new Date('2026-09-01T10:08:42.000Z');
+    (match.snapshot as { status: string }).status = 'FINISHED';
+
+    const response = await service.sync({ matchId: match.id, stateVersion: 0, lastSequence: 0 });
+
+    expect(response.mode).toBe('snapshot');
+    if (response.mode === 'snapshot') {
+      expect(response.snapshot).toMatchObject({
+        startedAt: '2026-09-01T10:00:00.000Z',
+        finishedAt: '2026-09-01T10:08:42.000Z',
+      });
     }
   });
 

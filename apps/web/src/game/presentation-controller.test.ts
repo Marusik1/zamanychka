@@ -21,6 +21,8 @@ function snapshot(_matchId = 'match-1', stateVersion = 1, lastSequence = 1): Mat
     diceValue: null,
     winnerPlayerId: null,
     winReason: null,
+    startedAt: '2026-09-01T10:00:00.000Z',
+    finishedAt: null,
     players: [],
     pawns: [],
     lastSequence,
@@ -206,8 +208,18 @@ describe('presentation controller', () => {
         { playerId: 'p2', color: 'BLUE', seatIndex: 1, status: 'ACTIVE' },
       ],
       pawns: [
-        { pawnId: 'p1-1', playerId: 'p1', color: 'RED', position: { zone: 'PERIMETER', progress: 1 } },
-        { pawnId: 'p2-1', playerId: 'p2', color: 'BLUE', position: { zone: 'PERIMETER', progress: 4 } },
+        {
+          pawnId: 'p1-1',
+          playerId: 'p1',
+          color: 'RED',
+          position: { zone: 'PERIMETER', progress: 1 },
+        },
+        {
+          pawnId: 'p2-1',
+          playerId: 'p2',
+          color: 'BLUE',
+          position: { zone: 'PERIMETER', progress: 4 },
+        },
       ],
     };
     const committed: MatchSnapshot = {
@@ -215,7 +227,12 @@ describe('presentation controller', () => {
       currentPlayerId: 'p2',
       players: initial.players,
       pawns: [
-        { pawnId: 'p1-1', playerId: 'p1', color: 'RED', position: { zone: 'PERIMETER', progress: 4 } },
+        {
+          pawnId: 'p1-1',
+          playerId: 'p1',
+          color: 'RED',
+          position: { zone: 'PERIMETER', progress: 4 },
+        },
         { pawnId: 'p2-1', playerId: 'p2', color: 'BLUE', position: { zone: 'OFF_BOARD' } },
       ],
     };
@@ -272,7 +289,9 @@ describe('presentation controller', () => {
       captureTransition,
     );
     expect(accepted.kind).toBe('queued');
-    expect(accepted.state.presentationSnapshot.pawns.find((pawn) => pawn.pawnId === 'p2-1')?.position).toEqual({
+    expect(
+      accepted.state.presentationSnapshot.pawns.find((pawn) => pawn.pawnId === 'p2-1')?.position,
+    ).toEqual({
       zone: 'PERIMETER',
       progress: 4,
     });
@@ -281,7 +300,9 @@ describe('presentation controller', () => {
     expect(token).not.toBeNull();
     const completed = completeActivePresentation(accepted.state, token!);
     expect(completed.kind).toBe('completed');
-    expect(completed.state.presentationSnapshot.pawns.find((pawn) => pawn.pawnId === 'p2-1')?.position).toEqual({
+    expect(
+      completed.state.presentationSnapshot.pawns.find((pawn) => pawn.pawnId === 'p2-1')?.position,
+    ).toEqual({
       zone: 'OFF_BOARD',
     });
   });

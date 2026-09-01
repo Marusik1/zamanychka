@@ -97,6 +97,8 @@ function toMatchSnapshot(
     status = state.status,
     winnerPlayerId = state.winnerPlayerId,
     winReason = state.winReason,
+    startedAt = null,
+    finishedAt = null,
     turnNumber = state.turnNumber,
   }: {
     stateVersion: number;
@@ -107,6 +109,8 @@ function toMatchSnapshot(
     status?: MatchSnapshot['status'];
     winnerPlayerId?: string | null;
     winReason?: MatchSnapshot['winReason'];
+    startedAt?: MatchSnapshot['startedAt'];
+    finishedAt?: MatchSnapshot['finishedAt'];
     turnNumber?: number;
   },
 ): MatchSnapshot {
@@ -119,6 +123,8 @@ function toMatchSnapshot(
     diceValue,
     winnerPlayerId,
     winReason,
+    startedAt,
+    finishedAt,
     players: state.players.map((player) => ({
       playerId: player.playerId,
       color: player.color,
@@ -500,7 +506,10 @@ export function createRuntimePreviewFixture(localPlayerId: string): PreviewFixtu
             playerId: 'blue-seat',
             fromCoord: coordFor(blueEnterSnapshot, 'blue-seat-pawn-1'),
             toCoord: coordFor(blueCaptureSnapshot, 'blue-seat-pawn-1'),
-            physicalPath: [{ row: 1, col: 7 }, { row: 2, col: 7 }],
+            physicalPath: [
+              { row: 1, col: 7 },
+              { row: 2, col: 7 },
+            ],
             capture: { capturedPawnId: 'red-seat-pawn-2', capturedPlayerId: 'red-seat' },
           },
           createdAt: '2026-08-26T00:00:00.000Z',
@@ -820,20 +829,60 @@ export function createRuntimePreviewFixture(localPlayerId: string): PreviewFixtu
 
   const scenarios: readonly PreviewScenario[] = [
     { key: 'dice', label: 'DICE', startSnapshot: initialSnapshot, transitions: [diceScenario] },
-    { key: 'enter', label: 'ENTER', startSnapshot: blueRollSnapshot, transitions: [transitions[2]!] },
-    { key: 'move4', label: 'MOVE 4', startSnapshot: redMoveOnlyStartSnapshot, transitions: [moveOnlyScenario] },
-    { key: 'capture', label: 'CAPTURE', startSnapshot: blueEnterSnapshot, transitions: [transitions[3]!] },
-    { key: 'home-entry', label: 'HOME ENTRY', startSnapshot: greenRollSnapshot, transitions: [homeEntryScenario] },
-    { key: 'home-complete', label: 'HOME COMPLETE', startSnapshot: greenRollSnapshot, transitions: [transitions[5]!] },
-    { key: 'victory', label: 'VICTORY', startSnapshot: greenRollSnapshot, transitions: [transitions[5]!] },
+    {
+      key: 'enter',
+      label: 'ENTER',
+      startSnapshot: blueRollSnapshot,
+      transitions: [transitions[2]!],
+    },
+    {
+      key: 'move4',
+      label: 'MOVE 4',
+      startSnapshot: redMoveOnlyStartSnapshot,
+      transitions: [moveOnlyScenario],
+    },
+    {
+      key: 'capture',
+      label: 'CAPTURE',
+      startSnapshot: blueEnterSnapshot,
+      transitions: [transitions[3]!],
+    },
+    {
+      key: 'home-entry',
+      label: 'HOME ENTRY',
+      startSnapshot: greenRollSnapshot,
+      transitions: [homeEntryScenario],
+    },
+    {
+      key: 'home-complete',
+      label: 'HOME COMPLETE',
+      startSnapshot: greenRollSnapshot,
+      transitions: [transitions[5]!],
+    },
+    {
+      key: 'victory',
+      label: 'VICTORY',
+      startSnapshot: greenRollSnapshot,
+      transitions: [transitions[5]!],
+    },
     {
       key: 'victory-last-active',
       label: 'VICTORY LAST ACTIVE',
       startSnapshot: greenSurrenderSnapshot,
       transitions: [lastActiveVictoryScenario],
     },
-    { key: 'surrender', label: 'SURRENDER', startSnapshot: base ? initialSnapshot : initialSnapshot, transitions: [transitions[6]!] },
-    { key: 'turn-change', label: 'TURN CHANGE', startSnapshot: initialSnapshot, transitions: [turnChangeScenario] },
+    {
+      key: 'surrender',
+      label: 'SURRENDER',
+      startSnapshot: base ? initialSnapshot : initialSnapshot,
+      transitions: [transitions[6]!],
+    },
+    {
+      key: 'turn-change',
+      label: 'TURN CHANGE',
+      startSnapshot: initialSnapshot,
+      transitions: [turnChangeScenario],
+    },
     {
       key: 'snapshot-invalidate',
       label: 'SNAPSHOT INVALIDATE',
@@ -873,7 +922,9 @@ function useGameplayAnimationRuntime(
   onComplete: (state: PresentationControllerState) => void,
 ) {
   const reducedMotion = usePrefersReducedMotion();
-  const [runtime, setRuntime] = useState(() => createIdleAnimationState(controller.presentationSnapshot));
+  const [runtime, setRuntime] = useState(() =>
+    createIdleAnimationState(controller.presentationSnapshot),
+  );
 
   useEffect(() => {
     const active = controller.queue.active;
@@ -938,12 +989,16 @@ export function GameplayRuntimePreview({
   const [controller, setController] = useState(() =>
     createPresentationController('epic-06-preview', fixture.initialSnapshot),
   );
-  const [playlist, setPlaylist] = useState<readonly TransitionEnvelope[]>(
-    () => (mode === 'auto' ? fixture.transitions : []),
+  const [playlist, setPlaylist] = useState<readonly TransitionEnvelope[]>(() =>
+    mode === 'auto' ? fixture.transitions : [],
   );
   const [nextIndex, setNextIndex] = useState(0);
   const screen = useMemo(
-    () => projectGameScreenModel(snapshotToGameState(controller.presentationSnapshot), fixture.localPlayerId),
+    () =>
+      projectGameScreenModel(
+        snapshotToGameState(controller.presentationSnapshot),
+        fixture.localPlayerId,
+      ),
     [controller.presentationSnapshot, fixture.localPlayerId],
   );
   const boardRef = useRef<PremiumPresentationHandle | null>(null);
@@ -956,7 +1011,11 @@ export function GameplayRuntimePreview({
   }, [fixture, mode]);
 
   useEffect(() => {
-    if (controller.recoveryRequired || controller.queue.active || controller.queue.queued.length > 0) {
+    if (
+      controller.recoveryRequired ||
+      controller.queue.active ||
+      controller.queue.queued.length > 0
+    ) {
       return;
     }
 
@@ -984,7 +1043,11 @@ export function GameplayRuntimePreview({
     if (scenario.invalidateToSnapshot) {
       window.setTimeout(() => {
         setController((current) =>
-          reconcileAuthoritativeSnapshot(current, 'epic-06-preview', scenario.invalidateToSnapshot!),
+          reconcileAuthoritativeSnapshot(
+            current,
+            'epic-06-preview',
+            scenario.invalidateToSnapshot!,
+          ),
         );
       }, 260);
     }

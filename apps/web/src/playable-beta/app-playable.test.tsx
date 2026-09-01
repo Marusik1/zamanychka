@@ -103,19 +103,61 @@ function activeSnapshot(overrides: Record<string, unknown> = {}) {
     diceValue: null,
     winnerPlayerId: null,
     winReason: null,
+    startedAt: '2026-09-01T10:00:00.000Z',
+    finishedAt: null,
     players: [
       { playerId: 'user-1', color: 'RED', seatIndex: 0, status: 'ACTIVE' },
       { playerId: 'user-2', color: 'YELLOW', seatIndex: 1, status: 'ACTIVE' },
     ],
     pawns: [
-      { pawnId: 'user-1-pawn-1', playerId: 'user-1', color: 'RED', position: { zone: 'OFF_BOARD' } },
-      { pawnId: 'user-1-pawn-2', playerId: 'user-1', color: 'RED', position: { zone: 'OFF_BOARD' } },
-      { pawnId: 'user-1-pawn-3', playerId: 'user-1', color: 'RED', position: { zone: 'OFF_BOARD' } },
-      { pawnId: 'user-1-pawn-4', playerId: 'user-1', color: 'RED', position: { zone: 'OFF_BOARD' } },
-      { pawnId: 'user-2-pawn-1', playerId: 'user-2', color: 'YELLOW', position: { zone: 'OFF_BOARD' } },
-      { pawnId: 'user-2-pawn-2', playerId: 'user-2', color: 'YELLOW', position: { zone: 'OFF_BOARD' } },
-      { pawnId: 'user-2-pawn-3', playerId: 'user-2', color: 'YELLOW', position: { zone: 'OFF_BOARD' } },
-      { pawnId: 'user-2-pawn-4', playerId: 'user-2', color: 'YELLOW', position: { zone: 'OFF_BOARD' } },
+      {
+        pawnId: 'user-1-pawn-1',
+        playerId: 'user-1',
+        color: 'RED',
+        position: { zone: 'OFF_BOARD' },
+      },
+      {
+        pawnId: 'user-1-pawn-2',
+        playerId: 'user-1',
+        color: 'RED',
+        position: { zone: 'OFF_BOARD' },
+      },
+      {
+        pawnId: 'user-1-pawn-3',
+        playerId: 'user-1',
+        color: 'RED',
+        position: { zone: 'OFF_BOARD' },
+      },
+      {
+        pawnId: 'user-1-pawn-4',
+        playerId: 'user-1',
+        color: 'RED',
+        position: { zone: 'OFF_BOARD' },
+      },
+      {
+        pawnId: 'user-2-pawn-1',
+        playerId: 'user-2',
+        color: 'YELLOW',
+        position: { zone: 'OFF_BOARD' },
+      },
+      {
+        pawnId: 'user-2-pawn-2',
+        playerId: 'user-2',
+        color: 'YELLOW',
+        position: { zone: 'OFF_BOARD' },
+      },
+      {
+        pawnId: 'user-2-pawn-3',
+        playerId: 'user-2',
+        color: 'YELLOW',
+        position: { zone: 'OFF_BOARD' },
+      },
+      {
+        pawnId: 'user-2-pawn-4',
+        playerId: 'user-2',
+        color: 'YELLOW',
+        position: { zone: 'OFF_BOARD' },
+      },
     ],
     lastSequence: 0,
     ...overrides,
@@ -232,7 +274,10 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-function renderAuthenticated(hash = '#/rooms', options?: { roomApi?: RoomApi; realtime?: RealtimeClient }) {
+function renderAuthenticated(
+  hash = '#/rooms',
+  options?: { roomApi?: RoomApi; realtime?: RealtimeClient },
+) {
   window.location.hash = hash;
   const props = {
     ...(options?.roomApi ? { roomApi: options.roomApi } : {}),
@@ -335,7 +380,9 @@ describe('playable beta room flow', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Создать комнату' }));
 
     await waitFor(() => expect(api.createRoom).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(api.joinRoom).toHaveBeenCalledWith('room-2', expect.any(AbortSignal)));
+    await waitFor(() =>
+      expect(api.joinRoom).toHaveBeenCalledWith('room-2', expect.any(AbortSignal)),
+    );
     expect(await screen.findByRole('heading', { name: 'Комната WXYZ' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Занять место 1' })).toBeVisible();
   });
@@ -383,7 +430,11 @@ describe('playable beta room flow', () => {
       },
     });
     const api = createRoomApi({
-      getRoom: vi.fn().mockResolvedValueOnce(room).mockResolvedValueOnce(refreshed).mockResolvedValue(refreshed),
+      getRoom: vi
+        .fn()
+        .mockResolvedValueOnce(room)
+        .mockResolvedValueOnce(refreshed)
+        .mockResolvedValue(refreshed),
       reconnect: vi.fn().mockResolvedValue(room),
       setReady: vi.fn().mockResolvedValue({ ok: true, room: refreshed }),
     });
@@ -392,7 +443,9 @@ describe('playable beta room flow', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Готов' }));
 
-    await waitFor(() => expect(api.setReady).toHaveBeenCalledWith('room-1', true, 7, expect.any(AbortSignal)));
+    await waitFor(() =>
+      expect(api.setReady).toHaveBeenCalledWith('room-1', true, 7, expect.any(AbortSignal)),
+    );
   });
 
   it('starts a room-scoped match and hands off into existing gameplay sync', async () => {
@@ -429,7 +482,11 @@ describe('playable beta room flow', () => {
           version: 5,
           status: 'ACTIVE',
           currentMatchId: 'match-2',
-          currentUser: { ...startRoom.currentUser, canStart: false, startBlockedReason: 'Матч уже идёт.' },
+          currentUser: {
+            ...startRoom.currentUser,
+            canStart: false,
+            startBlockedReason: 'Матч уже идёт.',
+          },
         },
       }),
     });
@@ -441,7 +498,9 @@ describe('playable beta room flow', () => {
     await waitFor(() => expect(startButton).toBeEnabled());
     fireEvent.click(startButton);
 
-    await waitFor(() => expect(api.startMatch).toHaveBeenCalledWith('room-1', 4, expect.any(AbortSignal)));
+    await waitFor(() =>
+      expect(api.startMatch).toHaveBeenCalledWith('room-1', 4, expect.any(AbortSignal)),
+    );
     expect(realtime.ensureConnected).toHaveBeenCalled();
     expect(realtime.joinMatch).toHaveBeenCalledWith('match-2');
     expect(await screen.findByRole('heading', { name: 'Матч' })).toBeVisible();
@@ -504,7 +563,9 @@ describe('playable beta room flow', () => {
     expect(send).toBeEnabled();
     fireEvent.click(send);
 
-    await waitFor(() => expect(api.sendChat).toHaveBeenCalledWith('room-1', 'Готов к игре', expect.any(AbortSignal)));
+    await waitFor(() =>
+      expect(api.sendChat).toHaveBeenCalledWith('room-1', 'Готов к игре', expect.any(AbortSignal)),
+    );
     expect(await screen.findByText('Готов к игре')).toBeVisible();
     expect(input).toHaveValue('');
   });
@@ -527,7 +588,9 @@ describe('playable beta room flow', () => {
     expect(
       await screen.findAllByText((content) => content.toLowerCase().includes('соперник')),
     ).not.toHaveLength(0);
-    expect(screen.queryAllByText((content) => content.toLowerCase().includes('соперник')).length).toBeGreaterThan(0);
+    expect(
+      screen.queryAllByText((content) => content.toLowerCase().includes('соперник')).length,
+    ).toBeGreaterThan(0);
     expect(screen.queryByText('ROOM_ALREADY_ACTIVE')).not.toBeInTheDocument();
     expect(screen.queryByText('NOT_CURRENT_PLAYER')).not.toBeInTheDocument();
   });
@@ -550,7 +613,9 @@ describe('playable beta room flow', () => {
     await screen.findByRole('heading', { name: 'Матч' });
     expect(screen.queryAllByRole('button', { name: 'Вывести пешку' })).toHaveLength(0);
     expect(screen.getByText('Выберите пешку')).toBeVisible();
-    expect(screen.getAllByRole('button', { name: 'Вывести красную пешку на поле' })).toHaveLength(4);
+    expect(screen.getAllByRole('button', { name: 'Вывести красную пешку на поле' })).toHaveLength(
+      4,
+    );
   });
 
   it('submits the selected pawn move with the canonical command payload', async () => {
@@ -565,14 +630,54 @@ describe('playable beta room flow', () => {
           turnPhase: 'WAITING_FOR_ACTION',
           diceValue: 3,
           pawns: [
-            { pawnId: 'user-1-pawn-1', playerId: 'user-1', color: 'RED', position: { zone: 'PERIMETER', progress: 1 } },
-            { pawnId: 'user-1-pawn-2', playerId: 'user-1', color: 'RED', position: { zone: 'OFF_BOARD' } },
-            { pawnId: 'user-1-pawn-3', playerId: 'user-1', color: 'RED', position: { zone: 'OFF_BOARD' } },
-            { pawnId: 'user-1-pawn-4', playerId: 'user-1', color: 'RED', position: { zone: 'OFF_BOARD' } },
-            { pawnId: 'user-2-pawn-1', playerId: 'user-2', color: 'YELLOW', position: { zone: 'OFF_BOARD' } },
-            { pawnId: 'user-2-pawn-2', playerId: 'user-2', color: 'YELLOW', position: { zone: 'OFF_BOARD' } },
-            { pawnId: 'user-2-pawn-3', playerId: 'user-2', color: 'YELLOW', position: { zone: 'OFF_BOARD' } },
-            { pawnId: 'user-2-pawn-4', playerId: 'user-2', color: 'YELLOW', position: { zone: 'OFF_BOARD' } },
+            {
+              pawnId: 'user-1-pawn-1',
+              playerId: 'user-1',
+              color: 'RED',
+              position: { zone: 'PERIMETER', progress: 1 },
+            },
+            {
+              pawnId: 'user-1-pawn-2',
+              playerId: 'user-1',
+              color: 'RED',
+              position: { zone: 'OFF_BOARD' },
+            },
+            {
+              pawnId: 'user-1-pawn-3',
+              playerId: 'user-1',
+              color: 'RED',
+              position: { zone: 'OFF_BOARD' },
+            },
+            {
+              pawnId: 'user-1-pawn-4',
+              playerId: 'user-1',
+              color: 'RED',
+              position: { zone: 'OFF_BOARD' },
+            },
+            {
+              pawnId: 'user-2-pawn-1',
+              playerId: 'user-2',
+              color: 'YELLOW',
+              position: { zone: 'OFF_BOARD' },
+            },
+            {
+              pawnId: 'user-2-pawn-2',
+              playerId: 'user-2',
+              color: 'YELLOW',
+              position: { zone: 'OFF_BOARD' },
+            },
+            {
+              pawnId: 'user-2-pawn-3',
+              playerId: 'user-2',
+              color: 'YELLOW',
+              position: { zone: 'OFF_BOARD' },
+            },
+            {
+              pawnId: 'user-2-pawn-4',
+              playerId: 'user-2',
+              color: 'YELLOW',
+              position: { zone: 'OFF_BOARD' },
+            },
           ],
         }),
         watermark: { stateVersion: 0, lastSequence: 0 },
@@ -586,14 +691,54 @@ describe('playable beta room flow', () => {
           diceValue: 3,
           lastSequence: 1,
           pawns: [
-            { pawnId: 'user-1-pawn-1', playerId: 'user-1', color: 'RED', position: { zone: 'PERIMETER', progress: 4 } },
-            { pawnId: 'user-1-pawn-2', playerId: 'user-1', color: 'RED', position: { zone: 'OFF_BOARD' } },
-            { pawnId: 'user-1-pawn-3', playerId: 'user-1', color: 'RED', position: { zone: 'OFF_BOARD' } },
-            { pawnId: 'user-1-pawn-4', playerId: 'user-1', color: 'RED', position: { zone: 'OFF_BOARD' } },
-            { pawnId: 'user-2-pawn-1', playerId: 'user-2', color: 'YELLOW', position: { zone: 'OFF_BOARD' } },
-            { pawnId: 'user-2-pawn-2', playerId: 'user-2', color: 'YELLOW', position: { zone: 'OFF_BOARD' } },
-            { pawnId: 'user-2-pawn-3', playerId: 'user-2', color: 'YELLOW', position: { zone: 'OFF_BOARD' } },
-            { pawnId: 'user-2-pawn-4', playerId: 'user-2', color: 'YELLOW', position: { zone: 'OFF_BOARD' } },
+            {
+              pawnId: 'user-1-pawn-1',
+              playerId: 'user-1',
+              color: 'RED',
+              position: { zone: 'PERIMETER', progress: 4 },
+            },
+            {
+              pawnId: 'user-1-pawn-2',
+              playerId: 'user-1',
+              color: 'RED',
+              position: { zone: 'OFF_BOARD' },
+            },
+            {
+              pawnId: 'user-1-pawn-3',
+              playerId: 'user-1',
+              color: 'RED',
+              position: { zone: 'OFF_BOARD' },
+            },
+            {
+              pawnId: 'user-1-pawn-4',
+              playerId: 'user-1',
+              color: 'RED',
+              position: { zone: 'OFF_BOARD' },
+            },
+            {
+              pawnId: 'user-2-pawn-1',
+              playerId: 'user-2',
+              color: 'YELLOW',
+              position: { zone: 'OFF_BOARD' },
+            },
+            {
+              pawnId: 'user-2-pawn-2',
+              playerId: 'user-2',
+              color: 'YELLOW',
+              position: { zone: 'OFF_BOARD' },
+            },
+            {
+              pawnId: 'user-2-pawn-3',
+              playerId: 'user-2',
+              color: 'YELLOW',
+              position: { zone: 'OFF_BOARD' },
+            },
+            {
+              pawnId: 'user-2-pawn-4',
+              playerId: 'user-2',
+              color: 'YELLOW',
+              position: { zone: 'OFF_BOARD' },
+            },
           ],
         }),
         lastSequence: 1,
@@ -648,7 +793,12 @@ describe('playable beta room flow', () => {
     resolveCommand!({
       ok: true,
       matchId: 'match-1',
-      snapshot: activeSnapshot({ stateVersion: 1, diceValue: 6, turnPhase: 'WAITING_FOR_ACTION', lastSequence: 1 }),
+      snapshot: activeSnapshot({
+        stateVersion: 1,
+        diceValue: 6,
+        turnPhase: 'WAITING_FOR_ACTION',
+        lastSequence: 1,
+      }),
       lastSequence: 1,
     });
   });
@@ -658,8 +808,12 @@ describe('playable beta room flow', () => {
       getRoom: vi
         .fn()
         .mockResolvedValueOnce(activeRoom())
-        .mockResolvedValueOnce(roomState({ version: 2, counts: { memberCount: 2, seatedCount: 0, readyCount: 0 } }))
-        .mockResolvedValue(roomState({ version: 2, counts: { memberCount: 2, seatedCount: 0, readyCount: 0 } })),
+        .mockResolvedValueOnce(
+          roomState({ version: 2, counts: { memberCount: 2, seatedCount: 0, readyCount: 0 } }),
+        )
+        .mockResolvedValue(
+          roomState({ version: 2, counts: { memberCount: 2, seatedCount: 0, readyCount: 0 } }),
+        ),
       reconnect: vi.fn().mockResolvedValue(activeRoom()),
     });
     const realtime = createRealtimeClient({
@@ -670,6 +824,8 @@ describe('playable beta room flow', () => {
           currentPlayerId: null,
           winnerPlayerId: 'user-1',
           winReason: 'HOME_DIAGONAL_COMPLETED',
+          startedAt: '2026-09-01T10:00:00.000Z',
+          finishedAt: '2026-09-01T10:18:42.000Z',
         }),
         watermark: { stateVersion: 0, lastSequence: 0 },
       }),
@@ -678,8 +834,56 @@ describe('playable beta room flow', () => {
     renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
 
     expect(await screen.findByText('Матч завершён')).toBeVisible();
+    expect(screen.getByText('Алексей Ты победил(а)! Время игры 18:42')).toBeVisible();
+    expect(screen.queryByText('Все 4 пешки дома.')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Вернуться в комнату' })).toBeVisible();
     expect(screen.queryAllByRole('button', { name: 'Бросить кубик' })).toHaveLength(0);
+  });
+
+  it('shows the winner summary without a personal victory claim to a losing player', async () => {
+    const api = createRoomApi({
+      getRoom: vi.fn().mockResolvedValue(activeRoom()),
+      reconnect: vi.fn().mockResolvedValue(activeRoom()),
+    });
+    const realtime = createRealtimeClient({
+      sync: vi.fn().mockResolvedValue({
+        mode: 'snapshot',
+        snapshot: activeSnapshot({
+          status: 'FINISHED',
+          currentPlayerId: null,
+          winnerPlayerId: 'user-2',
+          winReason: 'LAST_ACTIVE_PLAYER',
+          startedAt: '2026-09-01T10:00:00.000Z',
+          finishedAt: '2026-09-01T10:18:42.000Z',
+        }),
+        watermark: { stateVersion: 0, lastSequence: 0 },
+      }),
+    });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
+
+    expect(await screen.findByText('Победитель — Таисия. Время игры 18:42')).toBeVisible();
+    expect(screen.queryByText(/Ты победил\(а\)!/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Соперники выбыли из матча.')).not.toBeInTheDocument();
+  });
+
+  it('shows elapsed time instead of the user-facing move number during an active match', async () => {
+    const api = createRoomApi({
+      getRoom: vi.fn().mockResolvedValue(activeRoom()),
+      reconnect: vi.fn().mockResolvedValue(activeRoom()),
+    });
+    const realtime = createRealtimeClient({
+      sync: vi.fn().mockResolvedValue({
+        mode: 'snapshot',
+        snapshot: activeSnapshot({ startedAt: '2026-09-01T10:00:00.000Z' }),
+        watermark: { stateVersion: 0, lastSequence: 0 },
+      }),
+    });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
+
+    expect(await screen.findByText(/^Время (?:\d{2}:\d{2}|\d+:\d{2}:\d{2})$/)).toBeVisible();
+    expect(screen.queryByText(/^Ход #/)).not.toBeInTheDocument();
   });
 
   it('renders an explicit die face for waiting-to-roll and committed dice states', async () => {
@@ -695,7 +899,10 @@ describe('playable beta room flow', () => {
       }),
     });
 
-    const waitingView = renderAuthenticated('#/rooms/room-1', { roomApi: waitingApi, realtime: waitingRealtime });
+    const waitingView = renderAuthenticated('#/rooms/room-1', {
+      roomApi: waitingApi,
+      realtime: waitingRealtime,
+    });
 
     expect(await screen.findByLabelText('Кубик: ожидание броска')).toBeVisible();
 
@@ -755,7 +962,10 @@ describe('playable beta room flow', () => {
   });
 
   it('clears a finished presentation and reloads the current room after returning', async () => {
-    const waitingRoom = roomState({ version: 8, counts: { memberCount: 2, seatedCount: 0, readyCount: 0 } });
+    const waitingRoom = roomState({
+      version: 8,
+      counts: { memberCount: 2, seatedCount: 0, readyCount: 0 },
+    });
     const api = createRoomApi({
       reconnect: vi.fn().mockResolvedValue(activeRoom()),
       getRoom: vi.fn().mockResolvedValue(waitingRoom),
@@ -783,27 +993,40 @@ describe('playable beta room flow', () => {
 
   it('does not let a late Room A response overwrite the current Room B route', async () => {
     const roomA = deferred<Awaited<ReturnType<RoomApi['reconnect']>>>();
-    const roomB = roomState({ id: 'room-2', code: 'WXYZ' }) as Awaited<ReturnType<RoomApi['reconnect']>>;
+    const roomB = roomState({ id: 'room-2', code: 'WXYZ' }) as Awaited<
+      ReturnType<RoomApi['reconnect']>
+    >;
     const api = createRoomApi({
-      reconnect: vi.fn((roomId: string) => (roomId === 'room-1' ? roomA.promise : Promise.resolve(roomB))),
+      reconnect: vi.fn((roomId: string) =>
+        roomId === 'room-1' ? roomA.promise : Promise.resolve(roomB),
+      ),
       getRoom: vi.fn(),
     });
 
     renderAuthenticated('#/rooms/room-1', { roomApi: api });
-    await waitFor(() => expect(api.reconnect).toHaveBeenCalledWith('room-1', expect.any(AbortSignal)));
+    await waitFor(() =>
+      expect(api.reconnect).toHaveBeenCalledWith('room-1', expect.any(AbortSignal)),
+    );
 
     window.location.hash = '#/rooms/room-2';
     window.dispatchEvent(new HashChangeEvent('hashchange'));
     expect(await screen.findByRole('heading', { name: 'Комната WXYZ' })).toBeVisible();
 
-    roomA.resolve(roomState({ id: 'room-1', code: 'ABCD' }) as Awaited<ReturnType<RoomApi['reconnect']>>);
+    roomA.resolve(
+      roomState({ id: 'room-1', code: 'ABCD' }) as Awaited<ReturnType<RoomApi['reconnect']>>,
+    );
 
-    await waitFor(() => expect(screen.getByRole('heading', { name: 'Комната WXYZ' })).toBeVisible());
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Комната WXYZ' })).toBeVisible(),
+    );
     expect(screen.queryByRole('heading', { name: 'Комната ABCD' })).not.toBeInTheDocument();
   });
 
   it('leaves a terminally reset room with the freshly loaded room version', async () => {
-    const resetRoom = roomState({ version: 8, counts: { memberCount: 2, seatedCount: 0, readyCount: 0 } });
+    const resetRoom = roomState({
+      version: 8,
+      counts: { memberCount: 2, seatedCount: 0, readyCount: 0 },
+    });
     const api = createRoomApi({
       reconnect: vi.fn().mockResolvedValue(resetRoom),
       getRoom: vi.fn().mockResolvedValue(resetRoom),
@@ -813,12 +1036,17 @@ describe('playable beta room flow', () => {
     renderAuthenticated('#/rooms/room-1', { roomApi: api });
     fireEvent.click(await screen.findByRole('button', { name: 'Покинуть комнату' }));
 
-    await waitFor(() => expect(api.leaveRoom).toHaveBeenCalledWith('room-1', 8, expect.any(AbortSignal)));
+    await waitFor(() =>
+      expect(api.leaveRoom).toHaveBeenCalledWith('room-1', 8, expect.any(AbortSignal)),
+    );
     expect(await screen.findByRole('heading', { name: 'Комнаты' })).toBeVisible();
   });
 
   it('opens settings for the authoritative room after leaving a finished match', async () => {
-    const waitingRoom = roomState({ version: 8, counts: { memberCount: 2, seatedCount: 0, readyCount: 0 } });
+    const waitingRoom = roomState({
+      version: 8,
+      counts: { memberCount: 2, seatedCount: 0, readyCount: 0 },
+    });
     const api = createRoomApi({
       reconnect: vi.fn().mockResolvedValue(activeRoom()),
       getRoom: vi.fn().mockResolvedValue(waitingRoom),

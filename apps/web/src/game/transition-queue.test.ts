@@ -21,6 +21,8 @@ function snapshot(_matchId = 'match-1', stateVersion = 1, lastSequence = 1): Mat
     diceValue: null,
     winnerPlayerId: null,
     winReason: null,
+    startedAt: '2026-09-01T10:00:00.000Z',
+    finishedAt: null,
     players: [],
     pawns: [],
     lastSequence,

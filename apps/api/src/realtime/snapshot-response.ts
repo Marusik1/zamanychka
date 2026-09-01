@@ -5,10 +5,18 @@ import {
   type MatchSnapshot,
 } from '@zamanushka/shared';
 
-function snapshotWithLastSequence(snapshot: unknown, lastSequence: number): MatchSnapshot {
+export function snapshotWithTiming(input: {
+  snapshot: unknown;
+  lastSequence: number;
+  startedAt?: Date | string | null;
+  finishedAt?: Date | string | null;
+}): MatchSnapshot {
   return matchSnapshotSchema.parse({
-    ...(snapshot as Record<string, unknown>),
-    lastSequence,
+    ...(input.snapshot as Record<string, unknown>),
+    lastSequence: input.lastSequence,
+    startedAt: input.startedAt instanceof Date ? input.startedAt.toISOString() : input.startedAt,
+    finishedAt:
+      input.finishedAt instanceof Date ? input.finishedAt.toISOString() : input.finishedAt,
   });
 }
 
@@ -16,14 +24,15 @@ export function snapshotSyncResponse(input: {
   snapshot: unknown;
   stateVersion: number;
   lastSequence: number;
+  startedAt?: Date | string | null;
+  finishedAt?: Date | string | null;
 }): GameSyncResponse {
   return gameSyncResponseSchema.parse({
     mode: 'snapshot',
-    snapshot: snapshotWithLastSequence(input.snapshot, input.lastSequence),
+    snapshot: snapshotWithTiming(input),
     watermark: {
       stateVersion: input.stateVersion,
       lastSequence: input.lastSequence,
     },
   });
 }
-

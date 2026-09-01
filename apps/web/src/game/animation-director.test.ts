@@ -38,6 +38,8 @@ function toSnapshot(stateVersion = 1, lastSequence = 1): MatchSnapshot {
     diceValue: 4,
     winnerPlayerId: null,
     winReason: null,
+    startedAt: '2026-09-01T10:00:00.000Z',
+    finishedAt: null,
     players,
     pawns,
     lastSequence,
@@ -159,7 +161,12 @@ describe('animation director', () => {
     await vi.runAllTimersAsync();
     await run;
 
-    expect(collectPawnPositions(applied, 'green-seat-pawn-1')).toEqual(['7:0', '6:0', '5:0', '5:1']);
+    expect(collectPawnPositions(applied, 'green-seat-pawn-1')).toEqual([
+      '7:0',
+      '6:0',
+      '5:0',
+      '5:1',
+    ]);
   });
 
   it('keeps pawnMoved as the only spatial owner when pawnEnteredHome follows in the same transition', () => {
@@ -258,7 +265,11 @@ describe('animation director', () => {
             playerId: 'green-seat',
             fromCoord: { row: 7, col: 0 },
             toCoord: { row: 7, col: 3 },
-            physicalPath: [{ row: 7, col: 1 }, { row: 7, col: 2 }, { row: 7, col: 3 }],
+            physicalPath: [
+              { row: 7, col: 1 },
+              { row: 7, col: 2 },
+              { row: 7, col: 3 },
+            ],
             capture: { capturedPawnId: 'red-seat-pawn-1', capturedPlayerId: 'red-seat' },
           },
           createdAt: '2026-08-26T00:00:00.000Z',
@@ -332,7 +343,11 @@ describe('animation director', () => {
             playerId: 'green-seat',
             fromCoord: { row: 7, col: 0 },
             toCoord: { row: 7, col: 3 },
-            physicalPath: [{ row: 7, col: 1 }, { row: 7, col: 2 }, { row: 7, col: 3 }],
+            physicalPath: [
+              { row: 7, col: 1 },
+              { row: 7, col: 2 },
+              { row: 7, col: 3 },
+            ],
             capture: { capturedPawnId: 'red-seat-pawn-1', capturedPlayerId: 'red-seat' },
           },
           createdAt: '2026-08-26T00:00:00.000Z',

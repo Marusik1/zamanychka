@@ -19,7 +19,7 @@ import { createRedisClient } from '../infrastructure/redis.js';
 import type { MatchRepository } from '../match/match-repository.js';
 import type { OutboxLeaseStore } from './outbox-dispatcher.js';
 import { createOutboxDispatcher } from './outbox-dispatcher.js';
-import { snapshotSyncResponse } from './snapshot-response.js';
+import { snapshotSyncResponse, snapshotWithTiming } from './snapshot-response.js';
 
 interface SocketData {
   userId: string;
@@ -74,10 +74,12 @@ async function resolveTransitionEnvelope(
   const events = seed.events;
   if (events.length === 0) throw new Error('committed transition must include events');
   const parsedEvents = events.map((event) => gameEventEnvelopeSchema.parse(event));
-  const snapshot = {
-    ...(match.snapshot as Record<string, unknown>),
+  const snapshot = snapshotWithTiming({
+    snapshot: match.snapshot,
     lastSequence: seed.toSequence,
-  };
+    startedAt: match.createdAt,
+    finishedAt: match.finishedAt,
+  });
   return transitionEnvelopeSchema.parse({
     matchId: seed.matchId,
     transitionId: seed.transitionId,
@@ -228,7 +230,9 @@ export function createRealtimeRuntime(options: {
       try {
         match = await options.matchRepository.loadCurrentMatch(parsed.data.matchId);
         if (!match) {
-          ack?.(snapshotSyncResponse({ snapshot: emptySnapshot, stateVersion: 0, lastSequence: 0 }));
+          ack?.(
+            snapshotSyncResponse({ snapshot: emptySnapshot, stateVersion: 0, lastSequence: 0 }),
+          );
           return;
         }
 
@@ -238,6 +242,8 @@ export function createRealtimeRuntime(options: {
               snapshot: match.snapshot,
               stateVersion: match.stateVersion ?? 0,
               lastSequence: match.lastSequence ?? 0,
+              startedAt: match.createdAt,
+              finishedAt: match.finishedAt,
             }),
           );
           return;
@@ -256,6 +262,8 @@ export function createRealtimeRuntime(options: {
                 snapshot: match.snapshot,
                 stateVersion: match.stateVersion ?? 0,
                 lastSequence: match.lastSequence ?? 0,
+                startedAt: match.createdAt,
+                finishedAt: match.finishedAt,
               }),
             );
             return;
@@ -277,6 +285,8 @@ export function createRealtimeRuntime(options: {
             snapshot: match.snapshot,
             stateVersion: match.stateVersion ?? 0,
             lastSequence: match.lastSequence ?? 0,
+            startedAt: match.createdAt,
+            finishedAt: match.finishedAt,
           }),
         );
       } catch (error) {
@@ -288,6 +298,8 @@ export function createRealtimeRuntime(options: {
               snapshot: match.snapshot,
               stateVersion: match.stateVersion ?? 0,
               lastSequence: match.lastSequence ?? 0,
+              startedAt: match.createdAt,
+              finishedAt: match.finishedAt,
             }),
           );
         } catch (fallbackError) {

@@ -45,4 +45,4 @@ Each epic is an isolated checkpoint: inspect the current implementation, documen
 - EPIC-17: validate mobile and desktop composition with the existing gameplay shell.
 - EPIC-16: harden room/match lifecycle through the existing multi-room contracts and integration tests.
 
-Current authorization: EPIC-12 is complete after verification. EPIC-13 requires separate approval.
+Current authorization: EPIC-13 is in progress. EPIC-15 requires separate approval after its verification checkpoint.

@@ -8,7 +8,7 @@ import {
   type GameSyncResponse,
   type TransitionEnvelope,
 } from '@zamanushka/shared';
-import { snapshotSyncResponse } from './snapshot-response.js';
+import { snapshotSyncResponse, snapshotWithTiming } from './snapshot-response.js';
 interface OutboxTransitionPayload {
   transitionId?: string;
   stateVersion?: number;
@@ -25,6 +25,8 @@ function roomlessTransitionEnvelope(input: {
   toSequence: number;
   events: unknown[];
   snapshot: Prisma.InputJsonObject;
+  startedAt: Date;
+  finishedAt: Date | null;
 }): TransitionEnvelope {
   return transitionEnvelopeSchema.parse({
     matchId: input.matchId,
@@ -34,7 +36,12 @@ function roomlessTransitionEnvelope(input: {
     toSequence: input.toSequence,
     events: input.events,
     watermark: { stateVersion: input.stateVersion, lastSequence: input.toSequence },
-    snapshot: { ...input.snapshot, lastSequence: input.toSequence },
+    snapshot: snapshotWithTiming({
+      snapshot: input.snapshot,
+      lastSequence: input.toSequence,
+      startedAt: input.startedAt,
+      finishedAt: input.finishedAt,
+    }),
   });
 }
 
@@ -67,6 +74,8 @@ export function createGameSyncService(options: {
           winReason: null,
           players: [],
           pawns: [],
+          startedAt: null,
+          finishedAt: null,
         },
         stateVersion: 0,
         lastSequence: 0,
@@ -91,6 +100,8 @@ export function createGameSyncService(options: {
         toSequence: payload.toSequence ?? request.lastSequence + index + 1,
         events: payload.events ?? [],
         snapshot: snapshotState,
+        startedAt: match.createdAt,
+        finishedAt: match.finishedAt,
       });
     });
 
@@ -113,6 +124,8 @@ export function createGameSyncService(options: {
           snapshot: snapshotState,
           stateVersion: match.stateVersion,
           lastSequence: match.lastSequence,
+          startedAt: match.createdAt,
+          finishedAt: match.finishedAt,
         });
       }
       return gameSyncResponseSchema.parse({
@@ -129,6 +142,8 @@ export function createGameSyncService(options: {
       snapshot: snapshotState,
       stateVersion: match.stateVersion,
       lastSequence: match.lastSequence,
+      startedAt: match.createdAt,
+      finishedAt: match.finishedAt,
     });
   }
 

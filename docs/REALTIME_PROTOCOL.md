@@ -53,7 +53,12 @@ type GameEventEnvelope = {
   };
 }[GameEventType];
 
-type GameSnapshot = GameState & { lastSequence: number };
+type GameSnapshot = GameState & {
+  lastSequence: number;
+  // Durable timestamps projected from Match, never calculated by the client.
+  startedAt: string | null;
+  finishedAt: string | null;
+};
 ```
 
 All events created by one transition share its resulting `stateVersion` and occupy one continuous sequence interval. Sync-by-events returns transition batches grouped by `stateVersion`, each with its final authoritative snapshot. The client animates the ordered events, then reconciles to that batch snapshot; it does not infer state-version increments from individual events.

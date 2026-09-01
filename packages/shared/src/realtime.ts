@@ -97,6 +97,8 @@ export const matchSnapshotSchema = z
     diceValue: z.number().int().min(1).max(6).nullable(),
     winnerPlayerId: id.nullable(),
     winReason: z.enum(['HOME_DIAGONAL_COMPLETED', 'LAST_ACTIVE_PLAYER']).nullable(),
+    startedAt: z.string().datetime({ offset: true }).nullable().default(null),
+    finishedAt: z.string().datetime({ offset: true }).nullable().default(null),
     players: z.array(playerSchema),
     pawns: z.array(pawnSchema),
     lastSequence: version,

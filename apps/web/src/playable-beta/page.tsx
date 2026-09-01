@@ -1,9 +1,10 @@
-import {
-  getLegalActions,
-  type GameState,
-  type LegalAction,
-} from '@zamanushka/game-engine';
-import type { MatchSnapshot, RoomChatMessage, RoomState, TransitionEnvelope } from '@zamanushka/shared';
+import { getLegalActions, type GameState, type LegalAction } from '@zamanushka/game-engine';
+import type {
+  MatchSnapshot,
+  RoomChatMessage,
+  RoomState,
+  TransitionEnvelope,
+} from '@zamanushka/shared';
 import { BottomSheet, Button, Dialog, EmptyState, Panel } from '@zamanushka/ui';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -18,6 +19,7 @@ import { GameAvatar } from '../game/avatar.js';
 import { GameBoard } from '../game/board.js';
 import type { DieValue } from '../game/dice.js';
 import { projectGameScreenModel } from '../game/domain.js';
+import { formatMatchDuration, matchDurationMilliseconds } from '../game/match-duration.js';
 import { createGameplayPresentationPlan } from '../game/event-presentation.js';
 import {
   acceptCommittedTransition,
@@ -152,7 +154,10 @@ function pawnOrdinal(pawnId: string) {
   return pawnId.split('-').at(-1) ?? '1';
 }
 
-function pawnActionLabel(action: Extract<LegalAction, { pawnId: string }>, snapshot: MatchSnapshot) {
+function pawnActionLabel(
+  action: Extract<LegalAction, { pawnId: string }>,
+  snapshot: MatchSnapshot,
+) {
   const pawn = snapshot.pawns.find((candidate) => candidate.pawnId === action.pawnId);
   const colorLabel = pawn ? colorActionLabels[pawn.color] : 'эту';
 
@@ -163,16 +168,21 @@ function pawnActionLabel(action: Extract<LegalAction, { pawnId: string }>, snaps
   return `Переместить ${colorLabel} пешку ${pawnOrdinal(action.pawnId)}`;
 }
 
-function finishedReason(snapshot: MatchSnapshot) {
-  if (snapshot.winReason === 'HOME_DIAGONAL_COMPLETED') {
-    return 'Все 4 пешки дома.';
-  }
+function useMatchDuration(snapshot: MatchSnapshot | null): string {
+  const [now, setNow] = useState(() => new Date());
+  const startedAt = snapshot?.startedAt ?? null;
+  const finishedAt = snapshot?.finishedAt ?? null;
+  const active = snapshot?.status === 'ACTIVE';
 
-  if (snapshot.winReason === 'LAST_ACTIVE_PLAYER') {
-    return 'Соперники выбыли из матча.';
-  }
+  useEffect(() => {
+    setNow(new Date());
+    if (!active || !startedAt) return;
 
-  return 'Матч завершён.';
+    const timer = window.setInterval(() => setNow(new Date()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [active, startedAt, finishedAt]);
+
+  return formatMatchDuration(matchDurationMilliseconds(startedAt, finishedAt, now));
 }
 
 function useCompactViewport() {
@@ -203,9 +213,7 @@ function mergeHistoryItems(
     merged.push(item);
   }
 
-  return merged
-    .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
-    .slice(-120);
+  return merged.sort((left, right) => left.createdAt.localeCompare(right.createdAt)).slice(-120);
 }
 
 function actorLabel(snapshot: MatchSnapshot, playerId: string) {
@@ -213,7 +221,10 @@ function actorLabel(snapshot: MatchSnapshot, playerId: string) {
   return player ? colorLabels[player.color] : 'Игрок';
 }
 
-function describeEvent(snapshot: MatchSnapshot, event: TransitionEnvelope['events'][number]): MatchHistoryItem {
+function describeEvent(
+  snapshot: MatchSnapshot,
+  event: TransitionEnvelope['events'][number],
+): MatchHistoryItem {
   switch (event.type) {
     case 'diceRolled':
       return {
@@ -233,7 +244,9 @@ function describeEvent(snapshot: MatchSnapshot, event: TransitionEnvelope['event
       return {
         id: event.eventId,
         title: `${actorLabel(snapshot, event.payload.playerId)} сделали ход`,
-        detail: event.payload.capture ? 'Ход завершился взятием.' : `Путь: ${event.payload.physicalPath.length} клеток.`,
+        detail: event.payload.capture
+          ? 'Ход завершился взятием.'
+          : `Путь: ${event.payload.physicalPath.length} клеток.`,
         createdAt: event.createdAt,
       };
     case 'pawnCaptured':
@@ -300,7 +313,7 @@ function statusCopy(snapshot: MatchSnapshot, currentUserId: string, actionCount:
   if (snapshot.status === 'FINISHED') {
     return {
       title: 'Матч завершён',
-      subtitle: finishedReason(snapshot),
+      subtitle: 'Итоги матча',
     };
   }
 
@@ -393,8 +406,10 @@ export function PlayableBetaPage({
   const activeMatchRef = useRef<string | null>(null);
   const boardRef = useRef<PremiumPresentationHandle | null>(null);
   const ackSyncTimeoutRef = useRef<number | null>(null);
-  const [presentationController, setPresentationController] = useState<PresentationControllerState | null>(null);
-  const [presentationRuntime, setPresentationRuntime] = useState<GameplayAnimationRuntimeState | null>(null);
+  const [presentationController, setPresentationController] =
+    useState<PresentationControllerState | null>(null);
+  const [presentationRuntime, setPresentationRuntime] =
+    useState<GameplayAnimationRuntimeState | null>(null);
   const reducedMotion = usePrefersReducedMotion();
   const compactViewport = useCompactViewport();
   const [utilityPanel, setUtilityPanel] = useState<UtilityPanel>(null);
@@ -407,9 +422,11 @@ export function PlayableBetaPage({
   const chatInitializedRoomIdRef = useRef<string | null>(null);
   const [historyItems, setHistoryItems] = useState<readonly MatchHistoryItem[]>([]);
 
-  const isCurrentRoomScope = useCallback((roomId: string, scope: number) => (
-    selectedRoomIdRef.current === roomId && roomScopeRef.current === scope
-  ), []);
+  const isCurrentRoomScope = useCallback(
+    (roomId: string, scope: number) =>
+      selectedRoomIdRef.current === roomId && roomScopeRef.current === scope,
+    [],
+  );
 
   const clearMatchPresentation = useCallback(() => {
     matchScopeRef.current += 1;
@@ -641,7 +658,9 @@ export function PlayableBetaPage({
         ackSyncTimeoutRef.current = null;
       }
       setMatch((current) =>
-        current.status === 'ready' && current.snapshot.status === 'FINISHED' ? current : { status: 'idle' },
+        current.status === 'ready' && current.snapshot.status === 'FINISHED'
+          ? current
+          : { status: 'idle' },
       );
       return;
     }
@@ -653,7 +672,8 @@ export function PlayableBetaPage({
   }, [room?.currentMatchId, syncMatch]);
 
   const presentedSnapshot =
-    presentationController?.presentationSnapshot ?? (match.status === 'ready' ? match.snapshot : null);
+    presentationController?.presentationSnapshot ??
+    (match.status === 'ready' ? match.snapshot : null);
   const presentedPlayers = useMemo(
     () =>
       presentedSnapshot
@@ -724,7 +744,11 @@ export function PlayableBetaPage({
 
         const accepted = acceptCommittedTransition(current, transition);
         if (accepted.kind === 'recovery_required') {
-          void syncMatch(transition.matchId, current.authoritativeSnapshot.stateVersion, current.authoritativeWatermark.lastSequence);
+          void syncMatch(
+            transition.matchId,
+            current.authoritativeSnapshot.stateVersion,
+            current.authoritativeWatermark.lastSequence,
+          );
         }
         return accepted.state;
       });
@@ -744,7 +768,10 @@ export function PlayableBetaPage({
         }
 
         setHistoryItems((items) =>
-          mergeHistoryItems(items, transition.events.map((event) => describeEvent(transition.snapshot, event))),
+          mergeHistoryItems(
+            items,
+            transition.events.map((event) => describeEvent(transition.snapshot, event)),
+          ),
         );
 
         return {
@@ -819,7 +846,10 @@ export function PlayableBetaPage({
   }, [chatMessages, compactViewport, lastSeenChatMessageId, mobileChatOpen]);
 
   const displaySnapshot = presentedSnapshot;
-  const legalActions = displaySnapshot ? getLegalActions(displaySnapshot as GameState, authState.user.id) : [];
+  const matchDuration = useMatchDuration(displaySnapshot);
+  const legalActions = displaySnapshot
+    ? getLegalActions(displaySnapshot as GameState, authState.user.id)
+    : [];
   const nonSurrenderActions = legalActions.filter((action) => action.type !== 'SURRENDER');
   const rollAction = nonSurrenderActions.find((action) => action.type === 'ROLL_DICE') ?? null;
   const surrenderAction = legalActions.find((action) => action.type === 'SURRENDER') ?? null;
@@ -827,8 +857,13 @@ export function PlayableBetaPage({
     (action): action is Extract<LegalAction, { pawnId: string }> =>
       action.type === 'ENTER_PAWN' || action.type === 'MOVE_PAWN',
   );
-  const pawnActionsById = useMemo(() => new Map(pawnActions.map((action) => [action.pawnId, action])), [pawnActions]);
-  const gameScreen = displaySnapshot ? projectGameScreenModel(displaySnapshot as GameState, authState.user.id) : null;
+  const pawnActionsById = useMemo(
+    () => new Map(pawnActions.map((action) => [action.pawnId, action])),
+    [pawnActions],
+  );
+  const gameScreen = displaySnapshot
+    ? projectGameScreenModel(displaySnapshot as GameState, authState.user.id)
+    : null;
   const playerNamesById = useMemo(
     () =>
       Object.fromEntries(
@@ -839,6 +874,11 @@ export function PlayableBetaPage({
       ),
     [authState.user.id, room?.members],
   );
+  const winnerName = useMemo(() => {
+    const winnerId = displaySnapshot?.winnerPlayerId;
+    if (!winnerId) return 'Игрок';
+    return room?.members.find((member) => member.userId === winnerId)?.displayName ?? 'Игрок';
+  }, [displaySnapshot?.winnerPlayerId, room?.members]);
   const playerAvatarUrlsById = useMemo(
     () =>
       Object.fromEntries(
@@ -850,12 +890,17 @@ export function PlayableBetaPage({
     [authState.user.photoUrl, authState.user.id, room?.members],
   );
   const pawnActionLabels = useMemo(
-    () => (displaySnapshot
-      ? Object.fromEntries(pawnActions.map((action) => [action.pawnId, pawnActionLabel(action, displaySnapshot)]))
-      : {}),
+    () =>
+      displaySnapshot
+        ? Object.fromEntries(
+            pawnActions.map((action) => [action.pawnId, pawnActionLabel(action, displaySnapshot)]),
+          )
+        : {},
     [displaySnapshot, pawnActions],
   );
-  const status = displaySnapshot ? statusCopy(displaySnapshot, authState.user.id, nonSurrenderActions.length) : null;
+  const status = displaySnapshot
+    ? statusCopy(displaySnapshot, authState.user.id, nonSurrenderActions.length)
+    : null;
   const showFinishedMatch = displaySnapshot?.status === 'FINISHED';
   const readyMatchBoardProps =
     displaySnapshot && displaySnapshot.diceValue !== null
@@ -863,9 +908,15 @@ export function PlayableBetaPage({
       : {};
   const utilityActions = room ? (
     <div className="beta-room-page__utility-actions">
-      <button type="button" onClick={() => setUtilityPanel('rules')}>▤ Правила игры</button>
-      <button type="button" onClick={() => setUtilityPanel('history')}>◴ История ходов</button>
-      <button type="button" onClick={() => setUtilityPanel('settings')}>⚙ Настройки комнаты</button>
+      <button type="button" onClick={() => setUtilityPanel('rules')}>
+        ▤ Правила игры
+      </button>
+      <button type="button" onClick={() => setUtilityPanel('history')}>
+        ◴ История ходов
+      </button>
+      <button type="button" onClick={() => setUtilityPanel('settings')}>
+        ⚙ Настройки комнаты
+      </button>
       {compactViewport ? (
         <button type="button" onClick={() => setMobileChatOpen(true)}>
           💬 {unreadChatCount > 0 ? `Чат • ${unreadChatCount}` : 'Чат'}
@@ -880,19 +931,31 @@ export function PlayableBetaPage({
         <span>{room.code}</span>
       </div>
       <div className="game-board-scene__messages">
-        {chatMessages.length === 0 ? <p className="game-board-scene__chat-empty">Пока нет сообщений. Начните разговор.</p> : null}
+        {chatMessages.length === 0 ? (
+          <p className="game-board-scene__chat-empty">Пока нет сообщений. Начните разговор.</p>
+        ) : null}
         {chatMessages.map((message) => (
           <div className="game-board-scene__message" key={message.id}>
             <GameAvatar
-              color={gameScreen?.players.find((player) => player.playerId === message.userId)?.color ?? 'GREEN'}
+              color={
+                gameScreen?.players.find((player) => player.playerId === message.userId)?.color ??
+                'GREEN'
+              }
               name={message.displayName}
-              photoUrl={message.userId === authState.user.id ? authState.user.photoUrl ?? null : null}
+              photoUrl={
+                message.userId === authState.user.id ? (authState.user.photoUrl ?? null) : null
+              }
             />
             <div>
               <strong>{message.displayName}</strong>
               <p>{message.text}</p>
             </div>
-            <time>{new Date(message.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</time>
+            <time>
+              {new Date(message.createdAt).toLocaleTimeString('ru-RU', {
+                hour: '2-digit',
+                minute: '2-digit',
+              })}
+            </time>
           </div>
         ))}
       </div>
@@ -946,7 +1009,9 @@ export function PlayableBetaPage({
       navigateTo('#/rooms');
     } catch (error) {
       if (isCurrentRoomScope(roomId, scope)) {
-        setRoomError(roomErrorMessage(error, 'РќРµ СѓРґР°Р»РѕСЃСЊ РїРѕРєРёРЅСѓС‚СЊ РєРѕРјРЅР°С‚Сѓ.'));
+        setRoomError(
+          roomErrorMessage(error, 'РќРµ СѓРґР°Р»РѕСЃСЊ РїРѕРєРёРЅСѓС‚СЊ РєРѕРјРЅР°С‚Сѓ.'),
+        );
       }
     } finally {
       if (isCurrentRoomScope(roomId, scope)) setRoomPending(false);
@@ -1051,7 +1116,10 @@ export function PlayableBetaPage({
   async function submitAction(action: LegalAction) {
     if (match.status !== 'ready' || match.pending) return;
 
-    if (action.type === 'SURRENDER' && !window.confirm('Сдаться?\nМатч будет засчитан как поражение.')) {
+    if (
+      action.type === 'SURRENDER' &&
+      !window.confirm('Сдаться?\nМатч будет засчитан как поражение.')
+    ) {
       return;
     }
 
@@ -1063,7 +1131,11 @@ export function PlayableBetaPage({
       );
 
       if (!result.ok) {
-        setMatch({ ...match, pending: false, error: friendlyGameError(result.code, result.message) });
+        setMatch({
+          ...match,
+          pending: false,
+          error: friendlyGameError(result.code, result.message),
+        });
         if (result.code === 'STALE_STATE_VERSION') {
           await syncMatch(match.matchId, match.snapshot.stateVersion, match.lastSequence);
         }
@@ -1123,7 +1195,8 @@ export function PlayableBetaPage({
           <p className="beta-home-page__eyebrow">Бета</p>
           <h1>Играть</h1>
           <p className="beta-home-page__copy">
-            Откройте список комнат, войдите в нужную и продолжайте матч через существующий игровой экран.
+            Откройте список комнат, войдите в нужную и продолжайте матч через существующий игровой
+            экран.
           </p>
           <div className="beta-home-page__actions">
             <Button onClick={() => navigateTo('#/rooms')}>Открыть комнаты</Button>
@@ -1143,7 +1216,11 @@ export function PlayableBetaPage({
           </div>
 
           <div className="beta-room-page__header-actions">
-            <Button variant="secondary" onClick={() => void mutateRoom((signal) => loadRoomList(signal))} loading={roomPending}>
+            <Button
+              variant="secondary"
+              onClick={() => void mutateRoom((signal) => loadRoomList(signal))}
+              loading={roomPending}
+            >
               Обновить
             </Button>
             <Button onClick={() => void createAndJoinRoom()} loading={roomPending}>
@@ -1188,7 +1265,10 @@ export function PlayableBetaPage({
     if (!gameScreen) {
       return (
         <section className="beta-room-page">
-          <EmptyState title="Матч временно недоступен" description="Не удалось подготовить игровой экран. Обновите комнату." />
+          <EmptyState
+            title="Матч временно недоступен"
+            description="Не удалось подготовить игровой экран. Обновите комнату."
+          />
         </section>
       );
     }
@@ -1230,23 +1310,33 @@ export function PlayableBetaPage({
                 <p>{`Участники: ${room.counts.memberCount}`}</p>
                 <p>{`Места: ${room.counts.seatedCount} / 4`}</p>
                 <p>{`Готовы: ${room.counts.readyCount} / ${Math.max(room.counts.seatedCount, 1)}`}</p>
-                <p>{room.currentUser.startBlockedReason ?? 'Матч можно продолжать по текущему authoritative состоянию.'}</p>
+                <p>
+                  {room.currentUser.startBlockedReason ??
+                    'Матч можно продолжать по текущему authoritative состоянию.'}
+                </p>
               </div>
             </section>
           }
           turnPanel={{
             heading: 'Матч',
-            badge: `Ход #${displaySnapshot?.turnNumber ?? 1}`,
+            badge: `Время ${matchDuration}`,
             title: status?.title,
             subtitle: status?.subtitle,
-            dieLabel: displaySnapshot?.diceValue === null ? 'Кубик: ожидание броска' : `Кубик: ${displaySnapshot?.diceValue}`,
+            dieLabel:
+              displaySnapshot?.diceValue === null
+                ? 'Кубик: ожидание броска'
+                : `Кубик: ${displaySnapshot?.diceValue}`,
             dieValueText:
               displaySnapshot?.diceValue === null
                 ? 'Кубик ещё не брошен'
                 : `Выпало: ${displaySnapshot?.diceValue ?? '—'}`,
             primaryAction:
               displaySnapshot?.status === 'FINISHED' ? undefined : rollAction ? (
-                <Button onClick={() => void submitAction(rollAction)} loading={match.pending} disabled={match.pending}>
+                <Button
+                  onClick={() => void submitAction(rollAction)}
+                  loading={match.pending}
+                  disabled={match.pending}
+                >
                   {actionLabel(rollAction)}
                 </Button>
               ) : undefined,
@@ -1264,14 +1354,24 @@ export function PlayableBetaPage({
             footer:
               displaySnapshot?.status === 'FINISHED' ? (
                 <div className="beta-room-page__controls">
-                  <p>{finishedReason(displaySnapshot)}</p>
-                  <Button data-testid="return-to-room" onClick={() => void returnToRoom()}>Вернуться в комнату</Button>
+                  <p>
+                    {displaySnapshot.winnerPlayerId === authState.user.id
+                      ? `${winnerName} Ты победил(а)! Время игры ${matchDuration}`
+                      : `Победитель — ${winnerName}. Время игры ${matchDuration}`}
+                  </p>
+                  <Button data-testid="return-to-room" onClick={() => void returnToRoom()}>
+                    Вернуться в комнату
+                  </Button>
                   {utilityActions}
                 </div>
               ) : (
                 <div className="beta-room-page__controls">
-                  {!rollAction && pawnActions.length > 0 ? <p>Доступные пешки подсвечены на поле и в резерве.</p> : null}
-                  {nonSurrenderActions.length === 0 && !match.pending ? <p>Ожидаем следующее состояние матча.</p> : null}
+                  {!rollAction && pawnActions.length > 0 ? (
+                    <p>Доступные пешки подсвечены на поле и в резерве.</p>
+                  ) : null}
+                  {nonSurrenderActions.length === 0 && !match.pending ? (
+                    <p>Ожидаем следующее состояние матча.</p>
+                  ) : null}
                   {utilityActions}
                 </div>
               ),
@@ -1305,7 +1405,9 @@ export function PlayableBetaPage({
             title="История ходов"
           >
             <div className="beta-room-page__history-panel">
-              {historyItems.length === 0 ? <p>История появится после первых событий матча.</p> : null}
+              {historyItems.length === 0 ? (
+                <p>История появится после первых событий матча.</p>
+              ) : null}
               {historyItems.map((item) => (
                 <article key={item.id} className="beta-room-page__history-item">
                   <strong>{item.title}</strong>
@@ -1321,7 +1423,9 @@ export function PlayableBetaPage({
             title="История ходов"
           >
             <div className="beta-room-page__history-panel">
-              {historyItems.length === 0 ? <p>История появится после первых событий матча.</p> : null}
+              {historyItems.length === 0 ? (
+                <p>История появится после первых событий матча.</p>
+              ) : null}
               {historyItems.map((item) => (
                 <article key={item.id} className="beta-room-page__history-item">
                   <strong>{item.title}</strong>
@@ -1340,7 +1444,10 @@ export function PlayableBetaPage({
             <div className="beta-room-page__settings-panel">
               <p>{`Код комнаты: ${room.code}`}</p>
               <p>{`Участников: ${room.counts.memberCount}`}</p>
-              <Button variant="secondary" onClick={() => void navigator.clipboard?.writeText(room.code)}>
+              <Button
+                variant="secondary"
+                onClick={() => void navigator.clipboard?.writeText(room.code)}
+              >
                 Копировать код
               </Button>
               {displaySnapshot?.status !== 'ACTIVE' && room.currentUser.isMember ? (
@@ -1359,7 +1466,10 @@ export function PlayableBetaPage({
             <div className="beta-room-page__settings-panel">
               <p>{`Код комнаты: ${room.code}`}</p>
               <p>{`Участников: ${room.counts.memberCount}`}</p>
-              <Button variant="secondary" onClick={() => void navigator.clipboard?.writeText(room.code)}>
+              <Button
+                variant="secondary"
+                onClick={() => void navigator.clipboard?.writeText(room.code)}
+              >
                 Копировать код
               </Button>
               {displaySnapshot?.status !== 'ACTIVE' && room.currentUser.isMember ? (
@@ -1383,7 +1493,11 @@ export function PlayableBetaPage({
         </div>
 
         <div className="beta-room-page__header-actions">
-          <Button variant="secondary" onClick={() => void refreshRoom(selectedRoomId)} loading={roomPending}>
+          <Button
+            variant="secondary"
+            onClick={() => void refreshRoom(selectedRoomId)}
+            loading={roomPending}
+          >
             Обновить
           </Button>
 
@@ -1394,7 +1508,11 @@ export function PlayableBetaPage({
           ) : null}
 
           {room?.currentMatchId ? null : (
-            <Button onClick={() => void startMatch()} loading={roomPending} disabled={!room?.currentUser.canStart}>
+            <Button
+              onClick={() => void startMatch()}
+              loading={roomPending}
+              disabled={!room?.currentUser.canStart}
+            >
               Начать матч
             </Button>
           )}
@@ -1416,7 +1534,12 @@ export function PlayableBetaPage({
 
             {!room.currentUser.isMember ? (
               <div className="beta-room-page__seat-actions">
-                <Button onClick={() => void mutateRoom((signal) => roomApi.joinRoom(selectedRoomId, signal))} loading={roomPending}>
+                <Button
+                  onClick={() =>
+                    void mutateRoom((signal) => roomApi.joinRoom(selectedRoomId, signal))
+                  }
+                  loading={roomPending}
+                >
                   Войти в комнату
                 </Button>
               </div>
@@ -1424,16 +1547,25 @@ export function PlayableBetaPage({
 
             <div className="beta-room-page__seat-grid">
               {room.seats.map((seat) => {
-                const member = seat.userId ? membersById.get(seat.userId) ?? null : null;
+                const member = seat.userId ? (membersById.get(seat.userId) ?? null) : null;
                 const isMine = seat.seatIndex === mySeatIndex;
 
                 return (
-                  <Panel key={seat.seatIndex} as="article" className="beta-room-page__seat-card" selected={isMine}>
+                  <Panel
+                    key={seat.seatIndex}
+                    as="article"
+                    className="beta-room-page__seat-card"
+                    selected={isMine}
+                  >
                     <div className="beta-room-page__seat-copy">
                       <strong>{seatLabel(seat.seatIndex)}</strong>
                       {member ? (
                         <>
-                          <span>{member.userId === authState.user.id ? `${member.displayName} (Вы)` : member.displayName}</span>
+                          <span>
+                            {member.userId === authState.user.id
+                              ? `${member.displayName} (Вы)`
+                              : member.displayName}
+                          </span>
                           <span>{seat.ready ? 'Готов' : 'Не готов'}</span>
                         </>
                       ) : (
@@ -1442,7 +1574,13 @@ export function PlayableBetaPage({
                     </div>
 
                     {!member && room.currentUser.isMember && mySeatIndex === null ? (
-                      <Button onClick={() => void mutateRoom((signal) => roomApi.takeSeat(selectedRoomId, seat.seatIndex, room.version, signal))}>
+                      <Button
+                        onClick={() =>
+                          void mutateRoom((signal) =>
+                            roomApi.takeSeat(selectedRoomId, seat.seatIndex, room.version, signal),
+                          )
+                        }
+                      >
                         {`Занять место ${seat.seatIndex + 1}`}
                       </Button>
                     ) : null}
@@ -1451,11 +1589,22 @@ export function PlayableBetaPage({
                       <div className="beta-room-page__seat-actions">
                         <Button
                           variant={seat.ready ? 'secondary' : 'primary'}
-                          onClick={() => void mutateRoom((signal) => roomApi.setReady(selectedRoomId, !seat.ready, room.version, signal))}
+                          onClick={() =>
+                            void mutateRoom((signal) =>
+                              roomApi.setReady(selectedRoomId, !seat.ready, room.version, signal),
+                            )
+                          }
                         >
                           {seat.ready ? 'Снять готовность' : 'Готов'}
                         </Button>
-                        <Button variant="ghost" onClick={() => void mutateRoom((signal) => roomApi.leaveSeat(selectedRoomId, room.version, signal))}>
+                        <Button
+                          variant="ghost"
+                          onClick={() =>
+                            void mutateRoom((signal) =>
+                              roomApi.leaveSeat(selectedRoomId, room.version, signal),
+                            )
+                          }
+                        >
                           Покинуть место
                         </Button>
                       </div>
@@ -1495,7 +1644,10 @@ export function PlayableBetaPage({
           <div className="beta-room-page__settings-panel">
             <p>{`Код комнаты: ${room.code}`}</p>
             <p>{`Участников: ${room.counts.memberCount}`}</p>
-            <Button variant="secondary" onClick={() => void navigator.clipboard?.writeText(room.code)}>
+            <Button
+              variant="secondary"
+              onClick={() => void navigator.clipboard?.writeText(room.code)}
+            >
               Копировать код
             </Button>
             {room.currentUser.isMember ? (

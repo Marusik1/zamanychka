@@ -98,12 +98,18 @@ function mapEngineFailure(
   }
 }
 
-function snapshot(state: GameState, lastSequence: number): MatchSnapshot {
+function snapshot(
+  state: GameState,
+  lastSequence: number,
+  timing: { startedAt: Date; finishedAt: Date | null },
+): MatchSnapshot {
   return {
     ...state,
     players: state.players.map((player) => ({ ...player })),
     pawns: state.pawns.map((pawn) => ({ ...pawn, position: { ...pawn.position } })),
     lastSequence,
+    startedAt: timing.startedAt.toISOString(),
+    finishedAt: timing.finishedAt?.toISOString() ?? null,
   };
 }
 
@@ -147,7 +153,10 @@ export function createCommandProcessor(options: {
             return prior.result as unknown as GameCommandResult;
           }
           const currentSnapshot = match.snapshot as unknown as GameState;
-          const current = snapshot(currentSnapshot, match.lastSequence);
+          const current = snapshot(currentSnapshot, match.lastSequence, {
+            startedAt: match.createdAt,
+            finishedAt: match.finishedAt,
+          });
           if (match.status !== 'ACTIVE')
             return failure(
               command,
@@ -198,7 +207,27 @@ export function createCommandProcessor(options: {
           });
           const firstSequence = events[0]?.sequence ?? match.lastSequence + 1;
           const lastSequence = events.at(-1)?.sequence ?? match.lastSequence;
-          const nextSnapshot = snapshot(engineResult.state, lastSequence);
+          let nextSnapshot = snapshot(engineResult.state, lastSequence, {
+            startedAt: match.createdAt,
+            finishedAt: match.finishedAt,
+          });
+          const persistedMatch = await options.repository.updateCurrentSnapshot(tx, {
+            matchId: command.matchId,
+            snapshot: json(engineResult.state),
+            stateVersion: engineResult.state.stateVersion,
+            ...(engineResult.state.status === 'FINISHED'
+              ? {
+                  terminalResult: json({
+                    winnerPlayerId: engineResult.state.winnerPlayerId,
+                    reason: engineResult.state.winReason,
+                  }),
+                }
+              : {}),
+          });
+          nextSnapshot = snapshot(engineResult.state, lastSequence, {
+            startedAt: persistedMatch.createdAt,
+            finishedAt: persistedMatch.finishedAt,
+          });
           const result: GameCommandResult = {
             ok: true,
             matchId: command.matchId,
@@ -213,19 +242,6 @@ export function createCommandProcessor(options: {
               lastSequence,
             },
           };
-          const persistedMatch = await options.repository.updateCurrentSnapshot(tx, {
-            matchId: command.matchId,
-            snapshot: json(engineResult.state),
-            stateVersion: engineResult.state.stateVersion,
-            ...(engineResult.state.status === 'FINISHED'
-              ? {
-                  terminalResult: json({
-                    winnerPlayerId: engineResult.state.winnerPlayerId,
-                    reason: engineResult.state.winReason,
-                  }),
-                }
-              : {}),
-          });
           if (engineResult.state.status === 'FINISHED') {
             if (!persistedMatch?.finishedAt) {
               throw new Error('terminal match finishedAt was not persisted');
@@ -234,18 +250,21 @@ export function createCommandProcessor(options: {
               matchId: command.matchId,
               userIds: engineResult.state.players.map((player) => player.playerId),
             });
-            const usersById = new Map(
-              users.map((user) => [user.id, displayNameFromUser(user)]),
-            );
+            const usersById = new Map(users.map((user) => [user.id, displayNameFromUser(user)]));
             const resultDraft = buildMatchResultDraft({
               matchId: command.matchId,
               roomId: persistedMatch.roomKey,
               status: persistedMatch.status,
               winnerUserId: persistedMatch.terminalResult
-                ? (persistedMatch.terminalResult as { winnerPlayerId: string | null }).winnerPlayerId
+                ? (persistedMatch.terminalResult as { winnerPlayerId: string | null })
+                    .winnerPlayerId
                 : null,
               victoryReason: persistedMatch.terminalResult
-                ? ((persistedMatch.terminalResult as { reason: 'HOME_DIAGONAL_COMPLETED' | 'LAST_ACTIVE_PLAYER' | null }).reason)
+                ? (
+                    persistedMatch.terminalResult as {
+                      reason: 'HOME_DIAGONAL_COMPLETED' | 'LAST_ACTIVE_PLAYER' | null;
+                    }
+                  ).reason
                 : null,
               startedAt: persistedMatch.createdAt,
               finishedAt: persistedMatch.finishedAt,

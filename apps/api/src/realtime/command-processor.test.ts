@@ -310,6 +310,16 @@ describe('transactional realtime command processor', () => {
       status: 'FINISHED',
       terminalResult: { winnerPlayerId: 'user-2', reason: 'LAST_ACTIVE_PLAYER' },
     });
+    const finishedMatch = await database.prisma.match.findUniqueOrThrow({
+      where: { id: match.id },
+    });
+    expect(first).toMatchObject({
+      ok: true,
+      snapshot: {
+        startedAt: match.createdAt.toISOString(),
+        finishedAt: finishedMatch.finishedAt?.toISOString(),
+      },
+    });
     await expect(
       database.prisma.matchResult.findUniqueOrThrow({
         where: { matchId: match.id },
@@ -380,7 +390,9 @@ describe('transactional realtime command processor', () => {
     expect(await database.prisma.outboxRow.count()).toBe(0);
     expect(await database.prisma.matchResult.count()).toBe(0);
     expect(await database.prisma.matchParticipantResult.count()).toBe(0);
-    expect(await roomRepository.loadRoom('single-room')).toMatchObject({ currentMatchId: match.id });
+    expect(await roomRepository.loadRoom('single-room')).toMatchObject({
+      currentMatchId: match.id,
+    });
   });
 
   it('rolls back a terminal transition and room reset when outbox persistence fails', async () => {
@@ -414,7 +426,9 @@ describe('transactional realtime command processor', () => {
     expect(await database.prisma.matchEvent.count()).toBe(0);
     expect(await database.prisma.processedAction.count()).toBe(0);
     expect(await database.prisma.outboxRow.count()).toBe(0);
-    expect(await roomRepository.loadRoom('single-room')).toMatchObject({ currentMatchId: match.id });
+    expect(await roomRepository.loadRoom('single-room')).toMatchObject({
+      currentMatchId: match.id,
+    });
   });
 
   it('does not reset a newer room match when a stale terminal match completes', async () => {

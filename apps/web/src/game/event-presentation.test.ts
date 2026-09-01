@@ -14,6 +14,8 @@ function snapshot(matchId = 'match-1', stateVersion = 2, lastSequence = 2): Matc
     diceValue: null,
     winnerPlayerId: null,
     winReason: null,
+    startedAt: '2026-09-01T10:00:00.000Z',
+    finishedAt: null,
     players: [],
     pawns: [],
     lastSequence,
@@ -269,7 +271,14 @@ describe('gameplay event presentation plan', () => {
       ]),
     );
 
-    expect(plan.steps.map((step) => step.kind)).toEqual(['pawn', 'pawn', 'cell', 'cell', 'pawn', 'toast']);
+    expect(plan.steps.map((step) => step.kind)).toEqual([
+      'pawn',
+      'pawn',
+      'cell',
+      'cell',
+      'pawn',
+      'toast',
+    ]);
     expect(plan.steps.at(-1)).toMatchObject({
       kind: 'toast',
       tone: 'capture',
