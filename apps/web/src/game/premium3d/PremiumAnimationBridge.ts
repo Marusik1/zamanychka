@@ -32,39 +32,42 @@ export class PremiumAnimationBridge {
     private readonly audio = new PremiumGameAudio(),
   ) {}
 
-  private soundRate(name: 'place' | 'capture'): number {
-    if (name === 'capture') return 0.99;
+  private soundRate(name: 'pawn-step' | 'pawn-capture'): number {
+    if (name === 'pawn-capture') return 0.99;
     return 1.01;
   }
 
   async diceRolled(value: 1 | 2 | 3 | 4 | 5 | 6, signal?: AbortSignal) {
-    this.audio.play('dice');
+    this.audio.play('dice-roll');
     await this.dice.throwCommitted(value, signal);
   }
 
   async pawnEntered(animation: PremiumEnterAnimation, signal?: AbortSignal) {
     void animation;
     void signal;
-    this.audio.play('place');
+    this.audio.play('pawn-enter');
   }
 
   async pawnMoved(animation: PremiumMoveAnimation, signal?: AbortSignal) {
-    const travelMs = movementDurationMs(Math.max(0, animation.path.length - 1));
-    await sleep(travelMs, signal);
-    if (signal?.aborted || animation.capture) return;
-    this.audio.play('place', { playbackRate: this.soundRate('place') });
+    const steps = Math.max(0, animation.path.length - 1);
+    const cadence = steps ? movementDurationMs(steps) / steps : 0;
+    for (let index = 0; index < steps; index += 1) {
+      await sleep(cadence, signal);
+      if (signal?.aborted || (animation.capture && index === steps - 1)) return;
+      this.audio.play('pawn-step', { playbackRate: this.soundRate('pawn-step') });
+    }
   }
 
   async pawnCaptured(animation: PremiumCaptureAnimation, signal?: AbortSignal) {
     void animation;
     if (signal?.aborted) return;
-    this.audio.play('capture', { playbackRate: this.soundRate('capture') });
+    this.audio.play('pawn-capture', { playbackRate: this.soundRate('pawn-capture') });
     await sleep(280, signal);
   }
 
   async pawnEnteredHome(pawnId: string, signal?: AbortSignal) {
     void pawnId;
-    void signal;
+    if (!signal?.aborted) this.audio.play('pawn-home');
   }
 
   async homeCompleted(animation: PremiumHomeCompletionAnimation, signal?: AbortSignal) {
@@ -77,8 +80,8 @@ export class PremiumAnimationBridge {
     void signal;
   }
 
-  async gameWon(animation: PremiumVictoryAnimation, signal?: AbortSignal) {
-    this.audio.play('victory');
+  async gameWon(animation: PremiumVictoryAnimation & { isLocalWinner?: boolean }, signal?: AbortSignal) {
+    this.audio.play(animation.isLocalWinner === false ? 'defeat' : 'victory');
     await this.victory.reveal(animation, signal);
   }
 

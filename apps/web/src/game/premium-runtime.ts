@@ -36,6 +36,7 @@ export type PremiumPresentationHandle = Readonly<{
       winnerName: string;
       winnerColor: PremiumPawnColor;
       reason: 'HOME_DIAGONAL_COMPLETED' | 'LAST_ACTIVE_PLAYER';
+      isLocalWinner: boolean;
     },
     signal?: AbortSignal,
   ) => Promise<void>;
@@ -203,6 +204,7 @@ export async function playPremiumTransition(
               players.find((player) => player.playerId === event.payload.winnerPlayerId)?.color ??
               'GREEN',
             reason: event.payload.reason,
+            isLocalWinner: players.find((player) => player.playerId === event.payload.winnerPlayerId)?.isLocalPlayer ?? false,
           },
           signal,
         );

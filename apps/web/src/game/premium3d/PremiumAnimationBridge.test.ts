@@ -7,7 +7,7 @@ describe('PremiumAnimationBridge audio timing', () => {
     vi.useRealTimers();
   });
 
-  it('plays normal move sound only at final destination contact', async () => {
+  it('plays one restrained step sound for each physical movement cell', async () => {
     vi.useFakeTimers();
     const audio = { play: vi.fn() };
     const bridge = new PremiumAnimationBridge(
@@ -31,12 +31,10 @@ describe('PremiumAnimationBridge audio timing', () => {
       new AbortController().signal,
     );
 
-    await vi.advanceTimersByTimeAsync(489);
-    expect(audio.play).not.toHaveBeenCalled();
-
-    await vi.advanceTimersByTimeAsync(1);
+    await vi.runAllTimersAsync();
     await run;
-    expect(audio.play).toHaveBeenCalledWith('place', { playbackRate: 1.01 });
+    expect(audio.play).toHaveBeenCalledTimes(4);
+    expect(audio.play).toHaveBeenCalledWith('pawn-step', { playbackRate: 1.01 });
   });
 
   it('suppresses normal move sound on capture approach and does not play stale sound after cancellation', async () => {
@@ -89,8 +87,37 @@ describe('PremiumAnimationBridge audio timing', () => {
       new AbortController().signal,
     );
 
-    expect(audio.play).toHaveBeenCalledWith('capture', { playbackRate: 0.99 });
+    expect(audio.play).toHaveBeenCalledWith('pawn-capture', { playbackRate: 0.99 });
     await vi.runAllTimersAsync();
     await run;
+  });
+
+  it('maps dice, enter, and first home entry to their semantic clips', async () => {
+    const audio = { play: vi.fn() };
+    const bridge = new PremiumAnimationBridge(
+      { throwCommitted: vi.fn(), snapToValue: vi.fn() },
+      { reveal: vi.fn(), clear: vi.fn() },
+      audio as never,
+    );
+    await bridge.diceRolled(6);
+    await bridge.pawnEntered({ pawnId: 'pawn-1', destination: { row: 0, col: 0 } });
+    await bridge.pawnEnteredHome('pawn-1');
+    expect(audio.play).toHaveBeenNthCalledWith(1, 'dice-roll');
+    expect(audio.play).toHaveBeenNthCalledWith(2, 'pawn-enter');
+    expect(audio.play).toHaveBeenNthCalledWith(3, 'pawn-home');
+  });
+
+  it('uses victory for the local winner and defeat for another winner', async () => {
+    const audio = { play: vi.fn() };
+    const bridge = new PremiumAnimationBridge(
+      { throwCommitted: vi.fn(), snapToValue: vi.fn() },
+      { reveal: vi.fn(), clear: vi.fn() },
+      audio as never,
+    );
+    const animation = { winnerName: 'Алексей', winnerColor: 'GREEN' as const, reason: 'LAST_ACTIVE_PLAYER' as const };
+    await bridge.gameWon({ ...animation, isLocalWinner: true });
+    await bridge.gameWon({ ...animation, isLocalWinner: false });
+    expect(audio.play).toHaveBeenNthCalledWith(1, 'victory');
+    expect(audio.play).toHaveBeenNthCalledWith(2, 'defeat');
   });
 });

@@ -54,6 +54,10 @@ victoryReveal: 500
 
 These timings are presentation defaults, not protocol/game constants.
 
+## Sound effects
+
+Gameplay sound is local presentation only and follows this same committed FIFO: `dice-roll`, `pawn-step`, `pawn-enter`, `pawn-capture`, `pawn-home`, `victory`, and `defeat`. Runtime assets live in `public/assets/zamanushka/sfx/` under those semantic names. Sounds default on, persist through `zamanushka.gameplay-sound-enabled`, never block animation/commands, and do not replay from snapshots or duplicate socket delivery.
+
 ## Capture choreography
 
 1. Animate the moving pawn through the canonical `physicalPath`.

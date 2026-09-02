@@ -30,6 +30,7 @@ import {
   type PresentationControllerState,
 } from '../game/presentation-controller.js';
 import { playPremiumTransition, type PremiumPresentationHandle } from '../game/premium-runtime.js';
+import { GAMEPLAY_SOUND_ENABLED_KEY } from '../game/premium3d/audio.js';
 import { RulesPage } from '../rules/rules-page.js';
 import type { RealtimeClient } from './realtime-client.js';
 import { RoomApiError, type RoomApi } from './room-api.js';
@@ -417,6 +418,9 @@ export function PlayableBetaPage({
     Awaited<ReturnType<RoomApi['listRooms']>>['currentMembershipRoom']
   >(null);
   const [room, setRoom] = useState<RoomState | null>(null);
+  const [soundEnabled, setSoundEnabled] = useState(
+    () => typeof localStorage === 'undefined' || localStorage.getItem(GAMEPLAY_SOUND_ENABLED_KEY) !== 'false',
+  );
   const [roomPending, setRoomPending] = useState(false);
   const [roomError, setRoomError] = useState<string | null>(null);
   const selectedRoomIdRef = useRef<string | null>(selectedRoomId);
@@ -951,6 +955,18 @@ export function PlayableBetaPage({
       ) : null}
     </div>
   ) : null;
+  const soundControl = (
+    <Button
+      variant="secondary"
+      onClick={() => {
+        const next = !soundEnabled;
+        setSoundEnabled(next);
+        localStorage.setItem(GAMEPLAY_SOUND_ENABLED_KEY, String(next));
+      }}
+    >
+      {`Звуки: ${soundEnabled ? 'Вкл' : 'Выкл'}`}
+    </Button>
+  );
   const chatPanel = room ? (
     <section className="game-board-scene__chat-card game-board-scene__chat-card--live">
       <div className="game-board-scene__panel-heading">
@@ -1492,6 +1508,7 @@ export function PlayableBetaPage({
               <p>{`Код комнаты: ${room.code}`}</p>
               <p>{`Участников: ${room.counts.memberCount}`}</p>
               <p>{`Мест занято: ${room.counts.seatedCount} / 4`}</p>
+              {soundControl}
               <Button
                 variant="secondary"
                 onClick={() => void navigator.clipboard?.writeText(room.code)}
@@ -1517,6 +1534,7 @@ export function PlayableBetaPage({
               <p>{`Код комнаты: ${room.code}`}</p>
               <p>{`Участников: ${room.counts.memberCount}`}</p>
               <p>{`Мест занято: ${room.counts.seatedCount} / 4`}</p>
+              {soundControl}
               <Button
                 variant="secondary"
                 onClick={() => void navigator.clipboard?.writeText(room.code)}
@@ -1693,6 +1711,7 @@ export function PlayableBetaPage({
           <Panel as="section" className="beta-room-page__status-panel">
             <h2>Статус комнаты</h2>
             <p>{`Участников: ${room.counts.memberCount}`}</p>
+            {soundControl}
             <p>{`Игроков: ${occupiedCount} / 4`}</p>
             <p>{`Готовы: ${readyCount} / ${occupiedCount}`}</p>
             <p>{room.currentUser.startBlockedReason ?? 'Можно начинать матч.'}</p>
