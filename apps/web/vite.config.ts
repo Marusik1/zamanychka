@@ -11,6 +11,9 @@ export default defineConfig({
       '@zamanushka/game-engine': fileURLToPath(
         new URL('../../packages/game-engine/src/index.ts', import.meta.url),
       ),
+      '@zamanushka/shared': fileURLToPath(
+        new URL('../../packages/shared/src/index.ts', import.meta.url),
+      ),
     },
   },
   server: {

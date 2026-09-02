@@ -13,7 +13,8 @@ COPY infra ./infra
 
 RUN pnpm install --frozen-lockfile
 RUN pnpm -C apps/api prisma:generate
-RUN pnpm build
+RUN pnpm -C apps/web build \
+  && pnpm -C apps/api exec tsc -b tsconfig.build.json --force
 
 ENV NODE_ENV=production
 
