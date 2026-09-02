@@ -2681,10 +2681,10 @@ a {
   }
 
   .game-board-scene__panel--right {
-    position: sticky;
-    z-index: 18;
-    bottom: calc(max(var(--app-safe-area-bottom), var(--app-content-safe-area-bottom)) + 4.65rem);
-    box-shadow: 0 -0.6rem 1.5rem rgba(0, 0, 0, 0.26);
+    position: static;
+    z-index: auto;
+    margin-top: 0.55rem;
+    box-shadow: none;
   }
 
   .game-board-scene__panel--right .game-board-scene__turn-card {
@@ -2713,6 +2713,13 @@ a {
 
   .game-board-scene__turn-card > button:not(.game-board-scene__secondary-actions button) {
     min-height: 2.9rem;
+  }
+
+  .game-board-scene__frame { gap: 0.55rem; }
+
+  .game-board-scene__board-object {
+    width: min(100%, calc(var(--app-viewport-height) - 15.5rem));
+    min-width: 13rem;
   }
 }
 

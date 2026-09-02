@@ -12,6 +12,7 @@ import type {
 
 export type PremiumPresentationHandle = Readonly<{
   ready: boolean;
+  unlockAudio: () => void;
   syncToSnapshot: (snapshot: MatchSnapshot) => void;
   snapToAuthoritativeState: (snapshot: MatchSnapshot) => void;
   diceRolled: (value: 1 | 2 | 3 | 4 | 5 | 6, signal?: AbortSignal) => Promise<void>;

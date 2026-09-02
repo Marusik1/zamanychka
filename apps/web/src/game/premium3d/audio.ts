@@ -31,6 +31,24 @@ export class PremiumGameAudio {
     }
   }
 
+  unlock() {
+    const source = this.audio.get('dice-roll');
+    if (!source) return;
+    const volume = source.volume;
+    source.volume = 0;
+    source.currentTime = 0;
+    const playback = source.play();
+    if (!playback || typeof playback.then !== 'function') {
+      source.volume = volume;
+      return;
+    }
+    void playback.then(() => {
+      source.pause();
+      source.currentTime = 0;
+      source.volume = volume;
+    }).catch(() => { source.volume = volume; });
+  }
+
   play(name: PremiumSfxName, options?: PlayOptions) {
     if (typeof localStorage !== 'undefined' && localStorage.getItem(GAMEPLAY_SOUND_ENABLED_KEY) === 'false') return;
     const source = this.audio.get(name);

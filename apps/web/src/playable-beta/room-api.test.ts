@@ -59,6 +59,7 @@ describe('playable beta room API', () => {
     );
 
     await expect(createRoomApi(fetcher).listRooms()).resolves.toEqual({
+      currentMembershipRoom: null,
       rooms: [
         {
           id: 'room-1',

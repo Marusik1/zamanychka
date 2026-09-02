@@ -62,6 +62,7 @@ export function createTelegramAdapter(root = document.documentElement): Telegram
     shellReady() {
       if (webApp && !didSignalReady && !disposed) {
         didSignalReady = true;
+        webApp.expand?.();
         webApp.ready();
       }
     },

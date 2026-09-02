@@ -20,6 +20,7 @@ import { GameDie, type DieValue, type GameDieHandle } from './dice.js';
 import { GamePawn, type PawnMotion } from './pawns.js';
 import {
   PremiumAnimationBridge,
+  PremiumGameAudio,
   PremiumVictoryOverlay,
   type PremiumDice3DHandle,
   type PremiumVictoryOverlayHandle,
@@ -359,6 +360,7 @@ export const GameBoard = forwardRef<PremiumPresentationHandle, GameBoardProps>(f
   const victoryColor = victoryPlayer ? colorClass(victoryPlayer.color) : 'green';
   const dieRef = useRef<GameDieHandle | null>(null);
   const victoryRef = useRef<PremiumVictoryOverlayHandle | null>(null);
+  const audioRef = useRef(new PremiumGameAudio());
   const [toast, setToast] = useState<BoardToast | null>(null);
   const actionablePawnIdSet = useMemo(() => new Set(actionablePawnIds), [actionablePawnIds]);
 
@@ -377,6 +379,7 @@ export const GameBoard = forwardRef<PremiumPresentationHandle, GameBoardProps>(f
     return new PremiumAnimationBridge(
       dieRef.current as unknown as PremiumDice3DHandle,
       victoryRef.current,
+      audioRef.current,
     );
   }
 
@@ -393,6 +396,7 @@ export const GameBoard = forwardRef<PremiumPresentationHandle, GameBoardProps>(f
     forwardedRef,
     () => ({
       ready: Boolean(dieRef.current?.ready),
+      unlockAudio: () => audioRef.current.unlock(),
       syncToSnapshot(_snapshot) {},
       snapToAuthoritativeState(snapshot) {
         dieRef.current?.snapToValue((snapshot.diceValue ?? effectiveDieValue) as DieValue);

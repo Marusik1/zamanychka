@@ -37,6 +37,10 @@ export class PremiumAnimationBridge {
     return 1.01;
   }
 
+  unlockAudio() {
+    this.audio.unlock();
+  }
+
   async diceRolled(value: 1 | 2 | 3 | 4 | 5 | 6, signal?: AbortSignal) {
     this.audio.play('dice-roll');
     await this.dice.throwCommitted(value, signal);

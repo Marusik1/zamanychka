@@ -12,6 +12,7 @@ export interface TelegramWebApp {
   viewportStableHeight?: number;
   safeAreaInset?: TelegramInsets;
   contentSafeAreaInset?: TelegramInsets;
+  expand?(): void;
   ready(): void;
   onEvent?(event: TelegramEvent, listener: () => void): void;
   offEvent?(event: TelegramEvent, listener: () => void): void;

@@ -1197,6 +1197,8 @@ export function PlayableBetaPage({
   async function submitAction(action: LegalAction) {
     if (match.status !== 'ready' || match.pending) return;
 
+    boardRef.current?.unlockAudio();
+
     if (
       action.type === 'SURRENDER' &&
       !window.confirm('Сдаться?\nМатч будет засчитан как поражение.')
@@ -1509,6 +1511,9 @@ export function PlayableBetaPage({
               <p>{`Участников: ${room.counts.memberCount}`}</p>
               <p>{`Мест занято: ${room.counts.seatedCount} / 4`}</p>
               {soundControl}
+              <Button variant="secondary" onClick={() => setUtilityPanel(null)}>
+                Закрыть
+              </Button>
               <Button
                 variant="secondary"
                 onClick={() => void navigator.clipboard?.writeText(room.code)}
@@ -1535,6 +1540,9 @@ export function PlayableBetaPage({
               <p>{`Участников: ${room.counts.memberCount}`}</p>
               <p>{`Мест занято: ${room.counts.seatedCount} / 4`}</p>
               {soundControl}
+              <Button variant="secondary" onClick={() => setUtilityPanel(null)}>
+                Закрыть
+              </Button>
               <Button
                 variant="secondary"
                 onClick={() => void navigator.clipboard?.writeText(room.code)}
@@ -1712,6 +1720,9 @@ export function PlayableBetaPage({
             <h2>Статус комнаты</h2>
             <p>{`Участников: ${room.counts.memberCount}`}</p>
             {soundControl}
+            <Button variant="secondary" onClick={() => setUtilityPanel(null)}>
+              Закрыть
+            </Button>
             <p>{`Игроков: ${occupiedCount} / 4`}</p>
             <p>{`Готовы: ${readyCount} / ${occupiedCount}`}</p>
             <p>{room.currentUser.startBlockedReason ?? 'Можно начинать матч.'}</p>
