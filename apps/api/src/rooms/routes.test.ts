@@ -125,6 +125,9 @@ function roomService() {
         currentMatchId: 'match-1',
       }),
       matchId: 'match-1',
+      status: 'ACTIVE' as const,
+      stateVersion: 0,
+      lastSequence: 0,
     })),
     connectPresence: vi.fn(async () => roomView()),
     disconnectPresence: vi.fn(async () => roomView()),
@@ -173,6 +176,7 @@ describe('room routes', () => {
       service,
       ...(chat ? { chat } : {}),
       auth: authService(),
+      cookieName: 'zamanushka-session',
       allowedOrigins: ['http://localhost:3000', 'https://app.test'],
     });
 
@@ -188,6 +192,38 @@ describe('room routes', () => {
     origin: 'http://localhost:3000',
     'content-type': 'application/json',
   };
+
+  it('uses the configured session cookie when stale host-prefixed cookies also exist', async () => {
+    const service = roomService();
+    const auth = {
+      me: vi.fn(async (token?: string) => {
+        if (token === 'configured') return { user: { ...user, id: 'configured-user' } };
+        if (token === 'stale') return { user: { ...user, id: 'stale-user' } };
+        throw new Error('AUTH_REQUIRED');
+      }),
+    } as unknown as AuthService;
+    const instance = Fastify();
+    apps.push(instance);
+    await instance.register(cookie);
+    registerRoomRoutes(instance, {
+      service,
+      chat: roomChatService(),
+      auth,
+      cookieName: 'zamanushka-session',
+      allowedOrigins: ['http://localhost:3000', 'https://app.test'],
+    });
+
+    await instance.inject({
+      method: 'GET',
+      url: '/api/rooms',
+      headers: {
+        cookie: '__Host-zamanushka-session=stale; zamanushka-session=configured',
+      },
+    });
+
+    expect(auth.me).toHaveBeenCalledWith('configured');
+    expect(service.listRooms).toHaveBeenCalledWith('configured-user');
+  });
 
   it('wires the room-scoped lifecycle and leaves legacy singleton routes unavailable', async () => {
     const service = roomService();
@@ -405,6 +441,27 @@ describe('room routes', () => {
 
     expect(chat.list).toHaveBeenCalledWith(user.id, roomId);
     expect(chat.send).toHaveBeenCalledWith(user.id, roomId, { text: 'Готов играть' });
+  });
+
+  it('returns canonical committed match metadata from start-match ACK', async () => {
+    const service = roomService();
+    const instance = await app(service);
+
+    const response = await instance.inject({
+      method: 'POST',
+      url: `/api/rooms/${roomId}/start`,
+      headers: mutationHeaders,
+      payload: { expectedRoomVersion: 4 },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      ok: true,
+      matchId: 'match-1',
+      status: 'ACTIVE',
+      stateVersion: 0,
+      lastSequence: 0,
+    });
   });
 
   it('maps room command errors to stable HTTP statuses', async () => {

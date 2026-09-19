@@ -51,6 +51,7 @@ interface GameBoardProps {
     heading?: string | undefined;
     badge?: string | undefined;
     title?: string | undefined;
+    tone?: 'local' | 'opponent' | 'finished' | undefined;
     subtitle?: string | undefined;
     dieLabel?: string | undefined;
     dieValueText?: string | undefined;
@@ -63,6 +64,8 @@ interface GameBoardProps {
   pawnActionLabels?: Readonly<Record<string, string>> | undefined;
   onPawnSelect?: ((pawnId: string) => void) | undefined;
   interactionDisabled?: boolean;
+  mobileLayout?: boolean;
+  showMobilePawnTray?: boolean;
 }
 
 interface BoardCell {
@@ -331,6 +334,8 @@ export const GameBoard = forwardRef<PremiumPresentationHandle, GameBoardProps>(f
   pawnActionLabels = {},
   onPawnSelect,
   interactionDisabled = false,
+  mobileLayout = false,
+  showMobilePawnTray = false,
 }: GameBoardProps, forwardedRef) {
   const cells = createBoardCells();
   const hiddenPawnIds = new Set(presentation?.hiddenPawnIds ?? []);
@@ -342,6 +347,9 @@ export const GameBoard = forwardRef<PremiumPresentationHandle, GameBoardProps>(f
     (pawn) => pawn.position.zone === 'REMOVED' && !hiddenPawnIds.has(pawn.pawnId),
   );
   const visiblePlayers = players.length > 0 ? players : fallbackPlayers(pawns);
+  const localPawns = pawns.filter(
+    (pawn) => pawn.isLocalPlayerPawn && pawn.position.zone !== 'REMOVED' && !hiddenPawnIds.has(pawn.pawnId),
+  );
   const effectiveCurrentPlayerId = presentation?.currentPlayerId ?? null;
   const effectiveDieValue = presentation?.dieValue ?? dieValue;
   const effectiveDieRolling = presentation?.dieRolling ?? dieRolling;
@@ -433,10 +441,12 @@ export const GameBoard = forwardRef<PremiumPresentationHandle, GameBoardProps>(f
   function renderPawn(
     pawn: GameScreenPawnView,
     motion: PawnMotion,
-    size: 'reserve' | 'panel' | 'board',
+    size: 'reserve' | 'panel' | 'board' | 'tray',
   ) {
     const actionable = actionablePawnIdSet.has(pawn.pawnId) && Boolean(onPawnSelect);
-    const content = <GamePawn pawn={pawn} motion={motion} size={size} />;
+    const content = (
+      <GamePawn key={`${pawn.pawnId}-${size}`} pawn={pawn} motion={motion} size={size} />
+    );
 
     if (!actionable) return content;
 
@@ -578,6 +588,7 @@ export const GameBoard = forwardRef<PremiumPresentationHandle, GameBoardProps>(f
                       className={[
                         'game-board-scene__cell',
                         `game-board-scene__cell--${cell.tone}`,
+                        occupants.length > 0 ? 'game-board-scene__cell--occupied' : '',
                         `premium-cell--${cell.tone}`,
                         previewGuideClass(cell, previewGuides),
                       ]
@@ -605,16 +616,26 @@ export const GameBoard = forwardRef<PremiumPresentationHandle, GameBoardProps>(f
                         <span className="game-board-scene__destination-dot game-board-scene__destination-dot--green" />
                       ) : null}
 
-                      {occupants.map((pawn) => {
-                        const isSelected = pawn.pawnId === selectedPawnId;
-                        const motion: PawnMotion =
-                          pawnMotions[pawn.pawnId] ?? (isSelected ? 'selected' : 'idle');
-
-                        return renderPawn(pawn, motion, 'board');
-                      })}
                     </div>
                   );
                 })}
+                <div className="game-board-scene__static-pawns" data-pawn-layer="static">
+                  {activePawns.map((pawn) => {
+                    const isSelected = pawn.pawnId === selectedPawnId;
+                    const motion: PawnMotion = pawnMotions[pawn.pawnId] ?? (isSelected ? 'selected' : 'idle');
+                    return (
+                      <div
+                        key={pawn.pawnId}
+                        className="game-board-scene__board-pawn-slot"
+                        data-board-pawn={pawn.pawnId}
+                        data-board-edge={pawn.coord?.row === 0 ? 'top' : pawn.coord?.row === 7 ? 'bottom' : pawn.coord?.col === 0 ? 'left' : pawn.coord?.col === 7 ? 'right' : 'interior'}
+                        style={anchorStyle({ kind: 'board', coord: pawn.coord! })}
+                      >
+                        {renderPawn(pawn, motion, 'board')}
+                      </div>
+                    );
+                  })}
+                </div>
                 <div className="game-board-scene__overlay" aria-hidden="true">
                   {presentation?.cellCue ? (
                     <span
@@ -667,13 +688,42 @@ export const GameBoard = forwardRef<PremiumPresentationHandle, GameBoardProps>(f
           </div>
         </div>
 
+        {mobileLayout ? (
+          <section className="game-board-scene__mobile-participants" aria-label="Участники матча">
+            {visiblePlayers.map((player) => {
+              const isCurrent = effectiveCurrentPlayerId
+                ? player.playerId === effectiveCurrentPlayerId
+                : player.isCurrentPlayer;
+              return (
+                <div
+                  key={player.playerId}
+                  className={[
+                    'game-board-scene__mobile-participant',
+                    isCurrent ? 'game-board-scene__mobile-participant--current' : '',
+                  ].filter(Boolean).join(' ')}
+                >
+                  <i
+                    className={`game-board-scene__color-dot game-board-scene__color-dot--${colorClass(player.color)}`}
+                    aria-hidden="true"
+                  />
+                  <span>
+                    {playerNamesById[player.playerId] ?? reserveTitle(player.color)}
+                    {player.isLocalPlayer ? ' (Вы)' : ''}
+                  </span>
+                </div>
+              );
+            })}
+          </section>
+        ) : null}
+
         <aside
           className="game-board-scene__panel game-board-scene__panel--right"
           data-region="right-rail"
           data-testid="mobile-gameplay-actions"
           aria-label="Действия"
         >
-          {rightPanel ?? <section className="game-board-scene__turn-card">
+          {rightPanel ?? <>
+          <section className="game-board-scene__turn-card" data-turn-tone={turnPanel?.tone}>
             {turnPanel?.heading || turnPanel?.badge ? (
               <div className="game-board-scene__panel-heading">
                 {turnPanel?.heading ? <h2>{turnPanel.heading}</h2> : <span />}
@@ -700,9 +750,25 @@ export const GameBoard = forwardRef<PremiumPresentationHandle, GameBoardProps>(f
                 </button>
               </div>
             )}
-            {turnPanel?.footer}
+            {mobileLayout && showMobilePawnTray ? (
+              <div className="game-board-scene__mobile-match-details" data-testid="mobile-match-details">
+                <section className="game-board-scene__mobile-pawn-tray" aria-label="Ваши пешки">
+                  <p>Ваши пешки</p>
+                  <div>
+                    {localPawns.map((pawn) => (
+                      <span key={pawn.pawnId} className="game-board-scene__mobile-pawn-slot" data-zone={pawn.position.zone} data-actionable={actionablePawnIdSet.has(pawn.pawnId) || undefined}>
+                        {renderPawn(pawn, pawnMotions[pawn.pawnId] ?? 'idle', 'tray')}
+                      </span>
+                    ))}
+                  </div>
+                </section>
+              </div>
+            ) : null}
+            {mobileLayout ? null : turnPanel?.footer}
             {turnPanel?.error}
-          </section>}
+          </section>
+          {mobileLayout ? turnPanel?.footer : null}
+          </>}
 
           {hideChat ? null : <ChatPanel content={chatPanel} />}
 

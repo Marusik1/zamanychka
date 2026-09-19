@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
 
 import type { GameScreenPawnView } from './domain.js';
 
@@ -9,12 +9,15 @@ export type PawnMotion =
   | 'selected'
   | 'entering'
   | 'moving'
+  | 'capture-impact'
   | 'captured'
+  | 'capture-return'
   | 'home-cue'
+  | 'home-final'
   | 'home-complete'
   | 'removed';
 
-export type PawnSize = 'reserve' | 'panel' | 'board';
+export type PawnSize = 'reserve' | 'panel' | 'board' | 'tray';
 
 const pawnPalette: Record<
   PawnTone,
@@ -89,7 +92,8 @@ export function GamePawn({
 }) {
   const tone = toneFromColor(pawn.color);
   const palette = pawnPalette[tone];
-  const id = safeToken(pawn.pawnId);
+  const instanceId = safeToken(useId());
+  const id = `${safeToken(pawn.pawnId)}-${instanceId}`;
 
   return (
     <div
@@ -98,13 +102,14 @@ export function GamePawn({
       data-pawn-id={pawn.pawnId}
       data-player-id={pawn.playerId}
       data-motion={motion}
+      data-position-zone={pawn.position.zone}
       data-testid={pawn.pawnId}
     >
       <svg
         className="game-pawn__svg"
         aria-hidden="true"
         focusable="false"
-        viewBox="0 0 72 94"
+        viewBox="8 2 56 92"
         preserveAspectRatio="xMidYMid meet"
       >
         <defs>

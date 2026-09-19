@@ -1,0 +1,85 @@
+:root {
+  --z-bg: #15202a;
+  --z-bg-2: #172633;
+  --z-surface: #1c2934;
+  --z-surface-2: #243441;
+  --z-surface-3: #2b3f4f;
+  --z-border: rgba(173, 199, 217, 0.16);
+  --z-border-strong: rgba(195, 216, 230, 0.25);
+  --z-text: #f3f1ed;
+  --z-text-2: #9eabb5;
+  --z-text-3: #73838f;
+  --z-accent: #d1b184;
+  --z-accent-soft: #efd2a8;
+  --z-success: #43d399;
+  --z-warning: #f8bf24;
+  --z-danger: #f87171;
+  --z-info: #70a9f6;
+  --z-radius-xs: 10px;
+  --z-radius-sm: 14px;
+  --z-radius-md: 18px;
+  --z-radius-lg: 24px;
+  --z-radius-xl: 30px;
+  --z-shadow-1: 0 10px 28px rgba(4, 10, 16, 0.22);
+  --z-shadow-2: 0 18px 50px rgba(4, 10, 16, 0.34);
+  --z-font-ui: Inter, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  --z-font-display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+}
+
+.z-screen {
+  min-height: 100dvh;
+  background:
+    radial-gradient(120% 80% at 100% 0%, rgba(66, 117, 151, .14), transparent 52%),
+    linear-gradient(180deg, var(--z-bg-2) 0%, var(--z-bg) 38%, #111a23 100%);
+  color: var(--z-text);
+  font-family: var(--z-font-ui);
+  box-sizing: border-box;
+}
+
+.z-page {
+  width: min(100%, 460px);
+  min-height: 100dvh;
+  margin: 0 auto;
+  padding: max(18px, env(safe-area-inset-top)) 16px calc(90px + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+}
+
+.z-title {
+  margin: 0;
+  font: 600 clamp(28px, 7.2vw, 36px)/1.05 var(--z-font-display);
+  letter-spacing: -.02em;
+}
+
+.z-surface {
+  background: linear-gradient(180deg, rgba(42, 59, 72, .88), rgba(27, 41, 52, .94));
+  border: 1px solid var(--z-border);
+  box-shadow: var(--z-shadow-1);
+}
+
+.z-button {
+  min-height: 52px;
+  border: 0;
+  border-radius: 18px;
+  padding: 0 18px;
+  font: 700 15px/1 var(--z-font-ui);
+  cursor: pointer;
+  transition: transform .16s ease, filter .16s ease, opacity .16s ease;
+}
+.z-button:active { transform: scale(.985); }
+.z-button:focus-visible { outline: 2px solid var(--z-info); outline-offset: 3px; }
+.z-button--primary {
+  color: #1c1b19;
+  background: linear-gradient(180deg, #f2d5aa, #d7b27c);
+  box-shadow: 0 10px 30px rgba(209, 177, 132, .18), inset 0 1px rgba(255,255,255,.5);
+}
+.z-button--secondary {
+  color: var(--z-text);
+  background: rgba(39, 57, 70, .78);
+  border: 1px solid var(--z-border);
+}
+
+.z-icon-button {
+  width: 42px; height: 42px; padding: 0; display:grid; place-items:center;
+  border-radius: 14px; border:1px solid var(--z-border); background:rgba(37,54,68,.72); color:var(--z-text);
+}
+.z-icon-button svg { width:20px; height:20px; }

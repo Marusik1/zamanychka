@@ -7,6 +7,7 @@ import { buildApp } from './app.js';
 import { createAuthRepository } from './auth/auth-repository.js';
 import { createAuthService } from './auth/auth-service.js';
 import { verifyTelegramInitData } from './auth/telegram-init-data.js';
+import { getApiBuildInfo } from './build-info.js';
 import { parseEnv } from './config/env.js';
 import { createLiveDependencies } from './health/dependency-probes.js';
 import { createMatchRepository } from './match/match-repository.js';
@@ -28,6 +29,7 @@ const productionWebRoot = join(serverDir, '../../web/dist');
 await access(join(productionWebRoot, 'index.html'));
 
 const env = parseEnv(process.env);
+const buildInfo = getApiBuildInfo();
 const dependencies = createLiveDependencies(env);
 const repository = createAuthRepository(dependencies.prisma);
 const roomRepository = createRoomRepository(dependencies.prisma);
@@ -70,6 +72,7 @@ const app = buildApp({
   rooms: { service: roomService, chat: roomChatService },
   profile: { service: profileService },
   productionWebRoot,
+  buildInfo,
 });
 const completion = createMatchCompletionService({ repository: roomRepository });
 const commandProcessor = createCommandProcessor({
@@ -81,6 +84,7 @@ const commandProcessor = createCommandProcessor({
 const realtime = createRealtimeRuntime({
   httpServer: app.server,
   auth: authService,
+  cookieName: env.auth.cookie.name,
   matchRepository,
   outbox: createPostgresOutboxLeaseStore(dependencies.prisma),
   commandProcessor,
@@ -88,6 +92,11 @@ const realtime = createRealtimeRuntime({
   redisUrl: env.REDIS_URL,
 });
 await realtime.ready;
+console.info('[REALTIME BUILD]', {
+  buildId: buildInfo.buildId,
+  protocolVersion: buildInfo.realtimeProtocolVersion,
+  immediateOutboxDispatch: true,
+});
 let dispatching = false;
 const dispatchTimer = setInterval(() => {
   if (dispatching) return;

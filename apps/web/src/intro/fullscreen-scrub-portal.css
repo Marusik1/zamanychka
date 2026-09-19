@@ -1,0 +1,205 @@
+/* fullscreen-scrub-portal.css */
+
+html.zamanushka-scrub-active,
+body.zamanushka-scrub-active {
+  width: 100% !important;
+  height: 100% !important;
+
+  margin: 0 !important;
+  padding: 0 !important;
+
+  overflow: hidden !important;
+  overscroll-behavior: none !important;
+}
+
+/*
+ * IMPORTANT:
+ * This element is mounted directly into document.body.
+ * It is NOT inside AppShell.
+ */
+.zScrubViewport {
+  position: fixed !important;
+
+  inset: 0 !important;
+
+  width: 100vw !important;
+
+  height:
+    var(
+      --zamanushka-viewport-height,
+      100dvh
+    ) !important;
+
+  min-width: 100vw !important;
+  min-height:
+    var(
+      --zamanushka-viewport-height,
+      100dvh
+    ) !important;
+
+  max-width: none !important;
+  max-height: none !important;
+
+  margin: 0 !important;
+  padding: 0 !important;
+
+  overflow: hidden !important;
+
+  z-index: 2147483647;
+
+  background: #0b1117;
+
+  isolation: isolate;
+}
+
+.zScrubViewport__stage {
+  position: absolute !important;
+  inset: 0 !important;
+
+  width: 100% !important;
+  height: 100% !important;
+
+  max-width: none !important;
+  max-height: none !important;
+
+  margin: 0 !important;
+  padding: 0 !important;
+
+  overflow: hidden !important;
+
+  /*
+   * VERY IMPORTANT:
+   * source video/image aspect ratio must NOT
+   * determine the mobile container ratio.
+   */
+  aspect-ratio: auto !important;
+}
+
+/*
+ * Add data-scrub-root to the ROOT ELEMENT
+ * of the existing scrub component.
+ */
+.zScrubViewport__stage
+[data-scrub-root] {
+  position: absolute !important;
+
+  inset: 0 !important;
+
+  width: 100% !important;
+  height: 100% !important;
+
+  min-width: 100% !important;
+  min-height: 100% !important;
+
+  max-width: none !important;
+  max-height: none !important;
+
+  margin: 0 !important;
+  padding: 0 !important;
+
+  aspect-ratio: auto !important;
+
+  overflow: hidden !important;
+}
+
+/*
+ * The portal/root can be full-screen while the existing scrub's internal scene
+ * still keeps an old authored frame size. Force the whole scrub scene tree to
+ * inherit the portrait viewport, not its source-art dimensions.
+ */
+.zScrubViewport
+.z-intro__scene,
+.zScrubViewport
+.z-intro__frame,
+.zScrubViewport
+picture.z-intro__frame {
+  position: absolute !important;
+
+  inset: 0 !important;
+
+  display: block !important;
+
+  width: 100% !important;
+  height: 100% !important;
+
+  min-width: 100% !important;
+  min-height: 100% !important;
+
+  max-width: none !important;
+  max-height: none !important;
+
+  margin: 0 !important;
+  padding: 0 !important;
+
+  overflow: hidden !important;
+  aspect-ratio: auto !important;
+}
+
+/*
+ * For frame-based animation.
+ */
+.zScrubViewport
+[data-scrub-frame] {
+  position: absolute !important;
+
+  inset: 0 !important;
+
+  display: block !important;
+
+  width: 100% !important;
+  height: 100% !important;
+
+  max-width: none !important;
+  max-height: none !important;
+
+  object-fit: cover !important;
+
+  /*
+   * Slight mobile crop toward the pawns.
+   * Fine tune after visual review.
+   */
+  object-position: 57% 50% !important;
+
+  margin: 0 !important;
+
+  transform: translateZ(0);
+}
+
+/*
+ * If current scrub uses canvas.
+ */
+.zScrubViewport canvas,
+.zScrubViewport video {
+  position: absolute !important;
+
+  inset: 0 !important;
+
+  display: block !important;
+
+  width: 100% !important;
+  height: 100% !important;
+
+  max-width: none !important;
+  max-height: none !important;
+
+  object-fit: cover !important;
+}
+
+/*
+ * On narrow phones we intentionally crop MORE.
+ * We do NOT shrink the scene to make the whole
+ * landscape source visible.
+ */
+@media (max-width: 390px) {
+  .zScrubViewport
+  [data-scrub-frame] {
+    object-position: 59% 50% !important;
+  }
+}
+
+@media (max-width: 360px) {
+  .zScrubViewport
+  [data-scrub-frame] {
+    object-position: 61% 50% !important;
+  }
+}

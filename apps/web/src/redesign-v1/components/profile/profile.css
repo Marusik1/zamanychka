@@ -1,0 +1,26 @@
+.z-profile { display:flex; flex-direction:column; gap:18px; }
+.z-profile-id { display:flex; flex-direction:column; align-items:center; gap:9px; padding:8px 0 2px; }
+.z-profile-avatar { width:70px; height:70px; border-radius:50%; display:grid; place-items:center; font:600 26px var(--z-font-display); background:linear-gradient(145deg,#7d694f,#b48e60); border:1px solid rgba(255,224,183,.5); box-shadow:0 10px 30px rgba(0,0,0,.28); }
+.z-profile-id strong { font-size:18px; }
+.z-stats { border-radius:18px; display:grid; grid-template-columns:repeat(3,1fr); overflow:hidden; }
+.z-stats > div { padding:16px 8px; display:grid; gap:4px; text-align:center; }
+.z-stats > div+div { border-left:1px solid var(--z-border); }
+.z-stats strong { font-size:21px; }
+.z-stats span { color:var(--z-text-2); font-size:11px; }
+.z-profile-menu { border-radius:18px; overflow:hidden; }
+.z-profile-menu button { width:100%; min-height:54px; border:0; background:transparent; color:var(--z-text); display:flex; align-items:center; justify-content:space-between; padding:0 15px; }
+.z-profile-menu button+button { border-top:1px solid var(--z-border); }
+.z-profile-menu button > span { display:flex; align-items:center; gap:11px; font:600 13px var(--z-font-ui); }
+.z-profile-menu button svg { width:18px; height:18px; color:var(--z-text-2); }
+.z-profile-menu button > span svg { color:var(--z-accent-soft); }
+.z-section-head { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:10px; }
+.z-section-head h2 { margin:0; font-size:16px; }
+.z-section-head button { border:0; background:transparent; color:var(--z-accent-soft); font:600 12px var(--z-font-ui); }
+.z-match-list { border-radius:18px; overflow:hidden; }
+.z-match-row { min-height:62px; display:grid; grid-template-columns:8px 1fr auto; align-items:center; gap:10px; padding:0 14px; }
+.z-match-row+.z-match-row { border-top:1px solid var(--z-border); }
+.z-match-row > i { width:8px; height:8px; border-radius:50%; background:var(--z-danger); }
+.z-match-row > i.is-win { background:var(--z-success); }
+.z-match-row > div { display:grid; gap:3px; }
+.z-match-row strong { font-size:13px; }
+.z-match-row span,.z-match-row time { color:var(--z-text-2); font-size:10px; }

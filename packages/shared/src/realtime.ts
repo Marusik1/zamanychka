@@ -77,6 +77,7 @@ export const gameSyncRequestSchema = z
 export const matchSubscriptionRequestSchema = z
   .object({
     matchId: id,
+    realtimeProtocolVersion: z.string().min(1).optional(),
   })
   .strict();
 

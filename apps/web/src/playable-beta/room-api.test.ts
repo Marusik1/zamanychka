@@ -117,10 +117,20 @@ describe('playable beta room API', () => {
         }),
       )
       .mockResolvedValueOnce(
-        new Response(JSON.stringify({ ok: true, room: roomState, matchId: 'match-1' }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        }),
+        new Response(
+          JSON.stringify({
+            ok: true,
+            room: roomState,
+            matchId: 'match-1',
+            status: 'ACTIVE',
+            stateVersion: 1,
+            lastSequence: 0,
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
       );
 
     const api = createRoomApi(fetcher);
@@ -130,6 +140,9 @@ describe('playable beta room API', () => {
       ok: true,
       room: roomState,
       matchId: 'match-1',
+      status: 'ACTIVE',
+      stateVersion: 1,
+      lastSequence: 0,
     });
 
     expect(fetcher).toHaveBeenNthCalledWith(

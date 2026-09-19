@@ -4,12 +4,15 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { createAuthApi, type AuthApi } from './auth/api.js';
 import { AuthShell } from './auth/auth-shell.js';
 import { bootstrapAuth, type AuthState } from './auth/bootstrap.js';
+import { FullscreenIntroGate, IntroHero } from './intro';
 import { PlayableBetaPage } from './playable-beta/page.js';
 import { createRealtimeClient, type RealtimeClient } from './playable-beta/realtime-client.js';
 import { createRoomApi, type RoomApi } from './playable-beta/room-api.js';
 import { createProfileApi, type ProfileApi } from './profile/api.js';
 import { HistoryPage } from './profile/history-page.js';
 import { ProfilePage } from './profile/profile-page.js';
+import { ProfileScreen, type MatchSummary as RedesignMatchSummary, type ProfileSummary as RedesignProfileSummary, type NavTab as RedesignNavTab } from './redesign-v1/index.js';
+import './redesign-v1/styles/tokens.css';
 import { RulesPage } from './rules/rules-page.js';
 import { resolveShellRoute, shellNavigationItems } from './shell/routes.js';
 import { createTelegramAdapter, type TelegramAdapter } from './telegram/adapter.js';
@@ -37,6 +40,45 @@ const defaultApi = createAuthApi();
 const defaultProfileApi = createProfileApi();
 const defaultRoomApi = createRoomApi();
 const defaultRealtimeClient = createRealtimeClient();
+
+function profileInitials(displayName: string) {
+  return displayName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase() ?? '').join('');
+}
+
+function redesignMatchResult(result: ProfileData['recentResults'][number]): RedesignMatchSummary {
+  return {
+    id: result.id,
+    result:
+      result.currentUserOutcome === 'WIN'
+        ? 'win'
+        : result.currentUserOutcome === 'SURRENDERED'
+          ? 'surrender'
+          : 'loss',
+    roomName: 'Матч',
+    playerCount: result.participantCount,
+    dateLabel: new Intl.DateTimeFormat('ru-RU', {
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(new Date(result.finishedAt)),
+  };
+}
+
+function redesignProfile(data: ProfileData): RedesignProfileSummary {
+  return {
+    displayName: data.user.displayName,
+    initials: profileInitials(data.user.displayName),
+    games: data.stats.gamesPlayed,
+    wins: data.stats.wins,
+    winRate: Math.round(data.stats.winRate * 100),
+    recentMatches: data.recentResults.map(redesignMatchResult),
+  };
+}
+
+function navigateRedesignTab(tab: RedesignNavTab) {
+  window.location.hash = tab === 'home' ? '#/' : tab === 'rooms' ? '#/rooms' : '#/profile';
+}
 const bootstrapFailure: AuthState = {
   status: 'ERROR',
   message: 'Не удалось проверить вход. Попробуйте ещё раз.',
@@ -61,6 +103,23 @@ function renderAvatar(displayName: string) {
     .map((part) => part[0]?.toUpperCase() ?? '')
     .join('')
     .slice(0, 2);
+}
+
+function IntroScrubLayer({
+  running,
+  onComplete,
+}: {
+  running: boolean;
+  onComplete: () => void;
+}) {
+  return (
+    <IntroHero
+      autoStart={running}
+      className="z-intro--scrub-layer z-existingScrubRoot"
+      showUi={false}
+      onComplete={onComplete}
+    />
+  );
 }
 
 function isProfileRoute(hash: string) {
@@ -93,6 +152,7 @@ export function App({
   const [profileState, setProfileState] = useState<ProfileScreenState>(initialProfileState);
   const [rulesOnboardingDismissed, setRulesOnboardingDismissed] = useState(false);
   const [rulesGuidedStartKey, setRulesGuidedStartKey] = useState(0);
+  const [introComplete, setIntroComplete] = useState(import.meta.env.MODE === 'test');
   const mounted = useRef(false);
   const adapter = useRef<TelegramAdapter | undefined>(undefined);
   const request = useRef<{ controller?: AbortController; epoch: number }>({ epoch: 0 });
@@ -239,7 +299,7 @@ export function App({
       return;
     }
 
-    if (routeHash === '#/profile') {
+    if (routeHash === '#/' || routeHash === '#/profile') {
       void loadProfile();
       return;
     }
@@ -248,6 +308,35 @@ export function App({
       void loadHistory();
     }
   }, [loadHistory, loadProfile, routeHash, state.status]);
+
+  useEffect(() => {
+    if (state.status !== 'AUTHENTICATED') return;
+
+    const authenticatedUserId = state.user.id;
+    const refreshFocusedSession = async () => {
+      const { controller, epoch } = beginRequest();
+      try {
+        const current = await api.me(controller.signal);
+        if (controller.signal.aborted || current.user.id === authenticatedUserId) return;
+
+        realtimeClient.disconnect();
+        commit(epoch, {
+          status: 'AUTHENTICATED',
+          user: current.user,
+          rulesOnboardingSeenAt: current.rulesOnboardingSeenAt,
+        });
+      } catch {
+        // A transient focus refresh must not discard an otherwise usable session.
+      }
+    };
+
+    window.addEventListener('focus', refreshFocusedSession);
+    document.addEventListener('visibilitychange', refreshFocusedSession);
+    return () => {
+      window.removeEventListener('focus', refreshFocusedSession);
+      document.removeEventListener('visibilitychange', refreshFocusedSession);
+    };
+  }, [api, beginRequest, commit, realtimeClient, state]);
 
   const completeRulesOnboarding = useCallback(async () => {
     try {
@@ -305,12 +394,20 @@ export function App({
       routeHash === '#/profile' && profileState.status === 'ready' && profileState.data
         ? {
             activeKey: 'profile' as const,
-            page: <ProfilePage data={profileState.data} />,
+            page: shellViewport === 'mobile' ? (
+              <ProfileScreen
+                profile={redesignProfile(profileState.data)}
+                onOpenSettings={() => { window.location.hash = '#/profile'; }}
+                onOpenRules={() => { window.location.hash = '#/profile/rules'; }}
+                onOpenHistory={() => { window.location.hash = '#/profile/history'; }}
+                onNavigate={navigateRedesignTab}
+              />
+            ) : <ProfilePage data={profileState.data} />,
           }
         : routeHash === '#/profile/rules'
           ? {
               activeKey: 'profile' as const,
-              page: <RulesPage guidedStartKey={rulesGuidedStartKey} />,
+              page: <RulesPage guidedStartKey={rulesGuidedStartKey} onBack={() => window.history.back()} />,
             }
           : routeHash === '#/profile' && profileState.status === 'error'
             ? {
@@ -363,11 +460,16 @@ export function App({
                       activeKey: 'home' as const,
                       page: (
                         <PlayableBetaPage
+                          key={state.user.id}
                           variant="home"
                           authState={state}
                           routeHash={routeHash}
                           roomApi={roomApi}
                           realtimeClient={realtimeClient}
+                          onLogout={() => void logout()}
+                          {...(profileState.data?.recentResults[0]
+                            ? { homeLastMatch: redesignMatchResult(profileState.data.recentResults[0]) }
+                            : {})}
                         />
                       ),
                     }
@@ -375,6 +477,7 @@ export function App({
                       activeKey: 'rooms' as const,
                       page: (
                         <PlayableBetaPage
+                          key={state.user.id}
                           variant="rooms"
                           authState={state}
                           routeHash={routeHash}
@@ -383,6 +486,15 @@ export function App({
                         />
                       ),
                     };
+
+    if (route.activeKey === 'home' && !introComplete) {
+      return (
+        <FullscreenIntroGate
+          onComplete={() => setIntroComplete(true)}
+          renderScrub={(props) => <IntroScrubLayer {...props} />}
+        />
+      );
+    }
 
     return (
       <AppShell
@@ -394,7 +506,7 @@ export function App({
         <>
           <div className="shell-authenticated-layout">
             <div className="shell-authenticated-layout__page">{route.page}</div>
-            <Panel as="section" className="shell-session-panel">
+            {route.activeKey !== 'home' && shellViewport !== 'mobile' ? <Panel as="section" className="shell-session-panel">
               <div className="shell-session-panel__identity">
                 <div className="shell-session-panel__avatar" aria-hidden="true">
                   {renderAvatar(state.user.displayName)}
@@ -407,7 +519,7 @@ export function App({
               <Button variant="secondary" onClick={() => void logout()}>
                 Выйти
               </Button>
-            </Panel>
+            </Panel> : null}
           </div>
           <Dialog
             open={showRulesOnboarding}

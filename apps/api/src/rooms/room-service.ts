@@ -547,6 +547,9 @@ export function createRoomService(options: {
             ok: true,
             room: await loadView(saved, actorUserId),
             matchId: match.id,
+            status: 'ACTIVE',
+            stateVersion: initialState.stateVersion,
+            lastSequence: 0,
           };
         });
       } catch (error) {

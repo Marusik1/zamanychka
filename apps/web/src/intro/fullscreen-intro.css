@@ -1,0 +1,164 @@
+/*
+ * Zamanushka fullscreen Intro shell.
+ * It intentionally bypasses the normal page/AppShell layout.
+ */
+
+:root {
+  --z-fullscreen-intro-bg: #0b1117;
+}
+
+html[data-intro-active='true'],
+html[data-intro-active='true'] body,
+html[data-intro-active='true'] #root {
+  width: 100%;
+  min-width: 100%;
+  height: 100%;
+  min-height: 100%;
+  margin: 0;
+  overflow: hidden !important;
+  overscroll-behavior: none;
+  background: var(--z-fullscreen-intro-bg);
+}
+
+.z-fullscreen-intro {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  width: 100vw;
+  width: 100dvw;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--z-fullscreen-intro-bg);
+  overscroll-behavior: none;
+  touch-action: manipulation;
+}
+
+.z-fullscreen-intro__scrub,
+.z-fullscreen-intro__poster {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Force the root of the already-working scrub to inherit the fullscreen viewport. */
+.z-fullscreen-intro__scrub > * {
+  width: 100% !important;
+  min-width: 100% !important;
+  height: 100% !important;
+  min-height: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+}
+
+.z-fullscreen-intro__poster {
+  z-index: 20;
+  opacity: 1;
+  transition: opacity 140ms cubic-bezier(0.2, 0, 0, 1);
+  pointer-events: none;
+}
+
+.z-fullscreen-intro__scrub .z-scrubViewport {
+  position: absolute;
+  z-index: 1;
+}
+
+.z-fullscreen-intro__poster--leaving {
+  opacity: 0;
+}
+
+.z-fullscreen-intro__poster-image {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  object-fit: cover;
+  object-position: 50% 50%;
+  user-select: none;
+  -webkit-user-drag: none;
+  pointer-events: none;
+}
+
+/*
+ * Transparent semantic button over the baked approved Play button.
+ * The approved poster is the visual source of truth; this is only the hit target.
+ * Center of the approved CTA is ~73% down the image.
+ */
+.z-fullscreen-intro__play-hitbox {
+  position: absolute;
+  z-index: 40;
+  left: 50%;
+  top: 72.7%;
+  width: clamp(205px, 55vw, 330px);
+  height: clamp(58px, 8.3vh, 82px);
+  transform: translate(-50%, -50%);
+  appearance: none;
+  border: 0;
+  border-radius: 999px;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  color: transparent;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.z-fullscreen-intro__play-hitbox:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.92);
+  outline-offset: 4px;
+}
+
+.z-fullscreen-intro__play-hitbox:active::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: inherit;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.z-fullscreen-intro__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Tall/small phones: keep CTA above the home indicator and preserve the approved framing. */
+@media (max-width: 380px) {
+  .z-fullscreen-intro__play-hitbox {
+    width: clamp(196px, 57vw, 300px);
+    top: 72.4%;
+  }
+}
+
+/* Wider phones keep the same visual anchor while slightly limiting CTA width. */
+@media (min-width: 420px) and (max-width: 700px) {
+  .z-fullscreen-intro__play-hitbox {
+    width: min(54vw, 340px);
+    top: 72.8%;
+  }
+}
+
+/* Safe-area guard: the actual approved CTA is above this, but never allow the hit target under system UI. */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .z-fullscreen-intro__play-hitbox {
+    max-height: calc(100dvh - env(safe-area-inset-bottom) - 16px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .z-fullscreen-intro__poster {
+    transition-duration: 80ms;
+  }
+}

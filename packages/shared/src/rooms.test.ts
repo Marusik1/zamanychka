@@ -14,6 +14,7 @@ import {
   roomSummarySchema,
   setReadyRequestSchema,
   startMatchRequestSchema,
+  startMatchSuccessSchema,
   takeSeatRequestSchema,
 } from './rooms.js';
 
@@ -170,6 +171,61 @@ describe('room contracts', () => {
     ).toEqual({
       ok: false,
       error: { code: 'ROOM_NOT_READY', message: 'room is not ready' },
+    });
+  });
+
+  it('requires start-match success to expose canonical committed match metadata', () => {
+    const body = startMatchSuccessSchema.parse({
+      ok: true,
+      room: roomStateSchema.parse({
+        id: 'room-1',
+        code: 'ABCD',
+        status: 'ACTIVE',
+        version: 2,
+        currentMatchId: 'match-1',
+        members: [
+          {
+            userId: 'u1',
+            displayName: 'User 1',
+            joinedAt: '2026-08-30T09:00:00.000Z',
+          },
+          {
+            userId: 'u2',
+            displayName: 'User 2',
+            joinedAt: '2026-08-30T09:01:00.000Z',
+          },
+        ],
+        seats: [
+          { seatIndex: 0, userId: 'u1', ready: true },
+          { seatIndex: 1, userId: 'u2', ready: true },
+          { seatIndex: 2, userId: null, ready: false },
+          { seatIndex: 3, userId: null, ready: false },
+        ],
+        counts: {
+          memberCount: 2,
+          seatedCount: 2,
+          readyCount: 2,
+        },
+        currentUser: {
+          isMember: true,
+          seatIndex: 0,
+          ready: true,
+          canLeave: false,
+          canStart: false,
+          startBlockedReason: 'ROOM_ALREADY_ACTIVE',
+        },
+      }),
+      matchId: 'match-1',
+      status: 'ACTIVE',
+      stateVersion: 0,
+      lastSequence: 0,
+    });
+
+    expect(body).toMatchObject({
+      matchId: 'match-1',
+      status: 'ACTIVE',
+      stateVersion: 0,
+      lastSequence: 0,
     });
   });
 });

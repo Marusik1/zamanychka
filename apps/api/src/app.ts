@@ -5,6 +5,7 @@ import { extname, join, normalize } from 'node:path';
 
 import type { AuthRuntimeConfig } from './config/env.js';
 import type { AuthService } from './auth/auth-service.js';
+import type { BuildInfo } from './build-info.js';
 import { registerAuthRoutes } from './auth/routes.js';
 import { registerOperationalRoutes } from './health/routes.js';
 import { registerProfileRoutes } from './profile/routes.js';
@@ -27,6 +28,7 @@ export interface BuildAppOptions {
   rooms?: { service: RoomService; chat?: RoomChatService };
   profile?: { service: ProfileService };
   productionWebRoot?: string;
+  buildInfo?: BuildInfo;
 }
 
 const CONTENT_TYPES: Record<string, string> = {
@@ -36,6 +38,7 @@ const CONTENT_TYPES: Record<string, string> = {
   '.json': 'application/json; charset=utf-8',
   '.png': 'image/png',
   '.svg': 'image/svg+xml',
+  '.webp': 'image/webp',
   '.woff': 'font/woff',
   '.woff2': 'font/woff2',
 };
@@ -59,13 +62,20 @@ async function registerProductionFrontend(app: FastifyInstance, root: string) {
     const path = typeof request.params === 'object' ? String((request.params as { '*': string })['*']) : '';
     const file = await sendFile(join('assets', path));
     if (!file) return reply.code(404).send({ error: 'Not Found' });
-    return reply.type(file.type).send(file.body);
+    return reply.header('Cache-Control', 'public, max-age=31536000, immutable').type(file.type).send(file.body);
+  });
+
+  app.get('/intro/*', async (request, reply) => {
+    const path = typeof request.params === 'object' ? String((request.params as { '*': string })['*']) : '';
+    const file = await sendFile(join('intro', path));
+    if (!file) return reply.code(404).send({ error: 'Not Found' });
+    return reply.header('Cache-Control', 'public, max-age=31536000, immutable').type(file.type).send(file.body);
   });
 
   app.get('/', async (_request, reply) => {
     const index = await sendFile('index.html');
     if (!index) return reply.code(503).send({ error: 'Frontend build is missing' });
-    return reply.type(index.type).send(index.body);
+    return reply.header('Cache-Control', 'no-cache').type(index.type).send(index.body);
   });
 }
 
@@ -76,13 +86,14 @@ export function buildApp({
   rooms,
   profile,
   productionWebRoot,
+  buildInfo,
 }: BuildAppOptions): FastifyInstance {
   const app = Fastify({
     logger: logger
       ? { redact: ['req.headers.cookie', 'req.headers.authorization', 'req.body', 'body.initData'] }
       : false,
   });
-  registerOperationalRoutes(app, probes);
+  registerOperationalRoutes(app, probes, buildInfo);
   if (auth)
     app.register(async (scope) => {
       await scope.register(cookie);
@@ -98,12 +109,14 @@ export function buildApp({
           service: rooms.service,
           ...(rooms.chat ? { chat: rooms.chat } : {}),
           auth: auth.service,
+          cookieName: auth.config.cookie.name,
           allowedOrigins: auth.config.allowedOrigins,
         });
       if (profile)
         registerProfileRoutes(scope, {
           service: profile.service,
           auth: auth.service,
+          cookieName: auth.config.cookie.name,
         });
     });
   if (productionWebRoot) {

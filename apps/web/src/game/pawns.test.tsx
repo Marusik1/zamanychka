@@ -90,4 +90,36 @@ describe('GamePawn', () => {
     expect(screen.getByTestId('green-motion')).toHaveAttribute('data-motion', 'captured');
     expect(screen.getByTestId('green-motion')).toHaveAttribute('data-pawn-id', pawn.pawnId);
   });
+
+  it('uses the same color geometry with a dedicated readable tray variant', () => {
+    const pawn: GameScreenPawnView = {
+      pawnId: 'red-tray', playerId: 'p1', color: 'RED',
+      position: { zone: 'PERIMETER', progress: 2 }, coord: { row: 0, col: 2 },
+      coordKey: '0:2', isLocalPlayerPawn: true,
+    };
+    render(<GamePawn pawn={pawn} size="tray" />);
+
+    expect(screen.getByTestId('red-tray')).toHaveClass('game-pawn--red', 'game-pawn--tray');
+    expect(screen.getByTestId('red-tray')).toHaveAttribute('data-position-zone', 'PERIMETER');
+    expect(screen.getByTestId('red-tray').querySelector('svg')).toHaveAttribute('viewBox', '8 2 56 92');
+  });
+
+  it('uses unique SVG paint definitions when one authoritative pawn has multiple visual instances', () => {
+    const pawn: GameScreenPawnView = {
+      pawnId: 'shared-red-pawn', playerId: 'p1', color: 'RED',
+      position: { zone: 'OFF_BOARD' }, coord: null, coordKey: null, isLocalPlayerPawn: true,
+    };
+    const { container } = render(
+      <div>
+        <GamePawn pawn={pawn} size="panel" />
+        <GamePawn pawn={pawn} size="tray" />
+      </div>,
+    );
+
+    const headGradients = [...container.querySelectorAll('radialGradient')];
+    expect(headGradients).toHaveLength(2);
+    expect(new Set(headGradients.map((gradient) => gradient.id))).toHaveLength(2);
+    const headFills = [...container.querySelectorAll('circle[cx="36"]')].map((head) => head.getAttribute('fill'));
+    expect(new Set(headFills)).toHaveLength(2);
+  });
 });

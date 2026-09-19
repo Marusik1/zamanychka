@@ -19,11 +19,14 @@ function publicError(reply: FastifyReply, status: number, code: PublicErrorCode)
   return reply.code(status).send({ error: { code, message: messages[code] } });
 }
 
-async function actorId(request: FastifyRequest, reply: FastifyReply, auth: AuthService) {
-  const token =
-    request.cookies['__Host-zamanushka-session'] ?? request.cookies['zamanushka-session'];
+async function actorId(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  auth: AuthService,
+  cookieName: string,
+) {
   try {
-    const result = await auth.me(token);
+    const result = await auth.me(request.cookies[cookieName]);
     return result.user.id;
   } catch {
     publicError(reply, 401, 'AUTH_REQUIRED');
@@ -44,14 +47,14 @@ function parseCursor(value: unknown): string | null {
 
 export function registerProfileRoutes(
   app: FastifyInstance,
-  options: { service: ProfileService; auth: AuthService },
+  options: { service: ProfileService; auth: AuthService; cookieName: string },
 ) {
   app.addHook('onRequest', async (_request, reply) => {
     reply.header('Cache-Control', 'no-store');
   });
 
   app.get('/api/profile', async (request, reply) => {
-    const userId = await actorId(request, reply, options.auth);
+    const userId = await actorId(request, reply, options.auth, options.cookieName);
     if (!userId) return;
     try {
       return await options.service.loadProfile(userId);
@@ -61,7 +64,7 @@ export function registerProfileRoutes(
   });
 
   app.get('/api/profile/history', async (request, reply) => {
-    const userId = await actorId(request, reply, options.auth);
+    const userId = await actorId(request, reply, options.auth, options.cookieName);
     if (!userId) return;
     const query = (request.query ?? {}) as Record<string, unknown>;
     const limit = parseLimit(query.limit);

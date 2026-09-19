@@ -2,7 +2,6 @@ import type {
   MatchResultCardDto,
   MatchResultParticipantSummaryDto,
   PlayerMatchOutcome,
-  VictoryReason,
 } from '@zamanushka/shared';
 import { Panel } from '@zamanushka/ui';
 
@@ -26,15 +25,6 @@ function outcomeLabel(outcome: PlayerMatchOutcome) {
   }
 }
 
-function victoryReasonLabel(reason: VictoryReason) {
-  switch (reason) {
-    case 'HOME_DIAGONAL_COMPLETED':
-      return 'Дом заполнен';
-    case 'LAST_ACTIVE_PLAYER':
-      return 'Последний активный игрок';
-  }
-}
-
 function participantColorLabel(participant: MatchResultParticipantSummaryDto) {
   switch (participant.color) {
     case 'RED':
@@ -53,7 +43,10 @@ export function ResultCard({ result }: { result: MatchResultCardDto }) {
     <Panel as="article" className="profile-result-card" data-testid="profile-result-card">
       <div className="profile-result-card__header">
         <div>
-          <p className="profile-result-card__eyebrow">Матч {result.matchId}</p>
+          <span
+            className={`profile-result-card__outcome-dot profile-result-card__outcome-dot--${result.currentUserOutcome.toLowerCase()}`}
+            aria-hidden="true"
+          />
           <h3>{outcomeLabel(result.currentUserOutcome)}</h3>
         </div>
         <div className="profile-result-card__meta">
@@ -62,7 +55,7 @@ export function ResultCard({ result }: { result: MatchResultCardDto }) {
         </div>
       </div>
       <p className="profile-result-card__summary">
-        Победитель: {result.winnerDisplayName} · {victoryReasonLabel(result.victoryReason)}
+        Победитель: {result.winnerDisplayName}
       </p>
       <ul className="profile-result-card__participants" aria-label="Участники матча">
         {result.participants.map((participant) => (
@@ -72,6 +65,7 @@ export function ResultCard({ result }: { result: MatchResultCardDto }) {
           </li>
         ))}
       </ul>
+      <span className="profile-result-card__chevron" aria-hidden="true">›</span>
     </Panel>
   );
 }

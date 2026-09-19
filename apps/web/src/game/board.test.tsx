@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { GameScreenPawnView } from './domain.js';
@@ -53,13 +53,31 @@ describe('GameBoard', () => {
 
   it('renders canonical corner and HOME occupants in the expected cells', () => {
     render(<GameBoard pawns={pawns} />);
-    expect(screen.getByRole('grid').querySelector('[data-cell="0:0"] [data-pawn-id="p1-1"]')).not.toBeNull();
-    expect(screen.getByRole('grid').querySelector('[data-cell="2:5"] [data-pawn-id="p2-1"]')).not.toBeNull();
+    expect(screen.getByRole('grid').querySelector('[data-board-pawn="p1-1"][data-board-edge="top"]')).not.toBeNull();
+    expect(screen.getByRole('grid').querySelector('[data-board-pawn="p2-1"][data-board-edge="interior"]')).not.toBeNull();
+    expect(screen.getByRole('grid').querySelector('[data-cell="0:0"]')).toHaveClass(
+      'game-board-scene__cell--occupied',
+    );
+    expect(screen.getByRole('grid').querySelector('[data-cell="2:5"]')).toHaveClass(
+      'game-board-scene__cell--occupied',
+    );
     expect(screen.getByRole('grid').querySelector('[data-cell="0:0"]')).toHaveAttribute('data-tone', 'light');
     expect(screen.getByRole('grid').querySelector('[data-cell="0:1"]')).toHaveAttribute('data-tone', 'dark');
   });
 
   it('clears the transient pawn-control focus before its authoritative action can replace the button', () => {
+    const edgePawns: readonly GameScreenPawnView[] = [
+      pawns[0]!,
+      { ...pawns[0]!, pawnId: 'right', coord: { row: 3, col: 7 }, coordKey: '3:7' },
+      { ...pawns[0]!, pawnId: 'bottom', color: 'YELLOW', coord: { row: 7, col: 4 }, coordKey: '7:4' },
+    ];
+    const edgeRender = render(<GameBoard pawns={edgePawns} />);
+    const layer = edgeRender.container.querySelector('[data-pawn-layer="static"]');
+    expect(layer?.querySelector('[data-board-edge="top"] .game-pawn__svg')).not.toBeNull();
+    expect(layer?.querySelector('[data-board-edge="right"] .game-pawn__svg')).not.toBeNull();
+    expect(layer?.querySelector('[data-board-edge="bottom"] .game-pawn__svg')).not.toBeNull();
+    edgeRender.unmount();
+
     const onPawnSelect = vi.fn();
     render(<GameBoard pawns={pawns} actionablePawnIds={['p1-1']} onPawnSelect={onPawnSelect} />);
 
@@ -170,6 +188,99 @@ describe('GameBoard', () => {
     expect(screen.getByTestId('mobile-gameplay-actions')).toHaveTextContent('Ваш ход');
     expect(screen.getByRole('button', { name: 'Бросить кубик' })).toBeVisible();
   });
+
+  it('projects participants and selectable local reserve pawns inside the mobile match frame', () => {
+    const onPawnSelect = vi.fn();
+    const localReservePawn: GameScreenPawnView = {
+      pawnId: 'p1-off-board',
+      playerId: 'p1',
+      color: 'RED',
+      position: { zone: 'OFF_BOARD' },
+      coord: null,
+      coordKey: null,
+      isLocalPlayerPawn: true,
+    };
+    const localReservePawn2 = { ...localReservePawn, pawnId: 'p1-off-board-2' };
+    const localHomePawn: GameScreenPawnView = {
+      ...localReservePawn,
+      pawnId: 'p1-home',
+      position: { zone: 'HOME', homeIndex: 1 },
+      coord: { row: 1, col: 1 },
+      coordKey: '1:1',
+    };
+
+    render(
+      <GameBoard
+        pawns={[...pawns, localReservePawn, localReservePawn2, localHomePawn]}
+        players={[
+          {
+            playerId: 'p1', color: 'RED', seatIndex: 0, status: 'ACTIVE',
+            isLocalPlayer: true, isCurrentPlayer: true, isWinner: false, pawnCount: 2,
+          },
+          {
+            playerId: 'p2', color: 'BLUE', seatIndex: 1, status: 'ACTIVE',
+            isLocalPlayer: false, isCurrentPlayer: false, isWinner: false, pawnCount: 1,
+          },
+          {
+            playerId: 'p3', color: 'GREEN', seatIndex: 2, status: 'ACTIVE',
+            isLocalPlayer: false, isCurrentPlayer: false, isWinner: false, pawnCount: 0,
+          },
+          {
+            playerId: 'p4', color: 'YELLOW', seatIndex: 3, status: 'ACTIVE',
+            isLocalPlayer: false, isCurrentPlayer: false, isWinner: false, pawnCount: 0,
+          },
+        ]}
+        playerNamesById={{ p1: 'Мария', p2: 'Дмитрий', p3: 'Ольга', p4: 'Алексей' }}
+        actionablePawnIds={['p1-off-board']}
+        pawnActionLabels={{ 'p1-off-board': 'Вывести красную пешку на поле' }}
+        onPawnSelect={onPawnSelect}
+        mobileLayout
+        showMobilePawnTray
+        turnPanel={{ title: 'Ваш ход' }}
+      />,
+    );
+
+    const matchFrame = screen.getByTestId('mobile-gameplay-actions');
+    const details = screen.getByTestId('mobile-match-details');
+    expect(matchFrame).toContainElement(details);
+    const participants = screen.getByRole('region', { name: 'Участники матча' });
+    expect(matchFrame).not.toContainElement(participants);
+    expect(participants).toHaveTextContent('Мария (Вы)');
+    expect(participants).toHaveTextContent('Дмитрий');
+    expect(participants).toHaveTextContent('Ольга');
+    expect(participants).toHaveTextContent('Алексей');
+    expect(participants.querySelectorAll('.game-board-scene__mobile-participant')).toHaveLength(4);
+    expect(details).toHaveTextContent('Ваши пешки');
+
+    fireEvent.click(within(details).getByRole('button', { name: 'Вывести красную пешку на поле' }));
+    expect(onPawnSelect).toHaveBeenCalledWith('p1-off-board');
+    expect(details.querySelectorAll('.game-board-scene__mobile-pawn-slot')).toHaveLength(4);
+    expect(details.querySelectorAll('.game-pawn--tray')).toHaveLength(4);
+    expect(details.querySelector('[data-zone="PERIMETER"]')).not.toBeNull();
+    expect(details.querySelector('[data-zone="HOME"]')).not.toBeNull();
+    expect(details.querySelector('[data-zone="OFF_BOARD"][data-actionable="true"]')).not.toBeNull();
+  });
+
+  it('keeps the mobile pawn tray out of pre-roll and opponent states', () => {
+    render(
+      <GameBoard
+        pawns={pawns}
+        mobileLayout
+        turnPanel={{
+          title: 'Ход соперника',
+          tone: 'opponent',
+          footer: <button type="button">Чат</button>,
+        }}
+      />,
+    );
+
+    expect(screen.getByRole('grid')).toBeVisible();
+    expect(screen.getByRole('region', { name: 'Участники матча' })).toBeVisible();
+    expect(screen.queryByLabelText('Ваши пешки')).not.toBeInTheDocument();
+    const turnCard = screen.getByText('Ход соперника').closest('.game-board-scene__turn-card');
+    expect(turnCard).toHaveAttribute('data-turn-tone', 'opponent');
+    expect(turnCard).not.toContainElement(screen.getByRole('button', { name: 'Чат' }));
+  });
   it('opens a mobile chat sheet without replacing the gameplay board state', () => {
     const close = vi.fn();
     render(
@@ -201,7 +312,7 @@ describe('GameBoard exact-reference cues', () => {
     const { container } = render(<GameBoard pawns={pawns} />);
 
     expect(container.querySelector('.premium-pawn-layer')).toBeNull();
-    expect(screen.getByRole('grid').querySelector('[data-pawn-id="p1-1"] .game-pawn__svg')).not.toBeNull();
+    expect(screen.getByRole('grid').querySelector('[data-pawn-layer="static"] [data-pawn-id="p1-1"] .game-pawn__svg')).not.toBeNull();
   });
 
   it('renders compact local board cues instead of the legacy oversized pulse overlay', () => {

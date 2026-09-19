@@ -194,6 +194,9 @@ export const startMatchSuccessSchema = z
     ok: z.literal(true),
     room: roomStateSchema,
     matchId: z.string().min(1),
+    status: z.enum(['ACTIVE']),
+    stateVersion: z.number().int().nonnegative(),
+    lastSequence: z.number().int().nonnegative(),
   })
   .strict();
 

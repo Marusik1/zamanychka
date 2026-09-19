@@ -1,0 +1,25 @@
+.z-rooms { display:flex; flex-direction:column; gap:18px; }
+.z-page-head { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.z-page-head__actions { display:flex; gap:8px; }
+.z-create-room { width:46px; height:46px; display:grid; place-items:center; border:0; border-radius:50%; color:#25211c; background:linear-gradient(180deg,#f1d5ac,#d6b17c); box-shadow:0 8px 24px rgba(209,177,132,.18); }
+.z-create-room svg { width:22px; height:22px; }
+.z-room-filters { display:grid; grid-template-columns:1fr 1.25fr 1fr; gap:4px; padding:4px; border-radius:16px; background:rgba(33,50,63,.82); border:1px solid var(--z-border); }
+.z-room-filters button { border:0; border-radius:12px; background:transparent; color:var(--z-text-2); min-height:38px; font:600 12px var(--z-font-ui); }
+.z-room-filters button span { opacity:.62; margin-left:3px; }
+.z-room-filters button.is-active { color:#22201d; background:linear-gradient(180deg,#efd5ae,#d7b37e); box-shadow:0 4px 14px rgba(0,0,0,.12); }
+.z-room-list { display:grid; gap:10px; }
+.z-room-card { appearance:none; width:100%; padding:0; overflow:hidden; border-radius:18px; color:inherit; display:grid; grid-template-columns:90px 1fr; min-height:104px; text-align:left; cursor:pointer; }
+.z-room-card > img { width:100%; height:100%; object-fit:cover; min-height:104px; }
+.z-room-card__content { padding:12px 12px 11px; display:grid; gap:8px; align-content:center; min-width:0; }
+.z-room-card__head { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+.z-room-card__head strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:15px; }
+.z-room-card__head svg { width:17px; flex:0 0 auto; color:var(--z-text-2); }
+.z-room-card__status { color:var(--z-text-2); font-size:12px; display:flex; align-items:center; gap:7px; }
+.z-room-card__status i { width:8px; height:8px; border-radius:50%; background:var(--z-warning); box-shadow:0 0 0 3px rgba(248,191,36,.08); }
+.z-room-card__status i.is-playing { background:var(--z-success); box-shadow:0 0 0 3px rgba(67,211,153,.08); }
+.z-room-card__meta { display:flex; justify-content:space-between; align-items:center; gap:10px; color:#aebbc5; font-size:11px; }
+.z-room-card__meta > span { display:flex; align-items:center; gap:4px; }
+.z-room-card__meta svg { width:14px; height:14px; }
+.z-empty { padding:28px 20px; border-radius:18px; display:grid; text-align:center; gap:8px; }
+.z-empty span { color:var(--z-text-2); font-size:13px; }
+.z-empty .z-button { margin-top:10px; }

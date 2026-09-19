@@ -69,7 +69,7 @@ describe('PremiumAnimationBridge audio timing', () => {
     expect(audio.play).not.toHaveBeenCalled();
   });
 
-  it('plays capture sound immediately on collision phase', async () => {
+  it('plays capture sound at the committed impact frame rather than before it', async () => {
     vi.useFakeTimers();
     const audio = { play: vi.fn() };
     const bridge = new PremiumAnimationBridge(
@@ -87,12 +87,15 @@ describe('PremiumAnimationBridge audio timing', () => {
       new AbortController().signal,
     );
 
+    expect(audio.play).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(16);
     expect(audio.play).toHaveBeenCalledWith('pawn-capture', { playbackRate: 0.99 });
     await vi.runAllTimersAsync();
     await run;
   });
 
   it('maps dice, enter, and first home entry to their semantic clips', async () => {
+    vi.useFakeTimers();
     const audio = { play: vi.fn() };
     const bridge = new PremiumAnimationBridge(
       { throwCommitted: vi.fn(), snapToValue: vi.fn() },
@@ -100,14 +103,20 @@ describe('PremiumAnimationBridge audio timing', () => {
       audio as never,
     );
     await bridge.diceRolled(6);
-    await bridge.pawnEntered({ pawnId: 'pawn-1', destination: { row: 0, col: 0 } });
-    await bridge.pawnEnteredHome('pawn-1');
+    const enter = bridge.pawnEntered({ pawnId: 'pawn-1', destination: { row: 0, col: 0 } });
+    expect(audio.play).toHaveBeenCalledTimes(1);
+    await vi.runAllTimersAsync();
+    await enter;
+    const home = bridge.pawnEnteredHome('pawn-1');
+    await vi.runAllTimersAsync();
+    await home;
     expect(audio.play).toHaveBeenNthCalledWith(1, 'dice-roll');
     expect(audio.play).toHaveBeenNthCalledWith(2, 'pawn-enter');
     expect(audio.play).toHaveBeenNthCalledWith(3, 'pawn-home');
   });
 
   it('uses victory for the local winner and defeat for another winner', async () => {
+    vi.useFakeTimers();
     const audio = { play: vi.fn() };
     const bridge = new PremiumAnimationBridge(
       { throwCommitted: vi.fn(), snapToValue: vi.fn() },
@@ -115,8 +124,13 @@ describe('PremiumAnimationBridge audio timing', () => {
       audio as never,
     );
     const animation = { winnerName: 'Алексей', winnerColor: 'GREEN' as const, reason: 'LAST_ACTIVE_PLAYER' as const };
-    await bridge.gameWon({ ...animation, isLocalWinner: true });
-    await bridge.gameWon({ ...animation, isLocalWinner: false });
+    const win = bridge.gameWon({ ...animation, isLocalWinner: true });
+    expect(audio.play).not.toHaveBeenCalled();
+    await vi.runAllTimersAsync();
+    await win;
+    const defeat = bridge.gameWon({ ...animation, isLocalWinner: false });
+    await vi.runAllTimersAsync();
+    await defeat;
     expect(audio.play).toHaveBeenNthCalledWith(1, 'victory');
     expect(audio.play).toHaveBeenNthCalledWith(2, 'defeat');
   });

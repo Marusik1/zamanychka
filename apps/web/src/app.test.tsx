@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { StrictMode } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AuthApiError, type AuthApi } from './auth/api.js';
 import { App } from './app.js';
@@ -110,7 +110,58 @@ function roomApi(): RoomApi {
   };
 }
 
+afterEach(() => {
+  window.location.hash = '';
+  vi.restoreAllMocks();
+});
+
 describe('EPIC-01 app lifecycle', () => {
+  it('refreshes the authenticated identity when a shared browser session changes in another tab', async () => {
+    window.location.hash = '#/rooms';
+    const me = vi
+      .fn()
+      .mockResolvedValueOnce({
+        user: { id: 'one', displayName: 'Player One', authProvider: 'DEVELOPMENT' as const },
+        rulesOnboardingSeenAt: seenAt,
+      })
+      .mockResolvedValueOnce({
+        user: { id: 'two', displayName: 'Player Two', authProvider: 'DEVELOPMENT' as const },
+        rulesOnboardingSeenAt: seenAt,
+      });
+
+    render(<App createAdapter={adapter} api={authenticatedApi(me)} roomApi={roomApi()} />);
+
+    expect(await screen.findByText('Player One')).toBeVisible();
+    fireEvent.focus(window);
+
+    expect(await screen.findByText('Player Two')).toBeVisible();
+    expect(screen.queryByText('Player One')).not.toBeInTheDocument();
+    expect(me).toHaveBeenCalledTimes(2);
+  });
+
+  it('refreshes the authenticated identity when a shared session tab becomes visible', async () => {
+    window.location.hash = '#/rooms';
+    const me = vi
+      .fn()
+      .mockResolvedValueOnce({
+        user: { id: 'one', displayName: 'Player One', authProvider: 'DEVELOPMENT' as const },
+        rulesOnboardingSeenAt: seenAt,
+      })
+      .mockResolvedValueOnce({
+        user: { id: 'two', displayName: 'Player Two', authProvider: 'DEVELOPMENT' as const },
+        rulesOnboardingSeenAt: seenAt,
+      });
+
+    render(<App createAdapter={adapter} api={authenticatedApi(me)} roomApi={roomApi()} />);
+
+    expect(await screen.findByText('Player One')).toBeVisible();
+    fireEvent(document, new Event('visibilitychange'));
+
+    await waitFor(() => expect(me).toHaveBeenCalledTimes(2), { timeout: 3_000 });
+    expect(await screen.findByText('Player Two')).toBeVisible();
+    expect(me).toHaveBeenCalledTimes(2);
+  });
+
   it('leaves only the replayed StrictMode Telegram bridge listeners active', async () => {
     const listeners = new Map<TelegramEvent, Set<() => void>>();
     const webApp: TelegramWebApp = {
@@ -224,6 +275,7 @@ describe('EPIC-01 app lifecycle', () => {
   });
 
   it('uses latest-request-wins when development logins overlap', async () => {
+    window.location.hash = '#/rooms';
     const logins = new Map<
       string,
       ReturnType<typeof deferred<Awaited<ReturnType<AuthApi['loginDevelopment']>>>>
@@ -296,6 +348,7 @@ describe('EPIC-01 app lifecycle', () => {
   });
 
   it('does not let a stale retry overwrite the latest bootstrap result', async () => {
+    window.location.hash = '#/rooms';
     const retries: ReturnType<typeof deferred<Awaited<ReturnType<AuthApi['me']>>>>[] = [];
     const me = vi
       .fn()
@@ -329,6 +382,7 @@ describe('EPIC-01 app lifecycle', () => {
   });
 
   it('does not let a stale logout restart bootstrap after a newer logout', async () => {
+    window.location.hash = '#/rooms';
     const logouts: ReturnType<typeof deferred<Awaited<ReturnType<AuthApi['logout']>>>>[] = [];
     const api = authenticatedApi();
     vi.mocked(api.logout).mockImplementation(() => {
@@ -353,6 +407,7 @@ describe('EPIC-01 app lifecycle', () => {
   });
 
   it('returns to the browser fallback after logout when Telegram is unavailable and development auth is disabled', async () => {
+    window.location.hash = '#/rooms';
     const me = vi
       .fn()
       .mockResolvedValueOnce({
@@ -408,12 +463,13 @@ describe('EPIC-01 app lifecycle', () => {
   it('limits the authenticated app to shell-safe navigation without identity editors or gameplay topology', async () => {
     const telegram = adapter();
     render(<App createAdapter={() => telegram} api={authenticatedApi()} roomApi={roomApi()} />);
-    await screen.findByText('Один');
+    await waitFor(() =>
+      expect(document.querySelector('.beta-home-page__actions button')).not.toBeNull(),
+    );
 
     const navigation = screen.getByRole('navigation', { name: 'Primary navigation' });
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
     expect(within(navigation).getAllByRole('link')).toHaveLength(3);
-    expect(within(navigation).getByRole('link', { name: 'Главная' })).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Создать комнату' })).not.toBeInTheDocument();
     expect(screen.queryByText('Подбор игроков')).not.toBeInTheDocument();
     expect(
@@ -444,6 +500,7 @@ describe('EPIC-10 rules onboarding', () => {
   });
 
   it('does not show the onboarding prompt for a seen authenticated user', async () => {
+    window.location.hash = '#/rooms';
     render(<App createAdapter={adapter} api={authenticatedApi()} />);
 
     await screen.findByText('Один');
@@ -485,7 +542,7 @@ describe('EPIC-10 rules onboarding', () => {
 
     fireEvent.click(screen.getByRole('link', { name: 'Комнаты' }));
     fireEvent(window, new HashChangeEvent('hashchange'));
-    await screen.findByRole('heading', { name: 'Комнаты' });
+    await waitFor(() => expect(document.querySelector('.beta-room-page')).not.toBeNull());
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
@@ -503,7 +560,7 @@ describe('EPIC-10 rules onboarding', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Позже' }));
 
     await waitFor(() => expect(api.markRulesOnboardingSeen).toHaveBeenCalledTimes(1));
-    expect(screen.getByText('Один')).toBeVisible();
+    expect(screen.getByRole('navigation', { name: 'Primary navigation' })).toBeVisible();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 });

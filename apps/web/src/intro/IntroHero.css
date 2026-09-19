@@ -1,0 +1,253 @@
+.z-intro {
+  --z-ivory: #f6f2eb;
+  --z-muted: rgba(246, 242, 235, 0.72);
+  --z-glass: rgba(238, 239, 242, 0.16);
+  --z-glass-strong: rgba(245, 247, 250, 0.25);
+  --z-stroke: rgba(255, 255, 255, 0.58);
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  width: 100%;
+  height: 100dvh;
+  min-height: 100dvh;
+  overflow: hidden;
+  isolation: isolate;
+  background: #080b10;
+  color: var(--z-ivory);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  touch-action: manipulation;
+  user-select: none;
+}
+
+.z-intro--scrub-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  max-width: none;
+  margin: 0;
+}
+
+.z-intro::before {
+  content: none;
+}
+
+.z-intro__scene,
+.z-intro__frame,
+.z-intro__frame img,
+.z-intro__vignette {
+  position: absolute;
+  inset: 0;
+}
+
+.z-intro__scene {
+  will-change: transform;
+  transform-origin: 50% 58%;
+}
+
+.z-intro__frame {
+  margin: 0;
+  transition: opacity 56ms linear;
+  will-change: opacity;
+}
+
+.z-intro__frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: var(--z-focus-x, 50%) var(--z-focus-y, 50%);
+  -webkit-user-drag: none;
+}
+
+.z-intro.is-idle .z-intro__scene {
+  transform: none !important;
+}
+
+.z-intro.is-idle .z-intro__frame img {
+  object-position: var(--z-focus-x, 50%) var(--z-focus-y, 50%);
+}
+
+.z-intro__vignette {
+  z-index: 5;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(4, 7, 11, 0.60) 0%, rgba(4, 7, 11, 0.13) 22%, rgba(4, 7, 11, 0.04) 58%, rgba(4, 7, 11, 0.56) 100%),
+    radial-gradient(90% 75% at 50% 51%, transparent 48%, rgba(2, 5, 9, 0.34) 100%);
+}
+
+.z-intro__ui {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  padding:
+    max(42px, env(safe-area-inset-top))
+    clamp(24px, 7vw, 72px)
+    max(52px, calc(env(safe-area-inset-bottom) + 28px));
+  pointer-events: none;
+  transition: opacity 60ms linear;
+}
+
+.z-intro.is-idle .z-intro__ui {
+  padding: 0;
+}
+
+.z-intro__title {
+  justify-self: center;
+  margin: clamp(16px, 5vh, 64px) 0 0;
+  max-width: 100%;
+  white-space: nowrap;
+  color: rgba(248, 246, 242, 0.94);
+  font-family: "SF Pro Display", Inter, ui-sans-serif, system-ui, sans-serif;
+  font-size: clamp(30px, 7.4vw, 68px);
+  font-weight: 350;
+  letter-spacing: clamp(0.22em, 1.8vw, 0.38em);
+  line-height: 1;
+  text-indent: 0.28em;
+  text-shadow: 0 2px 28px rgba(0,0,0,0.38);
+}
+
+.z-intro.is-idle .z-intro__title {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.z-intro__play {
+  position: relative;
+  justify-self: center;
+  align-self: end;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  width: min(74vw, 340px);
+  min-height: 64px;
+  padding: 0 32px;
+  overflow: hidden;
+  border: 1px solid var(--z-stroke);
+  border-radius: 999px;
+  background:
+    linear-gradient(105deg, rgba(190, 64, 55, 0.46), rgba(14, 17, 24, 0.48) 47%, rgba(55, 112, 171, 0.48));
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.38),
+    inset 0 -1px 0 rgba(0,0,0,0.25),
+    0 10px 44px rgba(0,0,0,0.34),
+    0 0 28px rgba(227, 231, 241, 0.11);
+  color: rgba(255,255,255,0.96);
+  font: inherit;
+  font-size: 21px;
+  font-weight: 450;
+  letter-spacing: 0.01em;
+  backdrop-filter: blur(18px) saturate(120%);
+  -webkit-backdrop-filter: blur(18px) saturate(120%);
+  pointer-events: auto;
+  cursor: pointer;
+  transform: translateZ(0);
+  transition: transform 130ms cubic-bezier(.2,0,0,1), background 180ms ease, opacity 180ms ease;
+}
+
+.z-intro.is-idle .z-intro__play {
+  align-self: start;
+  width: min(55.6vw, 321px);
+  min-height: min(8.2vh, 77px);
+  margin-top: min(69.4vh, 1160px);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.z-intro.is-idle .z-intro__play::after,
+.z-intro.is-idle .z-intro__playGlow,
+.z-intro.is-idle .z-intro__playIcon,
+.z-intro.is-idle .z-intro__play span:last-child {
+  opacity: 0;
+}
+
+.z-intro__play::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(255,255,255,0.11), transparent 48%);
+  pointer-events: none;
+}
+
+.z-intro__playGlow {
+  position: absolute;
+  inset: auto 12% -70% 12%;
+  height: 100%;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.22);
+  filter: blur(28px);
+  pointer-events: none;
+}
+
+.z-intro__playIcon {
+  position: relative;
+  width: 0;
+  height: 0;
+  border-top: 8px solid transparent;
+  border-bottom: 8px solid transparent;
+  border-left: 12px solid currentColor;
+  filter: drop-shadow(0 1px 6px rgba(0,0,0,.24));
+}
+
+.z-intro__play:not(:disabled):active {
+  transform: scale(0.965);
+  background:
+    linear-gradient(105deg, rgba(190, 64, 55, 0.34), rgba(14, 17, 24, 0.58) 47%, rgba(55, 112, 171, 0.36));
+}
+
+.z-intro__play:focus-visible {
+  outline: 2px solid rgba(255,255,255,0.92);
+  outline-offset: 4px;
+}
+
+.z-intro__play:disabled {
+  cursor: default;
+  opacity: 0.72;
+}
+
+.z-intro__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0,0,0,0);
+  white-space: nowrap;
+}
+
+@media (min-width: 681px) {
+  .z-intro__frame img {
+    object-position: center 54%;
+  }
+  .z-intro__ui {
+    padding-left: max(48px, 6vw);
+    padding-right: max(48px, 6vw);
+  }
+  .z-intro__title {
+    margin-top: clamp(24px, 5vh, 70px);
+    font-size: clamp(42px, 5vw, 76px);
+  }
+  .z-intro__play {
+    min-height: 68px;
+    width: min(42vw, 360px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .z-intro__scene,
+  .z-intro__frame,
+  .z-intro__ui,
+  .z-intro__play {
+    transition-duration: 1ms !important;
+    animation: none !important;
+  }
+}

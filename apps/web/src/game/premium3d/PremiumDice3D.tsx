@@ -58,7 +58,7 @@ export const PremiumDice3D = forwardRef<
     camera.position.set(0, 1.6, 5.3);
     camera.lookAt(0, 0.15, 0);
 
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 3));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.08;
@@ -88,7 +88,7 @@ export const PremiumDice3D = forwardRef<
     scene.add(floor);
 
     const die = createPremiumDieMesh();
-    die.scale.setScalar(0.82);
+    die.scale.setScalar(1.05);
     die.quaternion.copy(committedFaceQuaternion(value));
     scene.add(die);
 

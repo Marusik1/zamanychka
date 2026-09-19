@@ -1,4 +1,10 @@
 export {
+  REALTIME_PROTOCOL_VERSION,
+  ZAMANUSHKA_BUILD_ID,
+  ZAMANUSHKA_BUILD_TIMESTAMP,
+  ZAMANUSHKA_GIT_SHA,
+} from './version.js';
+export {
   healthResponseSchema,
   readinessResponseSchema,
   type HealthResponse,

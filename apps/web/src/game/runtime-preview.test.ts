@@ -73,21 +73,22 @@ describe('runtime preview fixture', () => {
       .filter(
         (frame) =>
           frame.state.pawnVisuals['red-seat-pawn-1']?.motion === 'captured' ||
+          frame.state.pawnVisuals['red-seat-pawn-1']?.motion === 'capture-return' ||
           frame.state.cellCue?.tone === 'capture',
       )
       .reduce((total, frame) => total + frame.durationMs, 0);
 
-    expect(movementDurationMs(1)).toBeGreaterThanOrEqual(220);
-    expect(movementDurationMs(1)).toBeLessThanOrEqual(260);
-    expect(movementDurationMs(4)).toBeGreaterThanOrEqual(460);
-    expect(movementDurationMs(4)).toBeLessThanOrEqual(540);
-    expect(movementDurationMs(6)).toBeGreaterThanOrEqual(620);
-    expect(movementDurationMs(6)).toBeLessThanOrEqual(720);
+    expect(movementDurationMs(1)).toBeGreaterThanOrEqual(130);
+    expect(movementDurationMs(1)).toBeLessThanOrEqual(170);
+    expect(movementDurationMs(4)).toBeGreaterThanOrEqual(500);
+    expect(movementDurationMs(4)).toBeLessThanOrEqual(600);
+    expect(movementDurationMs(6)).toBeGreaterThanOrEqual(750);
+    expect(movementDurationMs(6)).toBeLessThanOrEqual(950);
     expect(ANIMATION_TIMINGS.captureImpactMs).toBeGreaterThanOrEqual(100);
     expect(ANIMATION_TIMINGS.captureImpactMs).toBeLessThanOrEqual(140);
-    expect(ANIMATION_TIMINGS.captureExitMs).toBeGreaterThanOrEqual(150);
-    expect(ANIMATION_TIMINGS.captureExitMs).toBeLessThanOrEqual(200);
-    expect(captureDuration).toBeGreaterThanOrEqual(220);
-    expect(captureDuration).toBeLessThanOrEqual(360);
+    expect(ANIMATION_TIMINGS.captureExitMs).toBeGreaterThanOrEqual(300);
+    expect(ANIMATION_TIMINGS.captureExitMs).toBeLessThanOrEqual(450);
+    expect(captureDuration).toBeGreaterThanOrEqual(420);
+    expect(captureDuration).toBeLessThanOrEqual(550);
   });
 });

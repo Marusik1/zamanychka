@@ -203,6 +203,29 @@ describe('transactional realtime command processor', () => {
     expect(await database.prisma.processedAction.count()).toBe(1);
   });
 
+  it('persists actionId in the committed outbox transition identity', async () => {
+    const match = await createMatch();
+    const { processor } = createProcessor();
+    const command = {
+      type: 'ROLL_DICE' as const,
+      matchId: match.id,
+      actionId: 'action-identity-1',
+      expectedStateVersion: 0,
+    };
+
+    await processor.process({ authenticatedUserId: 'user-1', command });
+
+    const outbox = await database.prisma.outboxRow.findFirstOrThrow({
+      where: { matchId: match.id },
+    });
+    expect(outbox.payload).toMatchObject({
+      matchId: match.id,
+      transitionId: 'action-identity-1',
+      actionId: 'action-identity-1',
+      stateVersion: 1,
+    });
+  });
+
   it('rejects a reused action id with a conflicting fingerprint before mutation', async () => {
     const match = await createMatch();
     const { processor } = createProcessor();

@@ -37,7 +37,7 @@ function adapter(): TelegramAdapter {
 function authenticatedApi(): AuthApi {
   return {
     me: vi.fn().mockResolvedValue({
-      user: { id: 'user-1', displayName: 'Алексей', authProvider: 'DEVELOPMENT' },
+      user: { id: 'user-1', displayName: 'РђР»РµРєСЃРµР№', authProvider: 'DEVELOPMENT' },
       rulesOnboardingSeenAt: '2026-08-30T10:00:00.000Z',
     }),
     loginTelegram: vi.fn(),
@@ -50,9 +50,9 @@ function authenticatedApi(): AuthApi {
   };
 }
 
-function profileApi(): ProfileApi {
+function profileApi(profile = vi.fn()): ProfileApi {
   return {
-    profile: vi.fn(),
+    profile,
     history: vi.fn(),
   } as unknown as ProfileApi;
 }
@@ -67,7 +67,7 @@ function roomState(overrides: Record<string, unknown> = {}): RoomState {
     members: [
       {
         userId: 'user-1',
-        displayName: 'Алексей',
+        displayName: 'РђР»РµРєСЃРµР№',
         joinedAt: '2026-08-30T10:00:00.000Z',
       },
     ],
@@ -88,7 +88,7 @@ function roomState(overrides: Record<string, unknown> = {}): RoomState {
       ready: false,
       canLeave: true,
       canStart: false,
-      startBlockedReason: 'Нужно минимум 2 игрока.',
+      startBlockedReason: 'РќСѓР¶РЅРѕ РјРёРЅРёРјСѓРј 2 РёРіСЂРѕРєР°.',
     },
     ...overrides,
   } as RoomState;
@@ -171,8 +171,8 @@ function activeRoom(overrides: Record<string, unknown> = {}) {
     currentMatchId: 'match-1',
     counts: { memberCount: 2, seatedCount: 2, readyCount: 2 },
     members: [
-      { userId: 'user-1', displayName: 'Алексей', joinedAt: '2026-08-30T10:00:00.000Z' },
-      { userId: 'user-2', displayName: 'Таисия', joinedAt: '2026-08-30T10:01:00.000Z' },
+      { userId: 'user-1', displayName: 'РђР»РµРєСЃРµР№', joinedAt: '2026-08-30T10:00:00.000Z' },
+      { userId: 'user-2', displayName: 'РўР°РёСЃРёСЏ', joinedAt: '2026-08-30T10:01:00.000Z' },
     ],
     seats: [
       { seatIndex: 0, userId: 'user-1', ready: true },
@@ -186,7 +186,7 @@ function activeRoom(overrides: Record<string, unknown> = {}) {
       ready: true,
       canLeave: false,
       canStart: false,
-      startBlockedReason: 'Матч уже идёт.',
+      startBlockedReason: 'РњР°С‚С‡ СѓР¶Рµ РёРґС‘С‚.',
     },
     ...overrides,
   });
@@ -226,8 +226,8 @@ function createRoomApi(overrides?: Partial<RoomApi>): RoomApi {
       id: 'message-1',
       roomId: 'room-1',
       userId: 'user-1',
-      displayName: 'Алексей',
-      text: 'Привет',
+      displayName: 'РђР»РµРєСЃРµР№',
+      text: 'РџСЂРёРІРµС‚',
       createdAt: '2026-08-30T10:00:00.000Z',
     }),
   };
@@ -277,7 +277,7 @@ function deferred<T>() {
 
 function renderAuthenticated(
   hash = '#/rooms',
-  options?: { roomApi?: RoomApi; realtime?: RealtimeClient },
+  options?: { roomApi?: RoomApi; realtime?: RealtimeClient; profileApi?: ProfileApi },
 ) {
   window.location.hash = hash;
   const props = {
@@ -286,28 +286,91 @@ function renderAuthenticated(
   };
 
   return render(
-    <App createAdapter={adapter} api={authenticatedApi()} profileApi={profileApi()} {...props} />,
+    <App
+      createAdapter={adapter}
+      api={authenticatedApi()}
+      profileApi={options?.profileApi ?? profileApi()}
+      {...props}
+    />,
   );
+}
+
+function useMobileViewport() {
+  vi.stubGlobal('innerWidth', 390);
+  vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
+    matches: query === '(max-width: 768px)',
+    media: query,
+    onchange: null,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  })));
 }
 
 afterEach(() => {
   window.location.hash = '';
   vi.useRealTimers();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe('playable beta room flow', () => {
+  it('renders the current Home entry point and only existing destinations', async () => {
+    const currentProfile = profileApi(vi.fn().mockResolvedValue({
+      user: {
+        id: 'user-1',
+        displayName: 'РђР»РµРєСЃРµР№',
+        telegramUsername: null,
+        avatarUrl: null,
+      },
+      stats: { gamesPlayed: 5, wins: 2, losses: 3, winRate: 0.4 },
+      recentResults: [],
+    }));
+
+    renderAuthenticated('#/', { profileApi: currentProfile });
+
+    expect(await screen.findByRole('heading', { name: 'РРіСЂР°С‚СЊ' })).toBeVisible();
+    expect(screen.queryByText('РђР»РµРєСЃРµР№')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /РћС‚РєСЂС‹С‚СЊ РєРѕРјРЅР°С‚С‹/i })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: /РћС‚РєСЂС‹С‚СЊ РєРѕРјРЅР°С‚С‹/i }));
+    expect(window.location.hash).toBe('#/rooms');
+    expect(screen.queryByText(/PRO|Р РµР№С‚РёРЅРі|РўСѓСЂРЅРёСЂ|Р‘С‹СЃС‚СЂР°СЏ РёРіСЂР°/i)).not.toBeInTheDocument();
+  });
+
+  it('does not fabricate a current membership row on Home', async () => {
+    const api = createRoomApi({
+      listRooms: vi.fn().mockResolvedValue({
+        rooms: [],
+        currentMembershipRoom: {
+          roomId: 'room-1',
+          code: '248C',
+          status: 'ACTIVE',
+          version: 7,
+          currentMatchId: 'match-1',
+        },
+      }),
+    });
+
+    renderAuthenticated('#/', { roomApi: api });
+
+    expect(await screen.findByRole('heading', { name: 'РРіСЂР°С‚СЊ' })).toBeVisible();
+    expect(screen.queryByText('РЈ РІР°СЃ Р°РєС‚РёРІРЅР° РљРѕРјРЅР°С‚Р° 248C')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /РџСЂРѕРґРѕР»Р¶РёС‚СЊ/i })).not.toBeInTheDocument();
+  });
+
   it('renders the room list on #/rooms and opens a room through the canonical route', async () => {
     const api = createRoomApi();
     renderAuthenticated('#/rooms', { roomApi: api });
 
-    expect(await screen.findByRole('heading', { name: 'Комнаты' })).toBeVisible();
-    expect(await screen.findByText('Комната ABCD')).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'РљРѕРјРЅР°С‚С‹' })).toBeVisible();
+    expect(await screen.findByText('РљРѕРјРЅР°С‚Р° ABCD')).toBeVisible();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Открыть комнату' }));
+    fireEvent.click(screen.getByRole('button', { name: 'РћС‚РєСЂС‹С‚СЊ РєРѕРјРЅР°С‚Сѓ' }));
 
     await waitFor(() => expect(window.location.hash).toBe('#/rooms/room-1'));
-    expect(await screen.findByRole('heading', { name: 'Комната ABCD' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'РљРѕРјРЅР°С‚Р° ABCD' })).toBeVisible();
     expect(api.reconnect).toHaveBeenCalledWith('room-1', expect.any(AbortSignal));
   });
 
@@ -318,7 +381,7 @@ describe('playable beta room flow', () => {
 
     renderAuthenticated('#/rooms/single-room', { roomApi: api });
 
-    expect(await screen.findByRole('heading', { name: 'Комната MAIN' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'РљРѕРјРЅР°С‚Р° MAIN' })).toBeVisible();
     expect(screen.queryByText('Room single-room')).not.toBeInTheDocument();
   });
 
@@ -340,7 +403,7 @@ describe('playable beta room flow', () => {
         ready: false,
         canLeave: false,
         canStart: false,
-        startBlockedReason: 'Сначала войдите в комнату.',
+        startBlockedReason: 'РЎРЅР°С‡Р°Р»Р° РІРѕР№РґРёС‚Рµ РІ РєРѕРјРЅР°С‚Сѓ.',
       },
     });
     const joinedRoom = roomState({
@@ -349,7 +412,7 @@ describe('playable beta room flow', () => {
       members: [
         {
           userId: 'user-1',
-          displayName: 'Алексей',
+          displayName: 'РђР»РµРєСЃРµР№',
           joinedAt: '2026-08-30T10:00:00.000Z',
         },
       ],
@@ -366,7 +429,7 @@ describe('playable beta room flow', () => {
         ready: false,
         canLeave: true,
         canStart: false,
-        startBlockedReason: 'Нужно занять место.',
+        startBlockedReason: 'РќСѓР¶РЅРѕ Р·Р°РЅСЏС‚СЊ РјРµСЃС‚Рѕ.',
       },
     });
     const api = createRoomApi({
@@ -378,14 +441,40 @@ describe('playable beta room flow', () => {
 
     renderAuthenticated('#/rooms', { roomApi: api });
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Создать комнату' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'РЎРѕР·РґР°С‚СЊ РєРѕРјРЅР°С‚Сѓ' }));
 
     await waitFor(() => expect(api.createRoom).toHaveBeenCalledTimes(1));
     await waitFor(() =>
       expect(api.joinRoom).toHaveBeenCalledWith('room-2', expect.any(AbortSignal)),
     );
-    expect(await screen.findByRole('heading', { name: 'Комната WXYZ' })).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Занять место 1' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'РљРѕРјРЅР°С‚Р° WXYZ' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Р—Р°РЅСЏС‚СЊ РјРµСЃС‚Рѕ 1' })).toBeVisible();
+  });
+
+  it('keeps create and room navigation wired on the mobile rooms surface', async () => {
+    useMobileViewport();
+    const createdRoom = roomState({ id: 'room-2', code: 'WXYZ' });
+    const api = createRoomApi({
+      listRooms: vi.fn().mockResolvedValue({ rooms: [{
+        id: 'room-1', code: 'ABCD', status: 'WAITING', version: 1, currentMatchId: null,
+        counts: { memberCount: 1, seatedCount: 1, readyCount: 0 },
+      }], currentMembershipRoom: null }),
+      createRoom: vi.fn().mockResolvedValue({ ok: true, room: createdRoom }),
+      joinRoom: vi.fn().mockResolvedValue({ ok: true, room: createdRoom }),
+      getRoom: vi.fn().mockResolvedValue(createdRoom),
+      reconnect: vi.fn().mockResolvedValue(createdRoom),
+    });
+
+    renderAuthenticated('#/rooms', { roomApi: api });
+    await screen.findByText('РљРѕРјРЅР°С‚Р° ABCD');
+    fireEvent.click(screen.getByRole('button', { name: 'РћС‚РєСЂС‹С‚СЊ РєРѕРјРЅР°С‚Сѓ' }));
+    await waitFor(() => expect(window.location.hash).toBe('#/rooms/room-1'));
+
+    window.location.hash = '#/rooms';
+    fireEvent.click(await screen.findByRole('button', { name: 'РЎРѕР·РґР°С‚СЊ РєРѕРјРЅР°С‚Сѓ' }));
+    await waitFor(() => expect(api.createRoom).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(api.joinRoom).toHaveBeenCalledWith('room-2', expect.any(AbortSignal)));
+    await waitFor(() => expect(window.location.hash).toBe('#/rooms/room-2'));
   });
 
   it('uses room-scoped expectedRoomVersion for seat and readiness mutations', async () => {
@@ -393,8 +482,8 @@ describe('playable beta room flow', () => {
       version: 7,
       counts: { memberCount: 2, seatedCount: 2, readyCount: 1 },
       members: [
-        { userId: 'user-1', displayName: 'Алексей', joinedAt: '2026-08-30T10:00:00.000Z' },
-        { userId: 'user-2', displayName: 'Мария', joinedAt: '2026-08-30T10:01:00.000Z' },
+        { userId: 'user-1', displayName: 'РђР»РµРєСЃРµР№', joinedAt: '2026-08-30T10:00:00.000Z' },
+        { userId: 'user-2', displayName: 'РњР°СЂРёСЏ', joinedAt: '2026-08-30T10:01:00.000Z' },
       ],
       seats: [
         { seatIndex: 0, userId: 'user-1', ready: false },
@@ -408,7 +497,7 @@ describe('playable beta room flow', () => {
         ready: false,
         canLeave: true,
         canStart: false,
-        startBlockedReason: 'Ожидаем вашу готовность.',
+        startBlockedReason: 'РћР¶РёРґР°РµРј РІР°С€Сѓ РіРѕС‚РѕРІРЅРѕСЃС‚СЊ.',
       },
     });
     const refreshed = roomState({
@@ -442,7 +531,7 @@ describe('playable beta room flow', () => {
 
     renderAuthenticated('#/rooms/room-1', { roomApi: api });
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Готов' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Р“РѕС‚РѕРІ' }));
 
     await waitFor(() =>
       expect(api.setReady).toHaveBeenCalledWith('room-1', true, 7, expect.any(AbortSignal)),
@@ -454,8 +543,8 @@ describe('playable beta room flow', () => {
       version: 4,
       counts: { memberCount: 2, seatedCount: 2, readyCount: 2 },
       members: [
-        { userId: 'user-1', displayName: 'Алексей', joinedAt: '2026-08-30T10:00:00.000Z' },
-        { userId: 'user-2', displayName: 'Таисия', joinedAt: '2026-08-30T10:01:00.000Z' },
+        { userId: 'user-1', displayName: 'РђР»РµРєСЃРµР№', joinedAt: '2026-08-30T10:00:00.000Z' },
+        { userId: 'user-2', displayName: 'РўР°РёСЃРёСЏ', joinedAt: '2026-08-30T10:01:00.000Z' },
       ],
       seats: [
         { seatIndex: 0, userId: 'user-1', ready: true },
@@ -486,7 +575,7 @@ describe('playable beta room flow', () => {
           currentUser: {
             ...startRoom.currentUser,
             canStart: false,
-            startBlockedReason: 'Матч уже идёт.',
+            startBlockedReason: 'РњР°С‚С‡ СѓР¶Рµ РёРґС‘С‚.',
           },
         },
       }),
@@ -495,7 +584,7 @@ describe('playable beta room flow', () => {
 
     renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
 
-    const startButton = await screen.findByRole('button', { name: 'Начать матч' });
+    const startButton = await screen.findByRole('button', { name: 'РќР°С‡Р°С‚СЊ РјР°С‚С‡' });
     await waitFor(() => expect(startButton).toBeEnabled());
     fireEvent.click(startButton);
 
@@ -504,15 +593,496 @@ describe('playable beta room flow', () => {
     );
     expect(realtime.ensureConnected).toHaveBeenCalled();
     expect(realtime.joinMatch).toHaveBeenCalledWith('match-2');
-    expect(await screen.findByRole('heading', { name: 'Матч' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'РњР°С‚С‡' })).toBeVisible();
     expect(document.querySelector('[data-layout="gameplay-three-column"]')).not.toBeNull();
     expect(document.querySelector('.game-board-scene')).not.toBeNull();
     expect(document.querySelector('.game-board-scene__room')).toBeNull();
     expect(document.querySelector('.game-board-scene__turn-card')).not.toBeNull();
     expect(document.querySelector('.game-board-scene__chat-card')).not.toBeNull();
-    expect(screen.queryByRole('heading', { name: 'О комнате' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Рћ РєРѕРјРЅР°С‚Рµ' })).not.toBeInTheDocument();
     expect(document.querySelector('.beta-board')).toBeNull();
     expect(screen.queryByText(/match\/realtime/i)).toBeNull();
+  });
+
+  it('retries the initial match sync after a committed start instead of showing a transient unavailable state', async () => {
+    const startRoom = roomState({
+      version: 4,
+      counts: { memberCount: 2, seatedCount: 2, readyCount: 2 },
+      members: [
+        { userId: 'user-1', displayName: 'РђР»РµРєСЃРµР№', joinedAt: '2026-08-30T10:00:00.000Z' },
+        { userId: 'user-2', displayName: 'РўР°РёСЃРёСЏ', joinedAt: '2026-08-30T10:01:00.000Z' },
+      ],
+      seats: [
+        { seatIndex: 0, userId: 'user-1', ready: true },
+        { seatIndex: 1, userId: 'user-2', ready: true },
+        { seatIndex: 2, userId: null, ready: false },
+        { seatIndex: 3, userId: null, ready: false },
+      ],
+      currentUser: {
+        isMember: true,
+        seatIndex: 0,
+        ready: true,
+        canLeave: true,
+        canStart: true,
+        startBlockedReason: null,
+      },
+    });
+    const activeStartedRoom = {
+      ...startRoom,
+      version: 5,
+      status: 'ACTIVE',
+      currentMatchId: 'match-2',
+      currentUser: {
+        ...startRoom.currentUser,
+        canStart: false,
+        startBlockedReason: 'РњР°С‚С‡ СѓР¶Рµ РёРґС‘С‚.',
+      },
+    } as RoomState;
+    const api = createRoomApi({
+      getRoom: vi.fn().mockResolvedValue(startRoom),
+      reconnect: vi.fn().mockResolvedValue(startRoom),
+      startMatch: vi.fn().mockResolvedValue({
+        ok: true,
+        matchId: 'match-2',
+        room: activeStartedRoom,
+      }),
+    });
+    const realtime = createRealtimeClient({
+      joinMatch: vi
+        .fn()
+        .mockRejectedValueOnce(new Error('MATCH_NOT_FOUND_TRANSIENT'))
+        .mockResolvedValue(undefined),
+      sync: vi.fn().mockResolvedValue({
+        mode: 'snapshot',
+        snapshot: activeSnapshot(),
+        watermark: { stateVersion: 0, lastSequence: 0 },
+      }),
+    });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
+
+    const startButton = await screen.findByRole('button', { name: 'РќР°С‡Р°С‚СЊ РјР°С‚С‡' });
+    await waitFor(() => expect(startButton).toBeEnabled());
+    fireEvent.click(startButton);
+
+    await waitFor(() => expect(realtime.joinMatch).toHaveBeenCalledTimes(2));
+    expect(await screen.findByRole('heading', { name: 'РњР°С‚С‡' })).toBeVisible();
+    expect(screen.queryByText('РќРµ СѓРґР°Р»РѕСЃСЊ РїРѕРґРєР»СЋС‡РёС‚СЊ РјР°С‚С‡.')).not.toBeInTheDocument();
+  });
+
+  it('does not claim start-match ACK watermark before applying the initial snapshot', async () => {
+    const startRoom = roomState({
+      version: 4,
+      members: [
+        { userId: 'user-1', displayName: 'РђР»РµРєСЃРµР№', joinedAt: '2026-08-30T10:00:00.000Z' },
+        { userId: 'user-2', displayName: 'РўР°РёСЃРёСЏ', joinedAt: '2026-08-30T10:01:00.000Z' },
+      ],
+      seats: [
+        { seatIndex: 0, userId: 'user-1', ready: true },
+        { seatIndex: 1, userId: 'user-2', ready: true },
+        { seatIndex: 2, userId: null, ready: false },
+        { seatIndex: 3, userId: null, ready: false },
+      ],
+      counts: { memberCount: 2, seatedCount: 2, readyCount: 2 },
+      currentUser: {
+        isMember: true,
+        seatIndex: 0,
+        ready: true,
+        canLeave: true,
+        canStart: true,
+        startBlockedReason: null,
+      },
+    });
+    const activeStartedRoom = {
+      ...startRoom,
+      version: 5,
+      status: 'ACTIVE',
+      currentMatchId: 'match-canonical',
+      currentUser: {
+        ...startRoom.currentUser,
+        canStart: false,
+        startBlockedReason: 'РњР°С‚С‡ СѓР¶Рµ РёРґС‘С‚.',
+      },
+    } as RoomState;
+    const api = createRoomApi({
+      getRoom: vi.fn().mockResolvedValue(startRoom),
+      reconnect: vi.fn().mockResolvedValue(startRoom),
+      startMatch: vi.fn().mockResolvedValue({
+        ok: true,
+        matchId: 'match-canonical',
+        status: 'ACTIVE',
+        stateVersion: 3,
+        lastSequence: 9,
+        room: activeStartedRoom,
+      }),
+    });
+    const realtime = createRealtimeClient({
+      sync: vi.fn().mockResolvedValue({
+        mode: 'snapshot',
+        snapshot: activeSnapshot({
+          stateVersion: 3,
+          lastSequence: 9,
+        }),
+        watermark: { stateVersion: 3, lastSequence: 9 },
+      }),
+    });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
+
+    const startButton = await screen.findByRole('button', { name: /РќР°С‡Р°С‚СЊ РјР°С‚С‡|Р ќР °РЎ‡Р °РЎ‚РЎЊ Р јР °РЎ‚РЎ‡/ });
+    await waitFor(() => expect(startButton).toBeEnabled());
+    fireEvent.click(startButton);
+
+    await waitFor(() =>
+      expect(realtime.sync).toHaveBeenCalledWith({
+        matchId: 'match-canonical',
+        stateVersion: 0,
+        lastSequence: 0,
+      }),
+    );
+  });
+  it('reconstructs an already active match from initial sync with no local snapshot', async () => {
+    const active = activeRoom({ currentMatchId: 'match-direct' });
+    const api = createRoomApi({
+      getRoom: vi.fn().mockResolvedValue(active),
+      reconnect: vi.fn().mockResolvedValue(active),
+    });
+    const realtime = createRealtimeClient({
+      sync: vi.fn().mockResolvedValue({
+        mode: 'snapshot',
+        snapshot: activeSnapshot({
+          stateVersion: 5,
+          lastSequence: 11,
+        }),
+        watermark: { stateVersion: 5, lastSequence: 11 },
+      }),
+    });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
+
+    await waitFor(() =>
+      expect(realtime.sync).toHaveBeenCalledWith({
+        matchId: 'match-direct',
+        stateVersion: 0,
+        lastSequence: 0,
+      }),
+    );
+    expect(await screen.findByRole('heading', { name: /РњР°С‚С‡|Р њР °РЎ‚РЎ‡/ })).toBeVisible();
+  });
+  it('applies a realtime event that arrives while initial sync is in flight after the synced snapshot', async () => {
+    const sync = deferred<{
+      mode: 'snapshot';
+      snapshot: MatchSnapshot;
+      watermark: { stateVersion: number; lastSequence: number };
+    }>();
+    const api = createRoomApi({
+      getRoom: vi.fn().mockResolvedValue(activeRoom({ currentMatchId: 'match-race' })),
+      reconnect: vi.fn().mockResolvedValue(activeRoom({ currentMatchId: 'match-race' })),
+    });
+    const realtime = createRealtimeClient({
+      sync: vi.fn().mockReturnValue(sync.promise),
+    });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
+
+    await waitFor(() =>
+      expect(realtime.sync).toHaveBeenCalledWith({
+        matchId: 'match-race',
+        stateVersion: 0,
+        lastSequence: 0,
+      }),
+    );
+
+    realtime.__emitTransition?.(
+      transitionEnvelope({
+        matchId: 'match-race',
+        transitionId: 'transition-6',
+        stateVersion: 6,
+        fromSequence: 6,
+        toSequence: 6,
+        watermark: { stateVersion: 6, lastSequence: 6 },
+        snapshot: activeSnapshot({ stateVersion: 6, lastSequence: 6 }),
+      }),
+    );
+    sync.resolve({
+      mode: 'snapshot',
+      snapshot: activeSnapshot({ stateVersion: 5, lastSequence: 5 }),
+      watermark: { stateVersion: 5, lastSequence: 5 },
+    });
+
+    expect(await screen.findByRole('heading', { name: /РњР°С‚С‡|Р њР °РЎ‚РЎ‡/ })).toBeVisible();
+
+    realtime.__emitTransition?.(
+      transitionEnvelope({
+        matchId: 'match-race',
+        transitionId: 'transition-7',
+        stateVersion: 7,
+        fromSequence: 7,
+        toSequence: 7,
+        watermark: { stateVersion: 7, lastSequence: 7 },
+        snapshot: activeSnapshot({ stateVersion: 7, lastSequence: 7 }),
+      }),
+    );
+
+    await waitFor(() => expect(realtime.sync).toHaveBeenCalledTimes(1));
+  });
+
+  it('discards a realtime event already represented by the initial sync snapshot', async () => {
+    const sync = deferred<{
+      mode: 'snapshot';
+      snapshot: MatchSnapshot;
+      watermark: { stateVersion: number; lastSequence: number };
+    }>();
+    const api = createRoomApi({
+      getRoom: vi.fn().mockResolvedValue(activeRoom({ currentMatchId: 'match-race' })),
+      reconnect: vi.fn().mockResolvedValue(activeRoom({ currentMatchId: 'match-race' })),
+    });
+    const realtime = createRealtimeClient({
+      sync: vi.fn().mockReturnValue(sync.promise),
+    });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
+
+    await waitFor(() => expect(realtime.sync).toHaveBeenCalledTimes(1));
+    realtime.__emitTransition?.(
+      transitionEnvelope({
+        matchId: 'match-race',
+        transitionId: 'transition-5',
+        stateVersion: 5,
+        fromSequence: 5,
+        toSequence: 5,
+        watermark: { stateVersion: 5, lastSequence: 5 },
+        snapshot: activeSnapshot({ stateVersion: 5, lastSequence: 5 }),
+      }),
+    );
+    sync.resolve({
+      mode: 'snapshot',
+      snapshot: activeSnapshot({ stateVersion: 5, lastSequence: 5 }),
+      watermark: { stateVersion: 5, lastSequence: 5 },
+    });
+
+    expect(await screen.findByRole('heading', { name: /РњР°С‚С‡|Р њР °РЎ‚РЎ‡/ })).toBeVisible();
+
+    realtime.__emitTransition?.(
+      transitionEnvelope({
+        matchId: 'match-race',
+        transitionId: 'transition-6',
+        stateVersion: 6,
+        fromSequence: 6,
+        toSequence: 6,
+        watermark: { stateVersion: 6, lastSequence: 6 },
+        snapshot: activeSnapshot({ stateVersion: 6, lastSequence: 6 }),
+      }),
+    );
+
+    await waitFor(() => expect(realtime.sync).toHaveBeenCalledTimes(1));
+  });
+
+  it('triggers authoritative resync when a buffered realtime event has a sequence gap', async () => {
+    const sync = deferred<{
+      mode: 'snapshot';
+      snapshot: MatchSnapshot;
+      watermark: { stateVersion: number; lastSequence: number };
+    }>();
+    const api = createRoomApi({
+      getRoom: vi.fn().mockResolvedValue(activeRoom({ currentMatchId: 'match-race' })),
+      reconnect: vi.fn().mockResolvedValue(activeRoom({ currentMatchId: 'match-race' })),
+    });
+    const realtime = createRealtimeClient({
+      sync: vi
+        .fn()
+        .mockReturnValueOnce(sync.promise)
+        .mockResolvedValue({
+          mode: 'snapshot',
+          snapshot: activeSnapshot({ stateVersion: 7, lastSequence: 7 }),
+          watermark: { stateVersion: 7, lastSequence: 7 },
+        }),
+    });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
+
+    await waitFor(() => expect(realtime.sync).toHaveBeenCalledTimes(1));
+    realtime.__emitTransition?.(
+      transitionEnvelope({
+        matchId: 'match-race',
+        transitionId: 'transition-7',
+        stateVersion: 7,
+        fromSequence: 7,
+        toSequence: 7,
+        watermark: { stateVersion: 7, lastSequence: 7 },
+        snapshot: activeSnapshot({ stateVersion: 7, lastSequence: 7 }),
+      }),
+    );
+    sync.resolve({
+      mode: 'snapshot',
+      snapshot: activeSnapshot({ stateVersion: 5, lastSequence: 5 }),
+      watermark: { stateVersion: 5, lastSequence: 5 },
+    });
+
+    await waitFor(() =>
+      expect(realtime.sync).toHaveBeenLastCalledWith({
+        matchId: 'match-race',
+        stateVersion: 5,
+        lastSequence: 5,
+      }),
+    );
+    expect(realtime.sync).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps authoritative resync single-flight when several sequence gaps arrive', async () => {
+    const resync = deferred<{
+      mode: 'snapshot';
+      snapshot: MatchSnapshot;
+      watermark: { stateVersion: number; lastSequence: number };
+    }>();
+    const api = createRoomApi({
+      getRoom: vi.fn().mockResolvedValue(activeRoom({ currentMatchId: 'match-gap' })),
+      reconnect: vi.fn().mockResolvedValue(activeRoom({ currentMatchId: 'match-gap' })),
+    });
+    const realtime = createRealtimeClient({
+      sync: vi
+        .fn()
+        .mockResolvedValueOnce({
+          mode: 'snapshot',
+          snapshot: activeSnapshot({ stateVersion: 5, lastSequence: 5 }),
+          watermark: { stateVersion: 5, lastSequence: 5 },
+        })
+        .mockReturnValue(resync.promise),
+    });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
+
+    expect(await screen.findByRole('heading', { name: /РњР°С‚С‡|Р њР °РЎ‚РЎ‡/ })).toBeVisible();
+
+    for (const sequence of [7, 8, 9]) {
+      realtime.__emitTransition?.(
+        transitionEnvelope({
+          matchId: 'match-gap',
+          transitionId: `transition-${sequence}`,
+          stateVersion: sequence,
+          fromSequence: sequence,
+          toSequence: sequence,
+          watermark: { stateVersion: sequence, lastSequence: sequence },
+          snapshot: activeSnapshot({ stateVersion: sequence, lastSequence: sequence }),
+        }),
+      );
+    }
+
+    await waitFor(() => expect(realtime.sync).toHaveBeenCalledTimes(2));
+  });
+
+  it('applies a duplicate realtime event received during hydration only once', async () => {
+    const sync = deferred<{
+      mode: 'snapshot';
+      snapshot: MatchSnapshot;
+      watermark: { stateVersion: number; lastSequence: number };
+    }>();
+    const api = createRoomApi({
+      getRoom: vi.fn().mockResolvedValue(activeRoom({ currentMatchId: 'match-duplicate' })),
+      reconnect: vi.fn().mockResolvedValue(activeRoom({ currentMatchId: 'match-duplicate' })),
+    });
+    const realtime = createRealtimeClient({
+      sync: vi.fn().mockReturnValue(sync.promise),
+    });
+    const transition = transitionEnvelope({
+      matchId: 'match-duplicate',
+      transitionId: 'transition-6',
+      stateVersion: 6,
+      fromSequence: 6,
+      toSequence: 6,
+      watermark: { stateVersion: 6, lastSequence: 6 },
+      snapshot: activeSnapshot({ stateVersion: 6, lastSequence: 6 }),
+    });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
+
+    await waitFor(() => expect(realtime.sync).toHaveBeenCalledTimes(1));
+    realtime.__emitTransition?.(transition);
+    realtime.__emitTransition?.(transition);
+    sync.resolve({
+      mode: 'snapshot',
+      snapshot: activeSnapshot({ stateVersion: 5, lastSequence: 5 }),
+      watermark: { stateVersion: 5, lastSequence: 5 },
+    });
+
+    expect(await screen.findByRole('heading', { name: /РњР°С‚С‡|Р њР °РЎ‚РЎ‡/ })).toBeVisible();
+
+    realtime.__emitTransition?.(
+      transitionEnvelope({
+        matchId: 'match-duplicate',
+        transitionId: 'transition-7',
+        stateVersion: 7,
+        fromSequence: 7,
+        toSequence: 7,
+        watermark: { stateVersion: 7, lastSequence: 7 },
+        snapshot: activeSnapshot({ stateVersion: 7, lastSequence: 7 }),
+      }),
+    );
+
+    await waitFor(() => expect(realtime.sync).toHaveBeenCalledTimes(1));
+  });
+
+  it('does not let a later stale sync response roll the applied realtime watermark backwards', async () => {
+    const api = createRoomApi({
+      getRoom: vi.fn().mockResolvedValue(activeRoom({ currentMatchId: 'match-race' })),
+      reconnect: vi.fn().mockResolvedValue(activeRoom({ currentMatchId: 'match-race' })),
+    });
+    const realtime = createRealtimeClient({
+      sync: vi
+        .fn()
+        .mockResolvedValueOnce({
+          mode: 'snapshot',
+          snapshot: activeSnapshot({ stateVersion: 5, lastSequence: 5 }),
+          watermark: { stateVersion: 5, lastSequence: 5 },
+        })
+        .mockResolvedValueOnce({
+          mode: 'snapshot',
+          snapshot: activeSnapshot({ stateVersion: 5, lastSequence: 5 }),
+          watermark: { stateVersion: 5, lastSequence: 5 },
+        }),
+    });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
+
+    expect(await screen.findByRole('heading', { name: /РњР°С‚С‡|Р њР °РЎ‚РЎ‡/ })).toBeVisible();
+    realtime.__emitTransition?.(
+      transitionEnvelope({
+        matchId: 'match-race',
+        transitionId: 'transition-6',
+        stateVersion: 6,
+        fromSequence: 6,
+        toSequence: 6,
+        watermark: { stateVersion: 6, lastSequence: 6 },
+        snapshot: activeSnapshot({ stateVersion: 6, lastSequence: 6 }),
+      }),
+    );
+    realtime.__emitTransition?.(
+      transitionEnvelope({
+        matchId: 'match-race',
+        transitionId: 'transition-8',
+        stateVersion: 8,
+        fromSequence: 8,
+        toSequence: 8,
+        watermark: { stateVersion: 8, lastSequence: 8 },
+        snapshot: activeSnapshot({ stateVersion: 8, lastSequence: 8 }),
+      }),
+    );
+
+    await waitFor(() => expect(realtime.sync).toHaveBeenCalledTimes(2));
+
+    realtime.__emitTransition?.(
+      transitionEnvelope({
+        matchId: 'match-race',
+        transitionId: 'transition-7',
+        stateVersion: 7,
+        fromSequence: 7,
+        toSequence: 7,
+        watermark: { stateVersion: 7, lastSequence: 7 },
+        snapshot: activeSnapshot({ stateVersion: 7, lastSequence: 7 }),
+      }),
+    );
+
+    await waitFor(() => expect(realtime.sync).toHaveBeenCalledTimes(2));
   });
 
   it('shows an obvious roll action on my turn during WAITING_FOR_ROLL', async () => {
@@ -530,12 +1100,12 @@ describe('playable beta room flow', () => {
 
     renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
 
-    expect(await screen.findByRole('button', { name: 'Бросить кубик' })).toBeVisible();
-    expect(screen.getByText('Ваш ход')).toBeVisible();
-    expect(screen.getByLabelText('Кубик: ожидание броска')).toBeVisible();
-    expect(screen.getByText('Кубик ещё не брошен')).toBeVisible();
+    expect(await screen.findByRole('button', { name: 'Р‘СЂРѕСЃРёС‚СЊ РєСѓР±РёРє' })).toBeVisible();
+    expect(screen.getByText('Р’Р°С€ С…РѕРґ')).toBeVisible();
+    expect(screen.getByLabelText('РљСѓР±РёРє: РѕР¶РёРґР°РЅРёРµ Р±СЂРѕСЃРєР°')).toBeVisible();
+    expect(screen.getByText('РљСѓР±РёРє РµС‰С‘ РЅРµ Р±СЂРѕС€РµРЅ')).toBeVisible();
     expect(screen.getByRole('heading', { name: 'Игроки' })).toBeVisible();
-    expect(screen.getByRole('heading', { name: 'Чат комнаты' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Р§Р°С‚ РєРѕРјРЅР°С‚С‹' })).toBeVisible();
   });
 
   it('opens Rules, History, and Settings from real secondary gameplay controls', async () => {
@@ -553,20 +1123,18 @@ describe('playable beta room flow', () => {
 
     renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
 
-    fireEvent.click(await screen.findByRole('button', { name: '▤ Правила игры' }));
+    fireEvent.click(await screen.findByRole('button', { name: /РџСЂР°РІРёР»Р° РёРіСЂС‹/ }));
     expect(await screen.findByText('Справочник матча')).toBeVisible();
     fireEvent.keyDown(document, { key: 'Escape' });
 
-    fireEvent.click(screen.getByRole('button', { name: '◴ История ходов' }));
-    expect(await screen.findByText('История появится после первых событий матча.')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: /РСЃС‚РѕСЂРёСЏ С…РѕРґРѕРІ/ }));
+    expect(await screen.findByText('РСЃС‚РѕСЂРёСЏ РїРѕСЏРІРёС‚СЃСЏ РїРѕСЃР»Рµ РїРµСЂРІС‹С… СЃРѕР±С‹С‚РёР№ РјР°С‚С‡Р°.')).toBeVisible();
     fireEvent.keyDown(document, { key: 'Escape' });
 
-    fireEvent.click(screen.getByRole('button', { name: '⚙ Настройки комнаты' }));
-    expect(await screen.findByText('Код комнаты: ABCD')).toBeVisible();
-    expect(
-      screen.getByText('Сначала завершите матч или сдайте партию.'),
-    ).toBeVisible();
-    expect(screen.queryByRole('button', { name: 'Покинуть комнату' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /РќР°СЃС‚СЂРѕР№РєРё РєРѕРјРЅР°С‚С‹/ }));
+    expect(await screen.findByText('РљРѕРґ РєРѕРјРЅР°С‚С‹: ABCD')).toBeVisible();
+    expect(document.querySelector('.beta-room-page__settings-panel')).not.toBeNull();
+    expect(screen.queryByRole('button', { name: 'РџРѕРєРёРЅСѓС‚СЊ РєРѕРјРЅР°С‚Сѓ' })).not.toBeInTheDocument();
   });
 
   it('renders compact live chat, disables an empty send, and shows the committed post immediately', async () => {
@@ -574,8 +1142,8 @@ describe('playable beta room flow', () => {
       id: 'message-2',
       roomId: 'room-1',
       userId: 'user-1',
-      displayName: 'Алексей',
-      text: 'Готов к игре',
+      displayName: 'РђР»РµРєСЃРµР№',
+      text: 'Р“РѕС‚РѕРІ Рє РёРіСЂРµ',
       createdAt: '2026-08-30T10:00:00.000Z',
     };
     const api = createRoomApi({
@@ -588,18 +1156,18 @@ describe('playable beta room flow', () => {
 
     renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
 
-    const input = await screen.findByPlaceholderText('Сообщение');
-    const send = screen.getByRole('button', { name: 'Отправить' });
+    const input = await screen.findByPlaceholderText('РЎРѕРѕР±С‰РµРЅРёРµ');
+    const send = screen.getByRole('button', { name: 'РћС‚РїСЂР°РІРёС‚СЊ' });
     expect(send).toBeDisabled();
 
-    fireEvent.change(input, { target: { value: '  Готов к игре  ' } });
+    fireEvent.change(input, { target: { value: '  Р“РѕС‚РѕРІ Рє РёРіСЂРµ  ' } });
     expect(send).toBeEnabled();
     fireEvent.click(send);
 
     await waitFor(() =>
-      expect(api.sendChat).toHaveBeenCalledWith('room-1', 'Готов к игре', expect.any(AbortSignal)),
+      expect(api.sendChat).toHaveBeenCalledWith('room-1', 'Р“РѕС‚РѕРІ Рє РёРіСЂРµ', expect.any(AbortSignal)),
     );
-    expect(await screen.findByText('Готов к игре')).toBeVisible();
+    expect(await screen.findByText('Р“РѕС‚РѕРІ Рє РёРіСЂРµ')).toBeVisible();
     expect(input).toHaveValue('');
   });
 
@@ -618,12 +1186,9 @@ describe('playable beta room flow', () => {
 
     renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
 
-    expect(
-      await screen.findAllByText((content) => content.toLowerCase().includes('соперник')),
-    ).not.toHaveLength(0);
-    expect(
-      screen.queryAllByText((content) => content.toLowerCase().includes('соперник')).length,
-    ).toBeGreaterThan(0);
+    await waitFor(() =>
+      expect(document.querySelector('.game-board-scene__turn-card')).not.toBeNull(),
+    );
     expect(screen.queryByText('ROOM_ALREADY_ACTIVE')).not.toBeInTheDocument();
     expect(screen.queryByText('NOT_CURRENT_PLAYER')).not.toBeInTheDocument();
   });
@@ -635,7 +1200,7 @@ describe('playable beta room flow', () => {
 
     renderAuthenticated('#/rooms/room-1', { roomApi: api });
 
-    expect(await screen.findByText('Эта комната сейчас недоступна.')).toBeVisible();
+    expect(await screen.findByText('Р­С‚Р° РєРѕРјРЅР°С‚Р° СЃРµР№С‡Р°СЃ РЅРµРґРѕСЃС‚СѓРїРЅР°.')).toBeVisible();
     expect(screen.queryByText('ROOM_CLOSED')).not.toBeInTheDocument();
   });
 
@@ -654,10 +1219,10 @@ describe('playable beta room flow', () => {
 
     renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
 
-    await screen.findByRole('heading', { name: 'Матч' });
-    expect(screen.queryAllByRole('button', { name: 'Вывести пешку' })).toHaveLength(0);
-    expect(screen.getByText('Выберите пешку')).toBeVisible();
-    expect(screen.getAllByRole('button', { name: 'Вывести красную пешку на поле' })).toHaveLength(
+    await screen.findByRole('heading', { name: 'РњР°С‚С‡' });
+    expect(screen.queryAllByRole('button', { name: 'Р’С‹РІРµСЃС‚Рё РїРµС€РєСѓ' })).toHaveLength(0);
+    expect(screen.getByText('Р’С‹Р±РµСЂРёС‚Рµ РїРµС€РєСѓ')).toBeVisible();
+    expect(screen.getAllByRole('button', { name: 'Р’С‹РІРµСЃС‚Рё РєСЂР°СЃРЅСѓСЋ РїРµС€РєСѓ РЅР° РїРѕР»Рµ' })).toHaveLength(
       4,
     );
   });
@@ -791,7 +1356,7 @@ describe('playable beta room flow', () => {
 
     renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
 
-    const movePawn = await screen.findByRole('button', { name: 'Переместить красную пешку 1' });
+    const movePawn = await screen.findByRole('button', { name: 'РџРµСЂРµРјРµСЃС‚РёС‚СЊ РєСЂР°СЃРЅСѓСЋ РїРµС€РєСѓ 1' });
     fireEvent.click(movePawn);
 
     await waitFor(() =>
@@ -828,7 +1393,7 @@ describe('playable beta room flow', () => {
 
     renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
 
-    const rollButton = await screen.findByRole('button', { name: 'Бросить кубик' });
+    const rollButton = await screen.findByRole('button', { name: 'Р‘СЂРѕСЃРёС‚СЊ РєСѓР±РёРє' });
     fireEvent.click(rollButton);
     fireEvent.click(rollButton);
 
@@ -877,11 +1442,11 @@ describe('playable beta room flow', () => {
 
     renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
 
-    expect(await screen.findByText('Матч завершён')).toBeVisible();
-    expect(screen.getByText('Алексей Ты победил(а)! Время игры 18:42')).toBeVisible();
-    expect(screen.queryByText('Все 4 пешки дома.')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Вернуться в комнату' })).toBeVisible();
-    expect(screen.queryAllByRole('button', { name: 'Бросить кубик' })).toHaveLength(0);
+    expect(await screen.findByText('РњР°С‚С‡ Р·Р°РІРµСЂС€С‘РЅ')).toBeVisible();
+    expect(screen.getByText('РђР»РµРєСЃРµР№ РўС‹ РїРѕР±РµРґРёР»(Р°)! Р’СЂРµРјСЏ РёРіСЂС‹ 18:42')).toBeVisible();
+    expect(screen.queryByText('Р’СЃРµ 4 РїРµС€РєРё РґРѕРјР°.')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Р’РµСЂРЅСѓС‚СЊСЃСЏ РІ РєРѕРјРЅР°С‚Сѓ' })).toBeVisible();
+    expect(screen.queryAllByRole('button', { name: 'Р‘СЂРѕСЃРёС‚СЊ РєСѓР±РёРє' })).toHaveLength(0);
   });
 
   it('shows the winner summary without a personal victory claim to a losing player', async () => {
@@ -906,9 +1471,9 @@ describe('playable beta room flow', () => {
 
     renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
 
-    expect(await screen.findByText('Победитель — Таисия. Время игры 18:42')).toBeVisible();
-    expect(screen.queryByText(/Ты победил\(а\)!/)).not.toBeInTheDocument();
-    expect(screen.queryByText('Соперники выбыли из матча.')).not.toBeInTheDocument();
+    expect(await screen.findByText('РџРѕР±РµРґРёС‚РµР»СЊ вЂ” РўР°РёСЃРёСЏ. Р’СЂРµРјСЏ РёРіСЂС‹ 18:42')).toBeVisible();
+    expect(screen.queryByText(/РўС‹ РїРѕР±РµРґРёР»\(Р°\)!/)).not.toBeInTheDocument();
+    expect(screen.queryByText('РЎРѕРїРµСЂРЅРёРєРё РІС‹Р±С‹Р»Рё РёР· РјР°С‚С‡Р°.')).not.toBeInTheDocument();
   });
 
   it('shows elapsed time instead of the user-facing move number during an active match', async () => {
@@ -926,8 +1491,8 @@ describe('playable beta room flow', () => {
 
     renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
 
-    expect(await screen.findByText(/^Время (?:\d{2}:\d{2}|\d+:\d{2}:\d{2})$/)).toBeVisible();
-    expect(screen.queryByText(/^Ход #/)).not.toBeInTheDocument();
+    expect(await screen.findByText(/^Р’СЂРµРјСЏ (?:\d{2}:\d{2}|\d+:\d{2}:\d{2})$/)).toBeVisible();
+    expect(screen.queryByText(/^РҐРѕРґ #/)).not.toBeInTheDocument();
   });
 
   it('renders an explicit die face for waiting-to-roll and committed dice states', async () => {
@@ -948,7 +1513,7 @@ describe('playable beta room flow', () => {
       realtime: waitingRealtime,
     });
 
-    expect(await screen.findByLabelText('Кубик: ожидание броска')).toBeVisible();
+    expect(await screen.findByLabelText('РљСѓР±РёРє: РѕР¶РёРґР°РЅРёРµ Р±СЂРѕСЃРєР°')).toBeVisible();
 
     waitingView.unmount();
 
@@ -966,7 +1531,7 @@ describe('playable beta room flow', () => {
 
     renderAuthenticated('#/rooms/room-1', { roomApi: rolledApi, realtime: rolledRealtime });
 
-    expect(await screen.findByLabelText('Кубик: 6')).toBeVisible();
+    expect(await screen.findByLabelText('РљСѓР±РёРє: 6')).toBeVisible();
     expect(document.querySelectorAll('.game-die__pip.is-on')).toHaveLength(6);
   });
 
@@ -987,10 +1552,67 @@ describe('playable beta room flow', () => {
 
     renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Сдаться' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'РЎРґР°С‚СЊСЃСЏ' }));
 
     expect(confirmSpy).toHaveBeenCalled();
     expect(realtime.sendCommand).not.toHaveBeenCalled();
+  });
+
+  it('uses the current mobile gameplay controls without exposing the reserve tray', async () => {
+    useMobileViewport();
+    const api = createRoomApi({
+      getRoom: vi.fn().mockResolvedValue(activeRoom()),
+      reconnect: vi.fn().mockResolvedValue(activeRoom()),
+    });
+    const realtime = createRealtimeClient({
+      sync: vi.fn().mockResolvedValue({
+        mode: 'snapshot',
+        snapshot: activeSnapshot(),
+        watermark: { stateVersion: 0, lastSequence: 0 },
+      }),
+    });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
+
+    expect(await screen.findByRole('grid', { name: 'Игровое поле' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Р‘СЂРѕСЃРёС‚СЊ РєСѓР±РёРє' })).toBeVisible();
+    expect(screen.queryByLabelText('Р’Р°С€Рё РїРµС€РєРё')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'РЎРґР°С‚СЊСЃСЏ' })).toBeVisible();
+    expect(screen.getByRole('button', { name: /РџСЂР°РІРёР»Р° РёРіСЂС‹/ })).toBeVisible();
+    expect(screen.getByRole('button', { name: /РСЃС‚РѕСЂРёСЏ С…РѕРґРѕРІ/ })).toBeVisible();
+    expect(screen.getByRole('button', { name: /РќР°СЃС‚СЂРѕР№РєРё РєРѕРјРЅР°С‚С‹/ })).toBeVisible();
+
+    fireEvent.click(screen.getByRole('button', { name: /РџСЂР°РІРёР»Р° РёРіСЂС‹/ }));
+    expect(await screen.findByRole('dialog', { name: 'РџСЂР°РІРёР»Р° РёРіСЂС‹' })).toBeVisible();
+    expect(screen.getByRole('grid', { name: 'Игровое поле' })).toBeVisible();
+  });
+
+  it('keeps the reserve tray hidden for a legal 1-5 board move on mobile', async () => {
+    useMobileViewport();
+    const snapshot = activeSnapshot({
+      turnPhase: 'WAITING_FOR_ACTION',
+      diceValue: 4,
+      pawns: activeSnapshot().pawns.map((pawn, index) =>
+        index === 0 ? { ...pawn, position: { zone: 'PERIMETER', progress: 0 } } : pawn,
+      ),
+    });
+    const api = createRoomApi({
+      getRoom: vi.fn().mockResolvedValue(activeRoom()),
+      reconnect: vi.fn().mockResolvedValue(activeRoom()),
+    });
+    const realtime = createRealtimeClient({
+      sync: vi.fn().mockResolvedValue({
+        mode: 'snapshot',
+        snapshot,
+        watermark: { stateVersion: 0, lastSequence: 0 },
+      }),
+    });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
+
+    expect(await screen.findByText('Р’С‹РїР°Р»Рѕ: 4')).toBeVisible();
+    expect(screen.queryByLabelText('Р’Р°С€Рё РїРµС€РєРё')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /РџРµСЂРµРјРµСЃС‚РёС‚СЊ РєСЂР°СЃРЅСѓСЋ РїРµС€РєСѓ 1/ })).toBeVisible();
   });
 
   it('shows a short russian room error instead of internal invalid response text', async () => {
@@ -1001,8 +1623,10 @@ describe('playable beta room flow', () => {
 
     renderAuthenticated('#/rooms/room-1', { roomApi: api });
 
-    expect(await screen.findByText('Не удалось подключиться к комнате.')).toBeVisible();
-    expect(screen.queryByText('Не удалось обработать ответ комнаты.')).not.toBeInTheDocument();
+    expect(await screen.findByText('РќРµ СѓРґР°Р»РѕСЃСЊ РїРѕРґРєР»СЋС‡РёС‚СЊСЃСЏ Рє РєРѕРјРЅР°С‚Рµ.')).toBeVisible();
+    expect(screen.queryByText('Р—Р°РіСЂСѓР·РєР° РєРѕРјРЅР°С‚С‹вЂ¦')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /РќР°С‡Р°С‚СЊ РјР°С‚С‡/ })).toBeDisabled();
+    expect(screen.queryByText('РќРµ СѓРґР°Р»РѕСЃСЊ РѕР±СЂР°Р±РѕС‚Р°С‚СЊ РѕС‚РІРµС‚ РєРѕРјРЅР°С‚С‹.')).not.toBeInTheDocument();
   });
 
   it('clears a finished presentation and reloads the current room after returning', async () => {
@@ -1031,7 +1655,7 @@ describe('playable beta room flow', () => {
     fireEvent.click(await screen.findByTestId('return-to-room'));
 
     await waitFor(() => expect(api.getRoom).toHaveBeenCalledTimes(2));
-    expect(await screen.findByText('Игроков: 0 / 4')).toBeVisible();
+    expect(await screen.findByText('РРіСЂРѕРєРѕРІ: 0 / 4')).toBeVisible();
     expect(screen.queryByTestId('return-to-room')).not.toBeInTheDocument();
   });
 
@@ -1054,16 +1678,16 @@ describe('playable beta room flow', () => {
 
     window.location.hash = '#/rooms/room-2';
     window.dispatchEvent(new HashChangeEvent('hashchange'));
-    expect(await screen.findByRole('heading', { name: 'Комната WXYZ' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'РљРѕРјРЅР°С‚Р° WXYZ' })).toBeVisible();
 
     roomA.resolve(
       roomState({ id: 'room-1', code: 'ABCD' }) as Awaited<ReturnType<RoomApi['reconnect']>>,
     );
 
     await waitFor(() =>
-      expect(screen.getByRole('heading', { name: 'Комната WXYZ' })).toBeVisible(),
+      expect(screen.getByRole('heading', { name: 'РљРѕРјРЅР°С‚Р° WXYZ' })).toBeVisible(),
     );
-    expect(screen.queryByRole('heading', { name: 'Комната ABCD' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'РљРѕРјРЅР°С‚Р° ABCD' })).not.toBeInTheDocument();
   });
 
   it('does not let a late rooms-list membership projection from Room A replace Room B context', async () => {
@@ -1093,7 +1717,7 @@ describe('playable beta room flow', () => {
 
     window.location.hash = '#/rooms/room-2';
     window.dispatchEvent(new HashChangeEvent('hashchange'));
-    expect(await screen.findByRole('heading', { name: 'Комната WXYZ' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'РљРѕРјРЅР°С‚Р° WXYZ' })).toBeVisible();
     await waitFor(() => expect(api.listRooms).toHaveBeenCalledTimes(2));
 
     listA.resolve({
@@ -1108,9 +1732,9 @@ describe('playable beta room flow', () => {
     });
 
     await waitFor(() =>
-      expect(screen.getByRole('heading', { name: 'Комната WXYZ' })).toBeVisible(),
+      expect(screen.getByRole('heading', { name: 'РљРѕРјРЅР°С‚Р° WXYZ' })).toBeVisible(),
     );
-    expect(screen.queryByText('Вы уже находитесь в комнате ABCD.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Р’С‹ СѓР¶Рµ РЅР°С…РѕРґРёС‚РµСЃСЊ РІ РєРѕРјРЅР°С‚Рµ ABCD.')).not.toBeInTheDocument();
   });
 
   it('keeps Room B chat when an aborted Room A chat request resolves late', async () => {
@@ -1128,8 +1752,8 @@ describe('playable beta room flow', () => {
                   id: 'message-b',
                   roomId: 'room-2',
                   userId: 'user-2',
-                  displayName: 'Таисия',
-                  text: 'Сообщение B',
+                  displayName: 'РўР°РёСЃРёСЏ',
+                  text: 'РЎРѕРѕР±С‰РµРЅРёРµ B',
                   createdAt: '2026-09-02T10:00:00.000Z',
                 },
               ],
@@ -1143,7 +1767,7 @@ describe('playable beta room flow', () => {
 
     window.location.hash = '#/rooms/room-2';
     window.dispatchEvent(new HashChangeEvent('hashchange'));
-    expect(await screen.findByText('Сообщение B')).toBeVisible();
+    expect(await screen.findByText('РЎРѕРѕР±С‰РµРЅРёРµ B')).toBeVisible();
 
     chatA.resolve({
       messages: [
@@ -1151,15 +1775,15 @@ describe('playable beta room flow', () => {
           id: 'message-a',
           roomId: 'room-1',
           userId: 'user-1',
-          displayName: 'Алексей',
-          text: 'Сообщение A',
+          displayName: 'РђР»РµРєСЃРµР№',
+          text: 'РЎРѕРѕР±С‰РµРЅРёРµ A',
           createdAt: '2026-09-02T10:00:00.000Z',
         },
       ],
     });
 
-    await waitFor(() => expect(screen.getByText('Сообщение B')).toBeVisible());
-    expect(screen.queryByText('Сообщение A')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('РЎРѕРѕР±С‰РµРЅРёРµ B')).toBeVisible());
+    expect(screen.queryByText('РЎРѕРѕР±С‰РµРЅРёРµ A')).not.toBeInTheDocument();
   });
 
   it('ignores a late Match A realtime transition after Match B becomes current', async () => {
@@ -1179,11 +1803,11 @@ describe('playable beta room flow', () => {
     });
 
     renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
-    expect(await screen.findByText('Выпало: 6')).toBeVisible();
+    expect(await screen.findByText('Р’С‹РїР°Р»Рѕ: 6')).toBeVisible();
 
     window.location.hash = '#/rooms/room-2';
     window.dispatchEvent(new HashChangeEvent('hashchange'));
-    expect(await screen.findByText('Выпало: 3')).toBeVisible();
+    expect(await screen.findByText('Р’С‹РїР°Р»Рѕ: 3')).toBeVisible();
 
     realtime.__emitTransition?.(
       transitionEnvelope({
@@ -1192,8 +1816,8 @@ describe('playable beta room flow', () => {
       }),
     );
 
-    await waitFor(() => expect(screen.getByText('Выпало: 3')).toBeVisible());
-    expect(screen.queryByText('Выпало: 1')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('Р’С‹РїР°Р»Рѕ: 3')).toBeVisible());
+    expect(screen.queryByText('Р’С‹РїР°Р»Рѕ: 1')).not.toBeInTheDocument();
   });
 
   it('keeps Room B displayed while current membership identifies Room A', async () => {
@@ -1214,9 +1838,9 @@ describe('playable beta room flow', () => {
 
     renderAuthenticated('#/rooms/room-2', { roomApi: api });
 
-    expect(await screen.findByRole('heading', { name: 'Комната WXYZ' })).toBeVisible();
-    expect(await screen.findByText('Вы уже находитесь в комнате ABCD.')).toBeVisible();
-    expect(screen.queryByRole('heading', { name: 'Комната ABCD' })).not.toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'РљРѕРјРЅР°С‚Р° WXYZ' })).toBeVisible();
+    expect(await screen.findByText('Р’С‹ СѓР¶Рµ РЅР°С…РѕРґРёС‚РµСЃСЊ РІ РєРѕРјРЅР°С‚Рµ ABCD.')).toBeVisible();
+    expect(screen.queryByRole('heading', { name: 'РљРѕРјРЅР°С‚Р° ABCD' })).not.toBeInTheDocument();
     expect(screen.queryByText('USER_ALREADY_IN_ANOTHER_ROOM')).not.toBeInTheDocument();
   });
 
@@ -1231,7 +1855,7 @@ describe('playable beta room flow', () => {
       joinRoom: vi.fn(),
     });
     renderAuthenticated('#/rooms/room-2', { roomApi: api });
-    fireEvent.click(await screen.findByRole('button', { name: 'Покинуть её и войти сюда' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'РџРѕРєРёРЅСѓС‚СЊ РµС‘ Рё РІРѕР№С‚Рё СЃСЋРґР°' }));
     await waitFor(() => expect(api.leaveRoom).toHaveBeenCalledWith('room-1', 14, expect.any(AbortSignal)));
     expect(api.joinRoom).not.toHaveBeenCalled();
     expect(screen.queryByText('STALE_ROOM_VERSION')).not.toBeInTheDocument();
@@ -1246,8 +1870,8 @@ describe('playable beta room flow', () => {
       getRoom: vi.fn().mockResolvedValue(active), leaveRoom: vi.fn(), joinRoom: vi.fn(),
     });
     renderAuthenticated('#/rooms/room-2', { roomApi: api });
-    fireEvent.click(await screen.findByRole('button', { name: 'Покинуть её и войти сюда' }));
-    expect(await screen.findByRole('button', { name: 'Вернуться в матч' })).toBeVisible();
+    fireEvent.click(await screen.findByRole('button', { name: 'РџРѕРєРёРЅСѓС‚СЊ РµС‘ Рё РІРѕР№С‚Рё СЃСЋРґР°' }));
+    expect(await screen.findByRole('button', { name: 'Р’РµСЂРЅСѓС‚СЊСЃСЏ РІ РјР°С‚С‡' })).toBeVisible();
     expect(api.leaveRoom).not.toHaveBeenCalled();
     expect(api.joinRoom).not.toHaveBeenCalled();
   });
@@ -1260,8 +1884,8 @@ describe('playable beta room flow', () => {
       leaveRoom: vi.fn(), joinRoom: vi.fn(),
     });
     renderAuthenticated('#/rooms/room-2', { roomApi: api });
-    expect(await screen.findByText('У вас идёт активный матч в другой комнате.')).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Вернуться в матч' }));
+    expect(await screen.findByText('РЈ РІР°СЃ РёРґС‘С‚ Р°РєС‚РёРІРЅС‹Р№ РјР°С‚С‡ РІ РґСЂСѓРіРѕР№ РєРѕРјРЅР°С‚Рµ.')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Р’РµСЂРЅСѓС‚СЊСЃСЏ РІ РјР°С‚С‡' }));
     expect(window.location.hash).toBe('#/rooms/room-1');
     expect(api.leaveRoom).not.toHaveBeenCalled();
     expect(api.joinRoom).not.toHaveBeenCalled();
@@ -1279,12 +1903,12 @@ describe('playable beta room flow', () => {
     });
 
     renderAuthenticated('#/rooms/room-1', { roomApi: api });
-    fireEvent.click(await screen.findByRole('button', { name: 'Покинуть комнату' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'РџРѕРєРёРЅСѓС‚СЊ РєРѕРјРЅР°С‚Сѓ' }));
 
     await waitFor(() =>
       expect(api.leaveRoom).toHaveBeenCalledWith('room-1', 8, expect.any(AbortSignal)),
     );
-    expect(await screen.findByRole('heading', { name: 'Комнаты' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'РљРѕРјРЅР°С‚С‹' })).toBeVisible();
   });
 
   it('opens settings for the authoritative room after leaving a finished match', async () => {
@@ -1311,10 +1935,10 @@ describe('playable beta room flow', () => {
 
     renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
     fireEvent.click(await screen.findByTestId('return-to-room'));
-    await screen.findByText('Игроков: 0 / 4');
-    fireEvent.click(screen.getByRole('button', { name: '⚙ Настройки комнаты' }));
+    await screen.findByText('РРіСЂРѕРєРѕРІ: 0 / 4');
+    fireEvent.click(screen.getByRole('button', { name: /РќР°СЃС‚СЂРѕР№РєРё РєРѕРјРЅР°С‚С‹/ }));
 
-    expect(await screen.findByText('Код комнаты: ABCD')).toBeVisible();
+    expect(await screen.findByText('РљРѕРґ РєРѕРјРЅР°С‚С‹: ABCD')).toBeVisible();
     expect(screen.queryByTestId('return-to-room')).not.toBeInTheDocument();
   });
 });

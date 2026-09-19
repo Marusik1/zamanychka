@@ -228,7 +228,7 @@ function TutorialBoard({
   );
 }
 
-export function RulesPage({ guidedStartKey }: { guidedStartKey?: number }) {
+export function RulesPage({ guidedStartKey, onBack }: { guidedStartKey?: number; onBack?: () => void }) {
   const [guidedStepIndex, setGuidedStepIndex] = useState<number | null>(null);
 
   useEffect(() => {
@@ -340,6 +340,7 @@ export function RulesPage({ guidedStartKey }: { guidedStartKey?: number }) {
           <p className="rules-page__eyebrow">Справочник матча</p>
           <h1>{rulesContent.screenTitle}</h1>
         </div>
+        {onBack ? <Button variant="ghost" onClick={onBack}>Назад</Button> : null}
       </section>
 
       <Panel as="section" className="rules-page__intro">

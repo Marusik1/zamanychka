@@ -50,7 +50,6 @@ export function ProfilePage({ data }: { data: ProfileResponseDto }) {
       <section className="profile-page__results">
         <div className="profile-page__section-header">
           <div>
-            <p className="profile-page__eyebrow">Последние результаты</p>
             <h2>Недавние матчи</h2>
           </div>
           <div className="profile-page__section-actions">
@@ -58,7 +57,7 @@ export function ProfilePage({ data }: { data: ProfileResponseDto }) {
               Правила игры
             </a>
             <a className="profile-page__link-button" href="#/profile/history">
-              Вся история
+              Вся история <span aria-hidden="true">→</span>
             </a>
           </div>
         </div>

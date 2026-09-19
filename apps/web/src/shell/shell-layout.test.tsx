@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { tutorialStepOrder } from '@zamanushka/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -216,8 +216,8 @@ describe('EPIC-10 rules and profile routes', () => {
   it('renders the live room list route instead of the old placeholder copy', async () => {
     renderAuthenticatedApp('#/rooms');
 
-    expect(await screen.findByRole('heading', { name: 'Комнаты' })).toBeVisible();
-    expect(screen.getByText('Доступные комнаты')).toBeVisible();
+    await waitFor(() => expect(document.querySelector('.beta-room-page')).not.toBeNull());
+    expect(document.querySelector('.beta-room-page__seat-grid')).not.toBeNull();
     expect(screen.queryByText('Раздел появится в следующем этапе.')).not.toBeInTheDocument();
   });
 

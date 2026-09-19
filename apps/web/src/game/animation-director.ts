@@ -5,17 +5,19 @@ import type { DieValue } from './dice.js';
 import type { PawnMotion } from './pawns.js';
 
 export const ANIMATION_TIMINGS = {
-  moveBaseMs: 232,
-  moveExtraMs: 86,
-  moveMaxMs: 720,
-  enterMs: 190,
-  captureImpactMs: 110,
+  moveBaseMs: 150,
+  moveExtraMs: 126,
+  moveMaxMs: 900,
+  cornerSettleMs: 80,
+  enterMs: 340,
+  captureImpactMs: 120,
   captureHoldMs: 0,
-  captureExitMs: 170,
-  homeCueMs: 200,
+  captureExitMs: 360,
+  homeCueMs: 340,
   diceMs: 920,
   homeCompletePulseMs: 140,
   victoryMs: 680,
+  resultDelayMs: 240,
   turnMs: 220,
   extraRollMs: 180,
   removedMs: 280,
@@ -253,6 +255,10 @@ function compressedMoveSegmentMs(pathLength: number): number {
   return Math.round(movementDurationMs(pathLength) / pathLength);
 }
 
+export function isPerimeterCorner(coord: Readonly<{ row: number; col: number }>): boolean {
+  return (coord.row === 0 || coord.row === 7) && (coord.col === 0 || coord.col === 7);
+}
+
 function captureVectorVars(
   fromCoord: BoardCoord | null,
   toCoord: BoardCoord,
@@ -362,7 +368,7 @@ export function buildGameplayAnimationFrames({
         state = pushFrame(frames, state, reducedMotion ? 0 : ANIMATION_TIMINGS.frameCommitMs);
         const pathLength = event.payload.physicalPath.length;
         const segmentMs = reducedMotion ? 70 : compressedMoveSegmentMs(pathLength);
-        for (const coord of event.payload.physicalPath) {
+        for (const [index, coord] of event.payload.physicalPath.entries()) {
           state = withPawnVisual(state, {
             pawnId: pawn.pawnId,
             playerId: pawn.playerId,
@@ -374,12 +380,22 @@ export function buildGameplayAnimationFrames({
             transitionEasing: 'cubic-bezier(0.18, 0.82, 0.22, 1)',
           });
           state = pushFrame(frames, state, segmentMs);
+          if (
+            !reducedMotion &&
+            index < event.payload.physicalPath.length - 1 &&
+            isPerimeterCorner(coord as BoardCoord)
+          ) {
+            state = pushFrame(frames, state, ANIMATION_TIMINGS.cornerSettleMs);
+          }
         }
         break;
       }
       case 'pawnCaptured': {
         const pawn = pawnById(initialSnapshot, event.payload.capturedPawnId);
         if (!pawn) break;
+        const attacker =
+          pawnById(initialSnapshot, event.payload.byPawnId) ??
+          pawnById(transition.snapshot, event.payload.byPawnId);
         const attackerMove = [...transition.events].reverse().find(
           (candidate) =>
             candidate.type === 'pawnMoved' &&
@@ -399,6 +415,16 @@ export function buildGameplayAnimationFrames({
           captureToast(initialSnapshot, event.payload.byPlayerId, event.payload.capturedPawnId),
         );
         state = withCue(state, { coord: event.payload.atCoord as BoardCoord, tone: 'capture' });
+        if (attacker) {
+          state = withPawnVisual(state, {
+            pawnId: attacker.pawnId,
+            playerId: attacker.playerId,
+            color: attacker.color,
+            motion: 'capture-impact',
+            anchor: boardAnchor(event.payload.atCoord as BoardCoord),
+            position: attacker.position,
+          });
+        }
         state = withHidden(state, pawn.pawnId);
         state = withPawnVisual(state, {
           pawnId: pawn.pawnId,
@@ -409,17 +435,18 @@ export function buildGameplayAnimationFrames({
           position: pawn.position,
           ...(effectVars ? { effectVars } : {}),
         });
-        state = pushFrame(frames, state, reducedMotion ? 0 : 60);
+        state = pushFrame(frames, state, reducedMotion ? 0 : ANIMATION_TIMINGS.captureImpactMs);
         state = withPawnVisual(state, {
           pawnId: pawn.pawnId,
           playerId: pawn.playerId,
           color: pawn.color,
-          motion: 'captured',
-          anchor: boardAnchor(event.payload.atCoord as BoardCoord),
-          position: pawn.position,
-          ...(effectVars ? { effectVars } : {}),
+          motion: 'capture-return',
+          anchor: reserveAnchor(pawn),
+          position: { zone: 'OFF_BOARD' },
+          transitionMs: reducedMotion ? 140 : ANIMATION_TIMINGS.captureExitMs,
+          transitionEasing: 'cubic-bezier(0.22, 0.72, 0.2, 1)',
         });
-        state = pushFrame(frames, state, reducedMotion ? 100 : 180);
+        state = pushFrame(frames, state, reducedMotion ? 140 : ANIMATION_TIMINGS.captureExitMs);
         state = withoutPawnVisual(state, pawn.pawnId);
         state = pushFrame(frames, withCue(state, null), 0);
         break;
@@ -433,7 +460,7 @@ export function buildGameplayAnimationFrames({
           pawnId: pawn.pawnId,
           playerId: pawn.playerId,
           color: pawn.color,
-          motion: 'home-cue',
+          motion: event.payload.homeIndex === 3 ? 'home-final' : 'home-cue',
           anchor: boardAnchor(event.payload.toCoord as BoardCoord),
           position: { zone: 'HOME', homeIndex: event.payload.homeIndex },
         });
@@ -473,6 +500,7 @@ export function buildGameplayAnimationFrames({
         if (event.payload.reason === 'HOME_DIAGONAL_COMPLETED') {
           state = buildHomeCompletionFrames(frames, state, transition.snapshot, event.payload.winnerPlayerId);
         }
+        state = pushFrame(frames, state, reducedMotion ? 120 : ANIMATION_TIMINGS.resultDelayMs);
         state = {
           ...cloneState(state),
           victoryPlayerId: event.payload.winnerPlayerId,

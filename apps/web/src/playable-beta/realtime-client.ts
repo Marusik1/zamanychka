@@ -1,5 +1,6 @@
 import { io, type Socket } from 'socket.io-client';
 import {
+  REALTIME_PROTOCOL_VERSION,
   gameCommandResultSchema,
   gameSyncResponseSchema,
   transitionEnvelopeSchema,
@@ -12,6 +13,19 @@ import {
 } from '@zamanushka/shared';
 
 export type RealtimeSubscription = (transition: TransitionEnvelope) => void;
+
+type ClientTelemetryEvent = Readonly<{
+  event: string;
+  at: string;
+  [key: string]: unknown;
+}>;
+
+declare global {
+  interface Window {
+    __zGameplayTelemetry?: ClientTelemetryEvent[];
+    __zActiveSocketInstances?: number;
+  }
+}
 
 export interface RealtimeClient {
   ensureConnected(): Promise<void>;
@@ -35,6 +49,22 @@ function ackPromise<T>(emit: (ack: (value: unknown) => void) => void, parser: (v
   });
 }
 
+function telemetryEnabled() {
+  if (typeof window === 'undefined') return false;
+  return window.localStorage.getItem('zamanushka:gameplayTelemetry') === 'true';
+}
+
+function recordTelemetry(event: string, payload: Record<string, unknown> = {}) {
+  if (!telemetryEnabled()) return;
+  const entry: ClientTelemetryEvent = {
+    event,
+    at: new Date().toISOString(),
+    ...payload,
+  };
+  window.__zGameplayTelemetry = [...(window.__zGameplayTelemetry ?? []), entry].slice(-500);
+  console.info('[gameplay-realtime]', entry);
+}
+
 export function createRealtimeClient(): RealtimeClient {
   let socket: Socket | null = null;
   const listeners = new Set<RealtimeSubscription>();
@@ -47,10 +77,48 @@ export function createRealtimeClient(): RealtimeClient {
       withCredentials: true,
       autoConnect: false,
     });
+    if (typeof window !== 'undefined') {
+      window.__zActiveSocketInstances = (window.__zActiveSocketInstances ?? 0) + 1;
+      recordTelemetry('socket-created', {
+        activeSocketInstances: window.__zActiveSocketInstances,
+      });
+    }
+    socket.on('connect', () => {
+      recordTelemetry('socket-connect', {
+        socketId: socket?.id,
+        transport: socket?.io.engine.transport.name,
+        socketUrl: `${window.location.origin}/socket.io`,
+      });
+    });
+    socket.on('disconnect', (reason) => {
+      recordTelemetry('socket-disconnect', { reason });
+    });
+    socket.on('connect_error', (error) => {
+      recordTelemetry('socket-connect-error', { message: error.message });
+    });
+    socket.io.engine.on('upgrade', (transport) => {
+      recordTelemetry('socket-upgrade', { transport: transport.name });
+    });
     socket.on('game:event', (payload: unknown) => {
+      const receivedAt = performance.now();
       const parsed = transitionEnvelopeSchema.safeParse(payload);
       if (!parsed.success) return;
+      recordTelemetry('game-event-received', {
+        matchId: parsed.data.matchId,
+        transitionId: parsed.data.transitionId,
+        stateVersion: parsed.data.stateVersion,
+        fromSequence: parsed.data.fromSequence,
+        toSequence: parsed.data.toSequence,
+        eventCount: parsed.data.events.length,
+        listenerCount: listeners.size,
+      });
       listeners.forEach((listener) => listener(parsed.data));
+      recordTelemetry('game-event-dispatched-to-listeners', {
+        matchId: parsed.data.matchId,
+        transitionId: parsed.data.transitionId,
+        listenerCount: listeners.size,
+        receiveToDispatchMs: Math.round((performance.now() - receivedAt) * 100) / 100,
+      });
     });
     return socket;
   }
@@ -79,13 +147,22 @@ export function createRealtimeClient(): RealtimeClient {
     },
     subscribe(listener) {
       listeners.add(listener);
-      return () => listeners.delete(listener);
+      recordTelemetry('listener-added', { listenerCount: listeners.size });
+      return () => {
+        listeners.delete(listener);
+        recordTelemetry('listener-removed', { listenerCount: listeners.size });
+      };
     },
     async joinMatch(matchId) {
       await this.ensureConnected();
       const request: MatchSubscriptionRequest = { matchId };
       await ackPromise(
-        (ack) => currentSocket().emit('match:join', request, ack),
+        (ack) =>
+          currentSocket().emit(
+            'match:join',
+            { ...request, realtimeProtocolVersion: REALTIME_PROTOCOL_VERSION },
+            ack,
+          ),
         (value) => {
           if (
             typeof value === 'object' &&
@@ -108,12 +185,36 @@ export function createRealtimeClient(): RealtimeClient {
     },
     async sendCommand(command) {
       await this.ensureConnected();
+      const sentAt = performance.now();
+      recordTelemetry('command-sent', {
+        matchId: command.matchId,
+        actionId: command.actionId,
+        type: command.type,
+        expectedStateVersion: command.expectedStateVersion,
+      });
       return ackPromise(
         (ack) => currentSocket().emit('game:command', command, ack),
-        (value) => gameCommandResultSchema.parse(value),
+        (value) => {
+          const parsed = gameCommandResultSchema.parse(value);
+          recordTelemetry('command-ack', {
+            matchId: command.matchId,
+            actionId: command.actionId,
+            type: command.type,
+            ok: parsed.ok,
+            stateVersion: parsed.stateVersion,
+            socketRoundTripMs: Math.round((performance.now() - sentAt) * 100) / 100,
+          });
+          return parsed;
+        },
       );
     },
     disconnect() {
+      if (socket && typeof window !== 'undefined') {
+        window.__zActiveSocketInstances = Math.max(0, (window.__zActiveSocketInstances ?? 1) - 1);
+        recordTelemetry('socket-destroyed', {
+          activeSocketInstances: window.__zActiveSocketInstances,
+        });
+      }
       socket?.disconnect();
       socket = null;
     },

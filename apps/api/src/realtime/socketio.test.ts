@@ -4,6 +4,7 @@ import Fastify from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { io as createClient, type Socket } from 'socket.io-client';
 import { createActiveGameState } from '@zamanushka/game-engine';
+import type { TransitionEnvelope } from '@zamanushka/shared';
 
 import { createRealtimeRuntime } from './socketio.js';
 
@@ -53,15 +54,16 @@ function createAuthService() {
       if (token === 'session-a') return { user: { id: 'user-a' } } as never;
       if (token === 'session-b') return { user: { id: 'user-b' } } as never;
       if (token === 'session-c') return { user: { id: 'user-c' } } as never;
+      if (token === 'session-d') return { user: { id: 'user-d' } } as never;
       throw new Error('AUTH_REQUIRED');
     },
   } satisfies AuthServiceLike;
 }
 
-function createMatchRepository(current = matchSnapshot()) {
+function createMatchRepository(current = matchSnapshot(), seatOrder = ['user-a', 'user-b']) {
   const match = {
     id: 'match-1',
-    seatOrder: ['user-a', 'user-b'],
+    seatOrder,
     snapshot: current,
     status: 'ACTIVE',
   };
@@ -102,6 +104,7 @@ async function startRuntime(options?: {
     lastSequence: number;
   }) => Promise<unknown[]>;
   commandProcessor?: CommandProcessorLike;
+  cookieName?: string;
   redisUrl?: string;
 }) {
   const app = Fastify();
@@ -110,6 +113,7 @@ async function startRuntime(options?: {
     auth: (options?.auth ?? createAuthService()) as unknown as Parameters<
       typeof createRealtimeRuntime
     >[0]['auth'],
+    cookieName: options?.cookieName ?? '__Host-zamanushka-session',
     matchRepository: (options?.matchRepository ?? createMatchRepository()) as unknown as Parameters<
       typeof createRealtimeRuntime
     >[0]['matchRepository'],
@@ -183,6 +187,24 @@ describe('Socket.IO realtime publication and subscriptions', () => {
     servers.push(server);
 
     const socket = connectClient(server.url, sessionHeader('session-a').cookie);
+    await waitForEvent(socket, 'connect');
+
+    const result = await new Promise<{ ok: boolean; code?: string }>((resolve) => {
+      socket.emit('match:join', { matchId: 'match-1' }, resolve);
+    });
+
+    expect(result).toEqual({ ok: true });
+    socket.disconnect();
+  });
+
+  it('uses the configured session cookie for socket auth when stale host-prefixed cookies also exist', async () => {
+    const server = await startRuntime({ cookieName: 'zamanushka-session' });
+    servers.push(server);
+
+    const socket = connectClient(
+      server.url,
+      '__Host-zamanushka-session=session-c; zamanushka-session=session-a',
+    );
     await waitForEvent(socket, 'connect');
 
     const result = await new Promise<{ ok: boolean; code?: string }>((resolve) => {
@@ -329,6 +351,79 @@ describe('Socket.IO realtime publication and subscriptions', () => {
     socket.disconnect();
   });
 
+  it('dispatches a committed command outbox row immediately instead of waiting for the polling loop', async () => {
+    const payload = {
+      matchId: 'match-1',
+      transitionId: 'action-1',
+      stateVersion: 1,
+      fromSequence: 1,
+      toSequence: 1,
+      events: [
+        {
+          matchId: 'match-1',
+          eventId: 'match-1:1',
+          sequence: 1,
+          stateVersion: 1,
+          type: 'diceRolled',
+          payload: { playerId: 'user-a', diceValue: 4 },
+          createdAt: '2026-08-25T00:00:00.000Z',
+        },
+      ],
+    };
+    const outbox = createOutboxStore({
+      id: 'outbox-1',
+      matchId: 'match-1',
+      resultingStateVersion: 1,
+      payload,
+    });
+    const processor = {
+      process: vi.fn(async () => ({
+        ok: true,
+        matchId: 'match-1',
+        actionId: 'action-1',
+        stateVersion: 1,
+        lastSequence: 1,
+        snapshot: matchSnapshot(),
+        events: payload.events,
+        ack: { actionId: 'action-1', stateVersion: 1, lastSequence: 1 },
+      })),
+    };
+    const server = await startRuntime({ commandProcessor: processor, outbox });
+    servers.push(server);
+
+    const socket = connectClient(server.url, sessionHeader('session-a').cookie);
+    await waitForEvent(socket, 'connect');
+    await new Promise((resolve) => socket.emit('match:join', { matchId: 'match-1' }, resolve));
+
+    const eventPromise = waitForEvent(socket, 'game:event');
+    const ack = await new Promise<{ ok: boolean; actionId: string }>((resolve) => {
+      socket.emit(
+        'game:command',
+        {
+          type: 'ROLL_DICE',
+          matchId: 'match-1',
+          actionId: 'action-1',
+          expectedStateVersion: 0,
+        },
+        resolve,
+      );
+    });
+
+    expect(ack).toMatchObject({ ok: true, actionId: 'action-1' });
+    await expect(eventPromise).resolves.toMatchObject({
+      matchId: 'match-1',
+      transitionId: 'action-1',
+      stateVersion: 1,
+      events: [expect.objectContaining({ type: 'diceRolled' })],
+    });
+    expect(outbox.claim).toHaveBeenCalledTimes(1);
+    expect(outbox.markPublished).toHaveBeenCalledWith({
+      outboxId: 'outbox-1',
+      leaseToken: expect.stringMatching(/^socketio-/),
+    });
+    socket.disconnect();
+  }, 10_000);
+
   it('routes a committed outbox transition to match room subscribers', async () => {
     const payload = {
       matchId: 'match-1',
@@ -383,6 +478,82 @@ describe('Socket.IO realtime publication and subscriptions', () => {
       ],
     });
     socket.disconnect();
+  }, 10_000);
+
+  it('delivers one ordered committed event identity to every 4-player subscriber', async () => {
+    const payload = {
+      matchId: 'match-1',
+      transitionId: 'action-4p-1',
+      actionId: 'action-4p-1',
+      stateVersion: 4,
+      fromSequence: 10,
+      toSequence: 10,
+      events: [
+        {
+          matchId: 'match-1',
+          eventId: 'match-1:10',
+          sequence: 10,
+          stateVersion: 4,
+          type: 'turnChanged',
+          payload: { fromPlayerId: 'user-a', toPlayerId: 'user-b' },
+          createdAt: '2026-08-25T00:00:00.000Z',
+        },
+      ],
+    };
+    const outbox = createOutboxStore({
+      id: 'outbox-1',
+      matchId: 'match-1',
+      resultingStateVersion: 4,
+      payload,
+    });
+    const server = await startRuntime({
+      outbox,
+      matchRepository: createMatchRepository(matchSnapshot(), [
+        'user-a',
+        'user-b',
+        'user-c',
+        'user-d',
+      ]),
+    });
+    servers.push(server);
+
+    const sockets = ['session-a', 'session-b', 'session-c', 'session-d'].map((session) =>
+      connectClient(server.url, sessionHeader(session).cookie),
+    );
+    await Promise.all(sockets.map((socket) => waitForEvent(socket, 'connect')));
+    await Promise.all(
+      sockets.map(
+        (socket) =>
+          new Promise((resolve) => socket.emit('match:join', { matchId: 'match-1' }, resolve)),
+      ),
+    );
+
+    const deliveries = sockets.map((socket) =>
+      waitForEvent<TransitionEnvelope>(socket, 'game:event'),
+    );
+    await server.runtime.dispatchOutboxOnce();
+    const received = await Promise.all(deliveries);
+
+    expect(received).toHaveLength(4);
+    for (const envelope of received) {
+      expect(envelope).toMatchObject({
+        matchId: 'match-1',
+        transitionId: 'action-4p-1',
+        actionId: 'action-4p-1',
+        stateVersion: 4,
+        fromSequence: 10,
+        toSequence: 10,
+      });
+      expect(envelope.events).toHaveLength(1);
+      expect(envelope.events[0]).toMatchObject({
+        eventId: 'match-1:10',
+        sequence: 10,
+        stateVersion: 4,
+        type: 'turnChanged',
+      });
+    }
+
+    sockets.forEach((socket) => socket.disconnect());
   }, 10_000);
 
   it('fans out a committed transition across instances through the Redis adapter', async () => {

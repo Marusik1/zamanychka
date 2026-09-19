@@ -324,6 +324,7 @@ export function createCommandProcessor(options: {
             payload: json({
               matchId: command.matchId,
               transitionId: command.actionId,
+              actionId: command.actionId,
               stateVersion: engineResult.state.stateVersion,
               fromSequence: firstSequence,
               toSequence: lastSequence,

@@ -3,7 +3,9 @@ import type { MatchSnapshot, TransitionEnvelope } from '@zamanushka/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  ANIMATION_TIMINGS,
   buildGameplayAnimationFrames,
+  movementDurationMs,
   runGameplayAnimationFrames,
   type GameplayAnimationRuntimeState,
 } from './animation-director.js';
@@ -86,6 +88,39 @@ describe('animation director', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it('keeps one-to-six-cell movement inside the approved physical timing budget', () => {
+    expect(movementDurationMs(1)).toBeGreaterThanOrEqual(130);
+    expect(movementDurationMs(1)).toBeLessThanOrEqual(170);
+    expect(movementDurationMs(3)).toBeGreaterThanOrEqual(400);
+    expect(movementDurationMs(3)).toBeLessThanOrEqual(500);
+    expect(movementDurationMs(6)).toBeGreaterThanOrEqual(750);
+    expect(movementDurationMs(6)).toBeLessThanOrEqual(950);
+  });
+
+  it('adds a short settle frame on an exact perimeter corner before continuing', () => {
+    const initial = toSnapshot(1, 1);
+    const tx = transition([
+      {
+        matchId: 'match-1', eventId: 'corner-move', sequence: 2, stateVersion: 2,
+        type: 'pawnMoved',
+        payload: {
+          pawnId: 'green-seat-pawn-1', playerId: 'green-seat',
+          fromCoord: { row: 1, col: 0 }, toCoord: { row: 0, col: 1 },
+          physicalPath: [{ row: 0, col: 0 }, { row: 0, col: 1 }], capture: null,
+        },
+        createdAt: '2026-09-08T00:00:00.000Z',
+      },
+    ], toSnapshot(2, 2), 'corner-settle');
+
+    const frames = buildGameplayAnimationFrames({ transition: tx, initialSnapshot: initial, reducedMotion: false });
+    const cornerFrames = frames.filter((frame) => {
+      const visual = frame.state.pawnVisuals['green-seat-pawn-1'];
+      return visual?.anchor.kind === 'board' && visual.anchor.coord.row === 0 && visual.anchor.coord.col === 0;
+    });
+
+    expect(cornerFrames.some((frame) => frame.durationMs === ANIMATION_TIMINGS.cornerSettleMs)).toBe(true);
   });
 
   it('represents every committed physicalPath coordinate in order without recalculation', async () => {
@@ -236,6 +271,34 @@ describe('animation director', () => {
     ).toBe(true);
   });
 
+  it('uses a distinct stronger settle only for the final HOME(3) slot', () => {
+    const initial = toSnapshot(12, 12);
+    const final = {
+      ...toSnapshot(13, 13),
+      pawns: toSnapshot(13, 13).pawns.map((pawn) =>
+        pawn.pawnId === 'green-seat-pawn-1'
+          ? { ...pawn, position: { zone: 'HOME' as const, homeIndex: 3 as const } }
+          : pawn,
+      ),
+    };
+    const tx = transition([
+      {
+        matchId: 'match-1', eventId: 'e13', sequence: 13, stateVersion: 13,
+        type: 'pawnEnteredHome',
+        payload: {
+          pawnId: 'green-seat-pawn-1', playerId: 'green-seat', homeIndex: 3,
+          fromCoord: { row: 4, col: 3 }, toCoord: { row: 4, col: 4 },
+        },
+        createdAt: '2026-09-08T00:00:00.000Z',
+      },
+    ], final, 'tx-home-final');
+
+    const frames = buildGameplayAnimationFrames({ transition: tx, initialSnapshot: initial, reducedMotion: false });
+
+    expect(frames.some((frame) => frame.state.pawnVisuals['green-seat-pawn-1']?.motion === 'home-final')).toBe(true);
+    expect(frames.some((frame) => frame.state.pawnVisuals['green-seat-pawn-1']?.motion === 'home-cue')).toBe(false);
+  });
+
   it('preserves capture order: attacker path, then victim exit', () => {
     const initial = toSnapshot(20, 20);
     const final = {
@@ -314,7 +377,7 @@ describe('animation director', () => {
     expect(victimExitIndex).toBeGreaterThan(attackerArrivalIndex);
   });
 
-  it('keeps captured pawn lift-off on the destination cell instead of teleporting it into reserve mid-animation', () => {
+  it('keeps captured pawn on the impact cell before returning it to its reserve anchor', () => {
     const initial = toSnapshot(30, 30);
     const final = {
       ...toSnapshot(31, 32),
@@ -379,17 +442,66 @@ describe('animation director', () => {
     });
 
     const capturedAnchors = frames
-      .filter((frame) => frame.state.pawnVisuals['red-seat-pawn-1']?.motion === 'captured')
+      .filter((frame) => Boolean(frame.state.pawnVisuals['red-seat-pawn-1']))
       .map((frame) => frame.state.pawnVisuals['red-seat-pawn-1']?.anchor)
       .filter((anchor): anchor is NonNullable<typeof anchor> => Boolean(anchor));
 
-    expect(capturedAnchors).toHaveLength(2);
-    expect(capturedAnchors.every((anchor) => anchor.kind === 'board')).toBe(true);
-    expect(
-      capturedAnchors.every(
-        (anchor) => anchor.kind === 'board' && anchor.coord.row === 7 && anchor.coord.col === 3,
-      ),
-    ).toBe(true);
+    expect(capturedAnchors.length).toBeGreaterThanOrEqual(2);
+    expect(capturedAnchors[0]).toEqual({ kind: 'board', coord: { row: 7, col: 3 } });
+    expect(capturedAnchors.at(-1)).toEqual({ kind: 'reserve', color: 'RED', slot: 0 });
+  });
+
+  it('shows attacker impact before the captured pawn starts its reserve return', () => {
+    const initial = toSnapshot(40, 40);
+    const tx = transition([
+      {
+        matchId: 'match-1', eventId: 'move-impact', sequence: 41, stateVersion: 41,
+        type: 'pawnMoved',
+        payload: {
+          pawnId: 'green-seat-pawn-1', playerId: 'green-seat',
+          fromCoord: { row: 7, col: 0 }, toCoord: { row: 7, col: 1 },
+          physicalPath: [{ row: 7, col: 1 }],
+          capture: { capturedPawnId: 'red-seat-pawn-1', capturedPlayerId: 'red-seat' },
+        }, createdAt: '2026-09-08T00:00:00.000Z',
+      },
+      {
+        matchId: 'match-1', eventId: 'capture-impact', sequence: 42, stateVersion: 41,
+        type: 'pawnCaptured',
+        payload: {
+          capturedPawnId: 'red-seat-pawn-1', capturedPlayerId: 'red-seat',
+          byPawnId: 'green-seat-pawn-1', byPlayerId: 'green-seat', atCoord: { row: 7, col: 1 },
+        }, createdAt: '2026-09-08T00:00:00.000Z',
+      },
+    ], toSnapshot(41, 42), 'tx-impact');
+
+    const frames = buildGameplayAnimationFrames({ transition: tx, initialSnapshot: initial, reducedMotion: false });
+    const impactIndex = frames.findIndex(
+      (frame) => frame.state.pawnVisuals['green-seat-pawn-1']?.motion === 'capture-impact',
+    );
+    const returnIndex = frames.findIndex(
+      (frame) => frame.state.pawnVisuals['red-seat-pawn-1']?.motion === 'capture-return',
+    );
+    expect(impactIndex).toBeGreaterThan(-1);
+    expect(returnIndex).toBeGreaterThan(impactIndex);
+  });
+
+  it('keeps the terminal result hidden for a causal pause after the final pawn presentation', () => {
+    const initial = toSnapshot(50, 50);
+    const tx = transition([
+      {
+        matchId: 'match-1', eventId: 'win', sequence: 51, stateVersion: 51,
+        type: 'gameWon',
+        payload: { winnerPlayerId: 'green-seat', reason: 'LAST_ACTIVE_PLAYER' },
+        createdAt: '2026-09-08T00:00:00.000Z',
+      },
+    ], { ...toSnapshot(51, 51), status: 'FINISHED', winnerPlayerId: 'green-seat', winReason: 'LAST_ACTIVE_PLAYER' }, 'tx-win');
+
+    const frames = buildGameplayAnimationFrames({ transition: tx, initialSnapshot: initial, reducedMotion: false });
+    const victoryIndex = frames.findIndex((frame) => frame.state.victoryPlayerId === 'green-seat');
+
+    expect(victoryIndex).toBeGreaterThan(0);
+    expect(frames[victoryIndex - 1]?.durationMs).toBe(ANIMATION_TIMINGS.resultDelayMs);
+    expect(frames[victoryIndex - 1]?.state.victoryPlayerId).toBeNull();
   });
 
   it('supports cancellation so snapshot fallback or match reset can invalidate stale callbacks', async () => {

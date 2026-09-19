@@ -1,8 +1,10 @@
 import type { Server as HttpServer } from 'node:http';
+import { performance } from 'node:perf_hooks';
 
 import { createAdapter } from '@socket.io/redis-adapter';
 import { Server } from 'socket.io';
 import {
+  REALTIME_PROTOCOL_VERSION,
   gameCommandRequestSchema,
   gameEventEnvelopeSchema,
   gameSyncRequestSchema,
@@ -42,6 +44,7 @@ export interface RealtimeRuntime {
 interface TransitionSeed {
   matchId: string;
   transitionId: string;
+  actionId?: string;
   stateVersion: number;
   fromSequence: number;
   toSequence: number;
@@ -64,6 +67,26 @@ function roomName(matchId: string) {
   return `match:${matchId}`;
 }
 
+function telemetryEnabled() {
+  return process.env.GAMEPLAY_TELEMETRY === 'true';
+}
+
+function byteLength(value: unknown) {
+  return Buffer.byteLength(JSON.stringify(value), 'utf8');
+}
+
+function logTelemetry(event: string, payload: Record<string, unknown>) {
+  if (!telemetryEnabled()) return;
+  console.info(
+    JSON.stringify({
+      scope: 'gameplay-realtime',
+      event,
+      at: new Date().toISOString(),
+      ...payload,
+    }),
+  );
+}
+
 async function resolveTransitionEnvelope(
   matchRepository: MatchRepository,
   payload: unknown,
@@ -83,6 +106,7 @@ async function resolveTransitionEnvelope(
   return transitionEnvelopeSchema.parse({
     matchId: seed.matchId,
     transitionId: seed.transitionId,
+    ...(seed.actionId ? { actionId: seed.actionId } : {}),
     stateVersion: seed.stateVersion,
     fromSequence: seed.fromSequence,
     toSequence: seed.toSequence,
@@ -98,6 +122,7 @@ async function resolveTransitionEnvelope(
 export function createRealtimeRuntime(options: {
   httpServer: HttpServer;
   auth: AuthService;
+  cookieName: string;
   matchRepository: MatchRepository;
   outbox: OutboxLeaseStore;
   loadCommittedTransitions?: (input: {
@@ -139,10 +164,40 @@ export function createRealtimeRuntime(options: {
     workerId: `socketio-${process.pid}`,
     outbox: options.outbox,
     publish: async (payload) => {
+      const startedAt = performance.now();
       const envelope = await resolveTransitionEnvelope(options.matchRepository, payload);
-      io.to(roomName(envelope.matchId)).emit('game:event', envelope);
+      const room = roomName(envelope.matchId);
+      const telemetry = telemetryEnabled();
+      const sockets = telemetry ? await io.in(room).fetchSockets() : [];
+      const payloadBytes = telemetry ? byteLength(envelope) : 0;
+      io.to(room).emit('game:event', envelope);
+      logTelemetry('broadcast', {
+        matchId: envelope.matchId,
+        transitionId: envelope.transitionId,
+        stateVersion: envelope.stateVersion,
+        fromSequence: envelope.fromSequence,
+        toSequence: envelope.toSequence,
+        socketCount: sockets.length,
+        payloadBytes,
+        elapsedMs: Math.round((performance.now() - startedAt) * 100) / 100,
+      });
     },
   });
+  let immediateDispatching = false;
+  const dispatchOutboxSoon = () => {
+    if (immediateDispatching) return;
+    immediateDispatching = true;
+    const startedAt = performance.now();
+    void dispatcher.dispatchOne().then((result) => {
+      logTelemetry('immediate-dispatch', {
+        dispatched: result.dispatched,
+        reason: result.dispatched ? null : result.reason,
+        elapsedMs: Math.round((performance.now() - startedAt) * 100) / 100,
+      });
+    }).finally(() => {
+      immediateDispatching = false;
+    });
+  };
 
   const emptySnapshot = {
     status: 'ABANDONED',
@@ -160,7 +215,7 @@ export function createRealtimeRuntime(options: {
   io.use(async (socket, next) => {
     try {
       const cookies = parseCookies(socket.handshake.headers.cookie);
-      const token = cookies['__Host-zamanushka-session'] ?? cookies['zamanushka-session'];
+      const token = cookies[options.cookieName];
       const result = await options.auth.me(token);
       (socket.data as SocketData).userId = result.user.id;
       next();
@@ -181,6 +236,13 @@ export function createRealtimeRuntime(options: {
           ack?.({ ok: false, code: 'VALIDATION_ERROR' });
           return;
         }
+        if (
+          parsed.data.realtimeProtocolVersion &&
+          parsed.data.realtimeProtocolVersion !== REALTIME_PROTOCOL_VERSION
+        ) {
+          ack?.({ ok: false, code: 'REALTIME_PROTOCOL_MISMATCH' });
+          return;
+        }
         const match = await options.matchRepository.loadCurrentMatch(parsed.data.matchId);
         if (!match) {
           ack?.({ ok: false, code: 'MATCH_NOT_FOUND' });
@@ -199,6 +261,7 @@ export function createRealtimeRuntime(options: {
     );
 
     socket.on('game:command', async (input: unknown, ack?: SocketCommandAck) => {
+      const receivedAt = performance.now();
       const parsed = gameCommandRequestSchema.safeParse(input);
       if (!parsed.success) {
         ack?.({
@@ -211,10 +274,29 @@ export function createRealtimeRuntime(options: {
         });
         return;
       }
+      logTelemetry('command-received', {
+        socketId: socket.id,
+        matchId: parsed.data.matchId,
+        actionId: parsed.data.actionId,
+        type: parsed.data.type,
+        expectedStateVersion: parsed.data.expectedStateVersion,
+      });
       const result = await options.commandProcessor.process({
         authenticatedUserId: (socket.data as SocketData).userId,
         command: parsed.data,
       });
+      const serverMs = Math.round((performance.now() - receivedAt) * 100) / 100;
+      logTelemetry('command-processed', {
+        socketId: socket.id,
+        matchId: parsed.data.matchId,
+        actionId: parsed.data.actionId,
+        type: parsed.data.type,
+        ok: result.ok,
+        stateVersion: result.stateVersion,
+        serverMs,
+        ackBytes: byteLength(result),
+      });
+      if (result.ok) dispatchOutboxSoon();
       ack?.(result);
     });
 
