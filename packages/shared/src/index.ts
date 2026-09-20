@@ -142,6 +142,10 @@ export {
   type TransitionEnvelope,
 } from './realtime.js';
 export {
+  type GameplayPresentationEnvelope,
+  type GameplayPresentationType,
+} from './game-presentation.js';
+export {
   matchHistoryPageSchema,
   matchResultCardSchema,
   matchResultParticipantSummarySchema,

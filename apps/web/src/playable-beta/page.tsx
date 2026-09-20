@@ -1010,12 +1010,24 @@ export function PlayableBetaPage({
         : [],
     [authState.user.id, presentedSnapshot],
   );
+  const activePresentationToken = presentationController
+    ? getActivePresentationToken(presentationController)
+    : null;
+  const activePresentationRunKey = activePresentationToken
+    ? [
+        activePresentationToken.matchId,
+        activePresentationToken.generation,
+        activePresentationToken.transitionId,
+        activePresentationToken.stateVersion,
+        activePresentationToken.toSequence,
+      ].join(':')
+    : null;
 
   useEffect(() => {
     if (!presentationController) return;
 
     const active = presentationController.queue.active;
-    const token = getActivePresentationToken(presentationController);
+    const token = activePresentationToken;
 
     if (!active || !token) {
       setPresentationRuntime(createIdleAnimationState(presentationController.presentationSnapshot));
@@ -1057,7 +1069,7 @@ export function PlayableBetaPage({
       abort.abort();
       boardRef.current?.snapToAuthoritativeState(presentationController.authoritativeSnapshot);
     };
-  }, [presentationController, presentedPlayers, reducedMotion]);
+  }, [activePresentationRunKey, reducedMotion]);
 
   useEffect(() => {
     return realtimeClient.subscribe((transition: TransitionEnvelope) => {

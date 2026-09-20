@@ -102,6 +102,26 @@ describe('presentation controller', () => {
     expect(controller.queue.active).toBeNull();
   });
 
+  it('keeps the active presentation identity stable when a later transition is only queued', () => {
+    let controller = createPresentationController('match-1', snapshot());
+    const first = transition('t2', 2, 2, 2);
+    const second = transition('t3', 3, 3, 3);
+
+    const acceptedFirst = acceptCommittedTransition(controller, first);
+    expect(acceptedFirst.kind).toBe('queued');
+    controller = acceptedFirst.state;
+    const firstToken = getActivePresentationToken(controller);
+    expect(firstToken).not.toBeNull();
+
+    const acceptedSecond = acceptCommittedTransition(controller, second);
+    expect(acceptedSecond.kind).toBe('queued');
+    controller = acceptedSecond.state;
+
+    expect(getActivePresentationToken(controller)).toEqual(firstToken);
+    expect(controller.queue.active).toBe(first);
+    expect(controller.queue.queued).toEqual([second]);
+  });
+
   it('ignores duplicate and already reconciled transitions without replaying them', () => {
     let controller = createPresentationController('match-1', snapshot('match-1', 2, 2));
     const stale = transition('t2', 2, 2, 2);

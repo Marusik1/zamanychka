@@ -11,12 +11,19 @@ describe('bot policy', () => {
     ).toEqual({ type: 'ROLL_DICE' });
   });
 
-  it('prefers capture actions after roll actions are unavailable', () => {
+  it('chooses one non-roll legal pawn action randomly after the authoritative roll', () => {
     expect(
       chooseBotAction([
         { type: 'MOVE_PAWN', pawnId: 'p1', progressScore: 20 },
         { type: 'MOVE_PAWN', pawnId: 'p2', capturesOpponent: true, progressScore: 5 },
-      ]),
+      ], { random: () => 0 }),
+    ).toEqual({ type: 'MOVE_PAWN', pawnId: 'p1', progressScore: 20 });
+
+    expect(
+      chooseBotAction([
+        { type: 'ENTER_PAWN', pawnId: 'p1' },
+        { type: 'MOVE_PAWN', pawnId: 'p2', capturesOpponent: true, progressScore: 5 },
+      ], { random: () => 0.99 }),
     ).toEqual({ type: 'MOVE_PAWN', pawnId: 'p2', capturesOpponent: true, progressScore: 5 });
   });
 });
