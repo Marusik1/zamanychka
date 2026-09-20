@@ -1,8 +1,29 @@
 import { randomUUID } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 import { chooseBotAction } from './bot-policy.js';
 import type { BotCommand, BotRunnerOptions, BotRuntimeAdapter, MatchLease } from './types.js';
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+function telemetryEnabled() {
+  return process.env.GAMEPLAY_TELEMETRY === 'true';
+}
+
+function roundMs(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+function logBotTelemetry(event: string, payload: Record<string, unknown>) {
+  if (!telemetryEnabled()) return;
+  console.info(
+    JSON.stringify({
+      scope: 'gameplay-bot',
+      event,
+      at: new Date().toISOString(),
+      ...payload,
+    }),
+  );
+}
 
 export class BotRunner {
   private readonly localInFlight = new Set<string>();
@@ -47,7 +68,24 @@ export class BotRunner {
       if (!beforeDelay || beforeDelay.status !== 'ACTIVE') return;
       if (beforeDelay.activeParticipantKind !== 'BOT') return;
 
-      await sleep(this.pickDelay());
+      const thinkDelayMs = this.pickDelay();
+      logBotTelemetry('bot-turn-detected', {
+        matchId,
+        step,
+        activeParticipantId: beforeDelay.activeParticipantId,
+        phase: beforeDelay.phase,
+        stateVersion: beforeDelay.stateVersion,
+        artificialThinkDelayMs: thinkDelayMs,
+      });
+
+      const thinkStartedAt = performance.now();
+      await sleep(thinkDelayMs);
+      logBotTelemetry('bot-think-complete', {
+        matchId,
+        step,
+        artificialThinkDelayMs: thinkDelayMs,
+        actualThinkDelayMs: roundMs(performance.now() - thinkStartedAt),
+      });
 
       const snapshot = await this.runtime.readTurn(matchId);
       if (!snapshot || snapshot.status !== 'ACTIVE') return;
@@ -75,7 +113,25 @@ export class BotRunner {
         ...(chosen.payload ? { payload: chosen.payload } : {}),
       };
 
+      const commandStartedAt = performance.now();
+      logBotTelemetry('bot-command-submitted', {
+        matchId,
+        step,
+        actionId: command.actionId,
+        type: command.type,
+        expectedStateVersion: command.expectedStateVersion,
+        pawnId: command.pawnId,
+      });
       const result = await this.runtime.submitCommand(command);
+      logBotTelemetry('bot-command-result', {
+        matchId,
+        step,
+        actionId: command.actionId,
+        type: command.type,
+        ok: result.ok,
+        code: result.ok ? undefined : result.code,
+        commandRoundTripMs: roundMs(performance.now() - commandStartedAt),
+      });
 
       if (!result.ok) {
         this.logger.warn('[bot-runner] command rejected', {

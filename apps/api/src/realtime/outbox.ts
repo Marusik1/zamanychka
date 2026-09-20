@@ -33,6 +33,8 @@ export function createPostgresOutboxLeaseStore(
           matchId: claimed.matchId,
           resultingStateVersion: claimed.resultingStateVersion,
           payload: claimed.payload,
+          createdAt: claimed.createdAt,
+          claimedAt,
         };
       });
     },

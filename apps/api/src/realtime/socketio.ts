@@ -169,8 +169,9 @@ export function createRealtimeRuntime(options: {
   const dispatcher = createOutboxDispatcher({
     workerId: `socketio-${process.pid}`,
     outbox: options.outbox,
-    publish: async (payload) => {
+    publish: async (payload, row) => {
       const startedAt = performance.now();
+      const broadcastStartedAt = Date.now();
       const envelope = await resolveTransitionEnvelope(options.matchRepository, payload);
       const room = roomName(envelope.matchId);
       const telemetry = telemetryEnabled();
@@ -185,6 +186,11 @@ export function createRealtimeRuntime(options: {
         toSequence: envelope.toSequence,
         socketCount: sockets.length,
         payloadBytes,
+        outboxId: row.id,
+        outboxCreatedAt: row.createdAt.toISOString(),
+        outboxClaimedAt: row.claimedAt.toISOString(),
+        outboxCreateToClaimMs: row.claimedAt.getTime() - row.createdAt.getTime(),
+        commitToBroadcastMs: broadcastStartedAt - row.createdAt.getTime(),
         elapsedMs: Math.round((performance.now() - startedAt) * 100) / 100,
       });
     },

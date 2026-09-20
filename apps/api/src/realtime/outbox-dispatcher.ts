@@ -3,6 +3,8 @@ export interface ClaimedOutboxRow {
   matchId: string;
   resultingStateVersion: number;
   payload: unknown;
+  createdAt: Date;
+  claimedAt: Date;
 }
 
 export interface OutboxLeaseStore {
@@ -14,7 +16,7 @@ export interface OutboxLeaseStore {
 export function createOutboxDispatcher(options: {
   workerId: string;
   outbox: OutboxLeaseStore;
-  publish: (payload: unknown) => Promise<void>;
+  publish: (payload: unknown, row: ClaimedOutboxRow) => Promise<void>;
 }) {
   return {
     async dispatchOne(): Promise<
@@ -23,7 +25,7 @@ export function createOutboxDispatcher(options: {
       const row = await options.outbox.claim({ leaseToken: options.workerId });
       if (!row) return { dispatched: false, reason: 'EMPTY' };
       try {
-        await options.publish(row.payload);
+        await options.publish(row.payload, row);
       } catch {
         await options.outbox.release({ outboxId: row.id, leaseToken: options.workerId });
         return { dispatched: false, reason: 'PUBLISH_FAILED' };

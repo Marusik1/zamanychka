@@ -71,6 +71,7 @@ function recordTelemetry(event: string, payload: Record<string, unknown> = {}) {
   const entry: ClientTelemetryEvent = {
     event,
     at: new Date().toISOString(),
+    clientNowMs: Math.round(performance.now() * 100) / 100,
     ...payload,
   };
   window.__zGameplayTelemetry = [...(window.__zGameplayTelemetry ?? []), entry].slice(-500);
@@ -80,6 +81,9 @@ function recordTelemetry(event: string, payload: Record<string, unknown> = {}) {
 export function createRealtimeClient(): RealtimeClient {
   let socket: Socket | null = null;
   const listeners = new Set<RealtimeSubscription>();
+  let disconnectCount = 0;
+  let connectErrorCount = 0;
+  let reconnectCount = 0;
 
   function currentSocket() {
     if (socket) return socket;
@@ -98,15 +102,33 @@ export function createRealtimeClient(): RealtimeClient {
     socket.on('connect', () => {
       recordTelemetry('socket-connect', {
         socketId: socket?.id,
+        connected: socket?.connected,
         transport: socket?.io.engine.transport.name,
         socketUrl: `${window.location.origin}/socket.io`,
+        disconnectCount,
+        connectErrorCount,
+        reconnectCount,
       });
     });
     socket.on('disconnect', (reason) => {
-      recordTelemetry('socket-disconnect', { reason });
+      disconnectCount += 1;
+      recordTelemetry('socket-disconnect', { reason, disconnectCount });
     });
     socket.on('connect_error', (error) => {
-      recordTelemetry('socket-connect-error', { message: error.message });
+      connectErrorCount += 1;
+      recordTelemetry('socket-connect-error', { message: error.message, connectErrorCount });
+    });
+    socket.io.on('reconnect', (attempt) => {
+      reconnectCount += 1;
+      recordTelemetry('socket-reconnect', {
+        attempt,
+        reconnectCount,
+        socketId: socket?.id,
+        transport: socket?.io.engine.transport.name,
+      });
+    });
+    socket.io.on('reconnect_attempt', (attempt) => {
+      recordTelemetry('socket-reconnect-attempt', { attempt });
     });
     socket.io.engine.on('upgrade', (transport) => {
       recordTelemetry('socket-upgrade', { transport: transport.name });

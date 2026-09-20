@@ -1,3 +1,5 @@
+import { performance } from 'node:perf_hooks';
+
 import type { Prisma } from '../generated/prisma/client.js';
 import type { AppPrismaClient } from '../infrastructure/prisma.js';
 
@@ -51,18 +53,25 @@ export function createMatchRepository(prisma: AppPrismaClient) {
       handler: (
         tx: TxClient,
         match: Awaited<ReturnType<typeof prisma.match.findUnique>>,
+        timing: { lockWaitMs: number },
       ) => Promise<T>,
     ): Promise<T> {
       return prisma.$transaction(async (tx) => {
+        const lockStartedAt = performance.now();
         await tx.$queryRaw`
           SELECT "id"
           FROM "Match"
           WHERE "id" = ${matchId}
           FOR UPDATE
         `;
+        const lockWaitMs = Math.round((performance.now() - lockStartedAt) * 100) / 100;
         lockedMatchIds.set(tx, matchId);
         try {
-          return await handler(tx, await tx.match.findUnique({ where: { id: matchId } }));
+          return await handler(
+            tx,
+            await tx.match.findUnique({ where: { id: matchId } }),
+            { lockWaitMs },
+          );
         } finally {
           lockedMatchIds.delete(tx);
         }

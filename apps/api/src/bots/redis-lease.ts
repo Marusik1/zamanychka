@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 import type { MatchLease } from './types.js';
 
 export interface RedisLeaseClient {
@@ -14,6 +15,26 @@ else
 end
 `;
 
+function telemetryEnabled() {
+  return process.env.GAMEPLAY_TELEMETRY === 'true';
+}
+
+function roundMs(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+function logRedisTelemetry(event: string, payload: Record<string, unknown>) {
+  if (!telemetryEnabled()) return;
+  console.info(
+    JSON.stringify({
+      scope: 'gameplay-redis',
+      event,
+      at: new Date().toISOString(),
+      ...payload,
+    }),
+  );
+}
+
 export class RedisBotMatchLease implements MatchLease {
   constructor(
     private readonly redis: RedisLeaseClient,
@@ -25,9 +46,15 @@ export class RedisBotMatchLease implements MatchLease {
     const key = `${this.keyPrefix}${matchId}`;
     const token = randomUUID();
 
+    const acquireStartedAt = performance.now();
     const acquired = await this.redis.set(key, token, {
       NX: true,
       PX: this.ttlMs,
+    });
+    logRedisTelemetry('bot-lease-acquire', {
+      matchId,
+      acquired: acquired === 'OK',
+      latencyMs: roundMs(performance.now() - acquireStartedAt),
     });
 
     if (acquired !== 'OK') return undefined;
@@ -35,9 +62,14 @@ export class RedisBotMatchLease implements MatchLease {
     try {
       return await fn();
     } finally {
+      const releaseStartedAt = performance.now();
       await this.redis.eval(RELEASE_SCRIPT, {
         keys: [key],
         arguments: [token],
+      });
+      logRedisTelemetry('bot-lease-release', {
+        matchId,
+        latencyMs: roundMs(performance.now() - releaseStartedAt),
       });
     }
   }

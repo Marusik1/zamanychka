@@ -84,9 +84,19 @@ function createOutboxStore(row?: {
   id: string;
   matchId: string;
   resultingStateVersion: number;
+  createdAt?: Date;
+  claimedAt?: Date;
   payload: unknown;
 }) {
-  const queue = row ? [structuredClone(row)] : [];
+  const queue = row
+    ? [
+        {
+          ...structuredClone(row),
+          createdAt: row.createdAt ?? new Date('2026-09-20T12:00:00.000Z'),
+          claimedAt: row.claimedAt ?? new Date('2026-09-20T12:00:00.125Z'),
+        },
+      ]
+    : [];
   return {
     claim: vi.fn(async () => queue.shift() ?? null),
     markPublished: vi.fn(async () => true),

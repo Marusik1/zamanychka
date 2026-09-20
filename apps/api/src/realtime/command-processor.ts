@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 
 import { transition as defaultTransition } from '@zamanushka/game-engine';
 import { getLegalActions } from '@zamanushka/game-engine';
@@ -122,6 +123,26 @@ function mapEngineFailure(
   }
 }
 
+function telemetryEnabled() {
+  return process.env.GAMEPLAY_TELEMETRY === 'true';
+}
+
+function roundMs(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+function logCommandTelemetry(event: string, payload: Record<string, unknown>) {
+  if (!telemetryEnabled()) return;
+  console.info(
+    JSON.stringify({
+      scope: 'gameplay-command',
+      event,
+      at: new Date().toISOString(),
+      ...payload,
+    }),
+  );
+}
+
 function snapshot(
   state: GameState,
   lastSequence: number,
@@ -153,14 +174,24 @@ export function createCommandProcessor(options: {
     command: GameCommandRequest;
     diceValueOverride?: DiceValue;
   }): Promise<GameCommandResult> {
+      const processStartedAt = performance.now();
       const { command } = input;
       if (!input.authenticatedUserId)
         return failure(command, 'UNAUTHORIZED', 'Authenticated session is required', 0);
       const authenticatedUserId = input.authenticatedUserId;
       const fingerprint = commandFingerprint({ authenticatedUserId, command });
+      let lockWaitMs = 0;
+      let dbTransactionMs = 0;
+      let validationMs = 0;
+      let engineMs = 0;
+      let persistenceMs = 0;
+      let eventCount = 0;
       const result = await options.repository.withLockedMatch(
         command.matchId,
-        async (tx, match) => {
+        async (tx, match, timing) => {
+          const txStartedAt = performance.now();
+          lockWaitMs = timing.lockWaitMs;
+          const validationStartedAt = performance.now();
           if (!match) return failure(command, 'MATCH_NOT_FOUND', 'Match was not found', 0);
           const prior = await options.repository.findProcessedAction(tx, {
             matchId: command.matchId,
@@ -205,7 +236,9 @@ export function createCommandProcessor(options: {
               match.stateVersion,
               current,
             );
+          validationMs = roundMs(performance.now() - validationStartedAt);
 
+          const engineStartedAt = performance.now();
           const engineCommand = { ...command, actorPlayerId: authenticatedUserId } as EngineCommand;
           const engineResult = transition(currentSnapshot, engineCommand, {
             actorPlayerId: authenticatedUserId,
@@ -213,6 +246,7 @@ export function createCommandProcessor(options: {
               ? { diceValue: input.diceValueOverride ?? rollDice() }
               : {}),
           });
+          engineMs = roundMs(performance.now() - engineStartedAt);
           if (!engineResult.ok)
             return failure(
               command,
@@ -222,6 +256,7 @@ export function createCommandProcessor(options: {
               current,
             );
 
+          const persistenceStartedAt = performance.now();
           const events = journal.envelopes({
             matchId: command.matchId,
             stateVersion: engineResult.state.stateVersion,
@@ -231,6 +266,7 @@ export function createCommandProcessor(options: {
             before: currentSnapshot,
             after: engineResult.state,
           });
+          eventCount = events.length;
           const firstSequence = events[0]?.sequence ?? match.lastSequence + 1;
           const lastSequence = events.at(-1)?.sequence ?? match.lastSequence;
           let nextSnapshot = snapshot(engineResult.state, lastSequence, {
@@ -367,9 +403,25 @@ export function createCommandProcessor(options: {
           if (engineResult.state.status === 'FINISHED') {
             await options.onTerminalMatch({ tx, matchId: command.matchId });
           }
+          persistenceMs = roundMs(performance.now() - persistenceStartedAt);
+          dbTransactionMs = roundMs(performance.now() - txStartedAt);
           return result;
         },
       );
+      logCommandTelemetry('command-processed', {
+        matchId: command.matchId,
+        actionId: command.actionId,
+        type: command.type,
+        ok: result.ok,
+        stateVersion: result.stateVersion,
+        eventCount,
+        serverProcessingMs: roundMs(performance.now() - processStartedAt),
+        validationMs,
+        engineMs,
+        persistenceMs,
+        dbTransactionMs,
+        dbLockWaitMs: lockWaitMs,
+      });
       return result;
   }
 

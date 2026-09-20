@@ -483,6 +483,35 @@ function usePrefersReducedMotion() {
   return reduced;
 }
 
+type GameplayTelemetryEvent = Readonly<{
+  event: string;
+  at: string;
+  clientNowMs?: number;
+  [key: string]: unknown;
+}>;
+
+function gameplayTelemetryEnabled() {
+  if (typeof window === 'undefined') return false;
+  return window.localStorage.getItem('zamanushka:gameplayTelemetry') === 'true';
+}
+
+function recordGameplayTelemetry(event: string, payload: Record<string, unknown> = {}) {
+  if (!gameplayTelemetryEnabled()) return;
+  const entry: GameplayTelemetryEvent = {
+    event,
+    at: new Date().toISOString(),
+    clientNowMs: Math.round(performance.now() * 100) / 100,
+    ...payload,
+  };
+  window.__zGameplayTelemetry = [...(window.__zGameplayTelemetry ?? []), entry].slice(-800);
+  console.info('[gameplay-presentation]', entry);
+}
+
+function latestClientTelemetryEvent(predicate: (event: GameplayTelemetryEvent) => boolean) {
+  if (typeof window === 'undefined') return null;
+  return [...(window.__zGameplayTelemetry ?? [])].reverse().find(predicate) ?? null;
+}
+
 function commandFromAction(action: LegalAction, matchId: string, expectedStateVersion: number) {
   const actionId = crypto.randomUUID();
 
@@ -1042,6 +1071,28 @@ export function PlayableBetaPage({
     });
 
     const plan = createGameplayPresentationPlan(active);
+    const received = latestClientTelemetryEvent(
+      (entry) =>
+        entry.event === 'game-event-received' &&
+        entry.transitionId === active.transitionId &&
+        entry.matchId === active.matchId,
+    );
+    const receiveToAnimationMs =
+      typeof received?.clientNowMs === 'number'
+        ? Math.round((performance.now() - received.clientNowMs) * 100) / 100
+        : null;
+    recordGameplayTelemetry('presentation-animation-start', {
+      matchId: active.matchId,
+      transitionId: active.transitionId,
+      actionId: active.actionId,
+      stateVersion: active.stateVersion,
+      fromSequence: active.fromSequence,
+      toSequence: active.toSequence,
+      eventTypes: active.events.map((event) => event.type),
+      receiveToAnimationMs,
+      estimatedDurationMs: plan.estimatedDurationMs,
+      queuedCount: presentationController.queue.queued.length,
+    });
 
     void Promise.all([
       runGameplayAnimationFrames(frames, {
@@ -1577,12 +1628,24 @@ export function PlayableBetaPage({
       return;
     }
 
+    const command = commandFromAction(action, match.matchId, match.snapshot.stateVersion);
+    const tappedAt = performance.now();
+    recordGameplayTelemetry('command-tap', {
+      matchId: command.matchId,
+      actionId: command.actionId,
+      type: command.type,
+      expectedStateVersion: command.expectedStateVersion,
+    });
     setMatch({ ...match, pending: true, error: null });
+    recordGameplayTelemetry('command-local-feedback', {
+      matchId: command.matchId,
+      actionId: command.actionId,
+      type: command.type,
+      tapToLocalFeedbackMs: Math.round((performance.now() - tappedAt) * 100) / 100,
+    });
 
     try {
-      const result = await realtimeClient.sendCommand(
-        commandFromAction(action, match.matchId, match.snapshot.stateVersion),
-      );
+      const result = await realtimeClient.sendCommand(command);
 
       if (!result.ok) {
         setMatch({

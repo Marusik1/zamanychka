@@ -6,6 +6,8 @@ const row = {
   id: 'outbox-1',
   matchId: 'match-1',
   resultingStateVersion: 3,
+  createdAt: new Date('2026-09-20T12:00:00.000Z'),
+  claimedAt: new Date('2026-09-20T12:00:00.125Z'),
   payload: {
     matchId: 'match-1',
     stateVersion: 3,
