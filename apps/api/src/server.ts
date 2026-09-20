@@ -8,8 +8,12 @@ import { createAuthRepository } from './auth/auth-repository.js';
 import { createAuthService } from './auth/auth-service.js';
 import { verifyTelegramInitData } from './auth/telegram-init-data.js';
 import { getApiBuildInfo } from './build-info.js';
+import { BotRunner } from './bots/bot-runner.js';
+import { RedisBotMatchLease } from './bots/redis-lease.js';
+import { createBotRuntimeAdapter } from './bots/runtime-adapter.js';
 import { parseEnv } from './config/env.js';
 import { createLiveDependencies } from './health/dependency-probes.js';
+import { createRedisClient } from './infrastructure/redis.js';
 import { createMatchRepository } from './match/match-repository.js';
 import { createProfileRepository } from './profile/profile-repository.js';
 import { createProfileService } from './profile/profile-service.js';
@@ -34,12 +38,15 @@ const dependencies = createLiveDependencies(env);
 const repository = createAuthRepository(dependencies.prisma);
 const roomRepository = createRoomRepository(dependencies.prisma);
 const matchRepository = createMatchRepository(dependencies.prisma);
+let botRunner: BotRunner | null = null;
 const profileService = createProfileService({
   repository: createProfileRepository(dependencies.prisma),
 });
 const roomService = createRoomService({
   repository: roomRepository,
   presenceStore: createInMemoryRoomPresenceStore(),
+  enableSoloGameDebug: env.enableSoloGameDebug,
+  onMatchStarted: (matchId) => botRunner?.kick(matchId),
 });
 const roomChatService = createRoomChatService(dependencies.prisma);
 function createConfiguredAuthService() {
@@ -77,10 +84,18 @@ const app = buildApp({
 const completion = createMatchCompletionService({ repository: roomRepository });
 const commandProcessor = createCommandProcessor({
   repository: matchRepository,
+  enableSoloGameDebug: env.enableSoloGameDebug,
   onTerminalMatch: async ({ tx, matchId }) => {
     await completion.completeTerminalMatchInTransaction(tx, matchId);
   },
 });
+const botLeaseRedis = createRedisClient(env.REDIS_URL);
+await botLeaseRedis.connect();
+const botRuntime = createBotRuntimeAdapter({
+  matchRepository,
+  processCommand: (input) => commandProcessor.process(input),
+});
+botRunner = new BotRunner(botRuntime, new RedisBotMatchLease(botLeaseRedis));
 const realtime = createRealtimeRuntime({
   httpServer: app.server,
   auth: authService,
@@ -88,6 +103,7 @@ const realtime = createRealtimeRuntime({
   matchRepository,
   outbox: createPostgresOutboxLeaseStore(dependencies.prisma),
   commandProcessor,
+  botRunner,
   allowedOrigins: env.auth.allowedOrigins,
   redisUrl: env.REDIS_URL,
 });
@@ -108,6 +124,9 @@ const dispatchTimer = setInterval(() => {
 app.addHook('onClose', async () => dependencies.close());
 app.addHook('onClose', async () => clearInterval(dispatchTimer));
 app.addHook('onClose', async () => realtime.close());
+app.addHook('onClose', async () => {
+  await botLeaseRedis.quit();
+});
 
 const shutdown = async () => {
   await app.close();

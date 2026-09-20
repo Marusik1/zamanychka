@@ -463,9 +463,7 @@ describe('EPIC-01 app lifecycle', () => {
   it('limits the authenticated app to shell-safe navigation without identity editors or gameplay topology', async () => {
     const telegram = adapter();
     render(<App createAdapter={() => telegram} api={authenticatedApi()} roomApi={roomApi()} />);
-    await waitFor(() =>
-      expect(document.querySelector('.beta-home-page__actions button')).not.toBeNull(),
-    );
+    await screen.findByRole('button', { name: /Найти игру/i });
 
     const navigation = screen.getByRole('navigation', { name: 'Primary navigation' });
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();

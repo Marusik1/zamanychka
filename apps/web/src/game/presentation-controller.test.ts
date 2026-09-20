@@ -122,20 +122,6 @@ describe('presentation controller', () => {
     expect(acceptCommittedTransition(controller, fresh).kind).toBe('duplicate_ignored');
   });
 
-  it('ignores old sequence delivery against the authoritative watermark while presentation is still animating', () => {
-    let controller = createPresentationController('match-1', snapshot());
-    const accepted = acceptCommittedTransition(controller, transition('t2', 2, 2, 2));
-    expect(accepted.kind).toBe('queued');
-    controller = accepted.state;
-
-    const repeatedSequence = transition('t2-redelivered', 2, 2, 2);
-    const duplicate = acceptCommittedTransition(controller, repeatedSequence);
-
-    expect(duplicate.kind).toBe('duplicate_ignored');
-    expect(duplicate.state.queue.active?.transitionId).toBe('t2');
-    expect(duplicate.state.recoveryRequired).toBeNull();
-  });
-
   it('delegates gaps and unsafe overlaps to recovery without advancing presentation', () => {
     const controller = createPresentationController('match-1', snapshot());
     const gap = transition('t4', 4, 4, 4);

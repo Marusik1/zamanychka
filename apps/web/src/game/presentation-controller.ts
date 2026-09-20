@@ -88,10 +88,6 @@ export function acceptCommittedTransition(
     return { kind: 'duplicate_ignored', state };
   }
 
-  if (transition.toSequence <= state.authoritativeWatermark.lastSequence) {
-    return { kind: 'duplicate_ignored', state };
-  }
-
   if (hasTransition(state.queue, transition)) {
     return { kind: 'duplicate_ignored', state };
   }

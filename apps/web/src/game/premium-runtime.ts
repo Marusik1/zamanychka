@@ -124,7 +124,7 @@ export async function playPremiumTransition(
   plan: GameplayPresentationPlan,
   signal: AbortSignal,
 ) {
-  if (!handle?.ready) return;
+  if (!handle) return;
 
   let homeCompletionPlayed = false;
 

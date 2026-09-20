@@ -55,6 +55,9 @@ export class PremiumGameAudio {
     if (!source) return;
     source.currentTime = 0;
     source.playbackRate = options?.playbackRate ?? 1;
-    void source.play().catch(() => undefined);
+    const playback = source.play();
+    if (playback && typeof playback.catch === 'function') {
+      void playback.catch(() => undefined);
+    }
   }
 }

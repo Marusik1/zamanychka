@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PARTICIPANT_KINDS } from './bots.js';
 
 export const roomSeatIndexSchema = z.union([
   z.literal(0),
@@ -8,6 +9,7 @@ export const roomSeatIndexSchema = z.union([
 ]);
 
 export const roomStatusSchema = z.enum(['WAITING', 'ACTIVE', 'CLOSED']);
+export const participantKindSchema = z.enum(PARTICIPANT_KINDS);
 
 export const roomMemberSchema = z
   .object({
@@ -21,6 +23,8 @@ export const roomSeatSchema = z
   .object({
     seatIndex: roomSeatIndexSchema,
     userId: z.string().min(1).nullable(),
+    participantId: z.string().min(1).nullable().optional(),
+    participantKind: participantKindSchema.nullable().optional(),
     ready: z.boolean(),
   })
   .strict();
@@ -62,6 +66,7 @@ export const roomCurrentUserSchema = z
     ready: z.boolean(),
     canLeave: z.boolean(),
     canStart: z.boolean(),
+    canManageBots: z.boolean().optional(),
     startBlockedReason: z.string().min(1).nullable(),
   })
   .strict();
@@ -117,11 +122,17 @@ export const takeSeatRequestSchema = z
   })
   .strict();
 
+export const addBotToSeatRequestSchema = takeSeatRequestSchema;
+
 export const leaveSeatRequestSchema = z
   .object({
     expectedRoomVersion: z.number().int().nonnegative(),
   })
   .strict();
+
+export const removeBotFromSeatRequestSchema = leaveSeatRequestSchema.extend({
+  seatIndex: roomSeatIndexSchema,
+});
 
 export const leaveRoomRequestSchema = z
   .object({
@@ -225,7 +236,9 @@ export type ListRoomsResponse = z.infer<typeof listRoomsResponseSchema>;
 export type CreateRoomRequest = z.infer<typeof createRoomRequestSchema>;
 export type JoinRoomRequest = z.infer<typeof joinRoomRequestSchema>;
 export type TakeSeatRequest = z.infer<typeof takeSeatRequestSchema>;
+export type AddBotToSeatRequest = z.infer<typeof addBotToSeatRequestSchema>;
 export type LeaveSeatRequest = z.infer<typeof leaveSeatRequestSchema>;
+export type RemoveBotFromSeatRequest = z.infer<typeof removeBotFromSeatRequestSchema>;
 export type LeaveRoomRequest = z.infer<typeof leaveRoomRequestSchema>;
 export type SetReadyRequest = z.infer<typeof setReadyRequestSchema>;
 export type StartMatchRequest = z.infer<typeof startMatchRequestSchema>;

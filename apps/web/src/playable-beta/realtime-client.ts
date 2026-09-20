@@ -33,8 +33,20 @@ export interface RealtimeClient {
   joinMatch(matchId: string): Promise<void>;
   sync(request: GameSyncRequest): Promise<GameSyncResponse>;
   sendCommand(command: GameCommandRequest): Promise<GameCommandResult>;
+  skipDebugDummyTurn(input: { matchId: string; stateVersion: number }): Promise<GameCommandResult>;
   disconnect(): void;
   __emitTransition?(transition: TransitionEnvelope): void;
+}
+
+export class RealtimeClientError extends Error {
+  constructor(
+    public readonly code: string,
+    message: string,
+    public readonly retryable = false,
+  ) {
+    super(message);
+    this.name = 'RealtimeClientError';
+  }
 }
 
 function ackPromise<T>(emit: (ack: (value: unknown) => void) => void, parser: (value: unknown) => T) {
@@ -172,7 +184,14 @@ export function createRealtimeClient(): RealtimeClient {
           ) {
             return undefined;
           }
-          throw new Error('MATCH_JOIN_FAILED');
+          const code =
+            typeof value === 'object' &&
+            value !== null &&
+            'code' in value &&
+            typeof (value as { code: unknown }).code === 'string'
+              ? (value as { code: string }).code
+              : 'MATCH_JOIN_FAILED';
+          throw new RealtimeClientError(code, `match:join failed with ${code}`, code === 'MATCH_NOT_FOUND');
         },
       );
     },
@@ -206,6 +225,13 @@ export function createRealtimeClient(): RealtimeClient {
           });
           return parsed;
         },
+      );
+    },
+    async skipDebugDummyTurn(input) {
+      await this.ensureConnected();
+      return ackPromise(
+        (ack) => currentSocket().emit('game:debug-skip-dummy-turn', input, ack),
+        (value) => gameCommandResultSchema.parse(value),
       );
     },
     disconnect() {

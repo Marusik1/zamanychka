@@ -30,10 +30,13 @@ class InMemoryRoomPresenceStore implements RoomPresenceStore {
 const database = createTestDatabase();
 const repository = createRoomRepository(database.prisma);
 
-function createService() {
+function createService(options?: { enableSoloGameDebug?: boolean }) {
   return createRoomService({
     repository,
     presenceStore: new InMemoryRoomPresenceStore(),
+    ...(options?.enableSoloGameDebug === undefined
+      ? {}
+      : { enableSoloGameDebug: options.enableSoloGameDebug }),
   });
 }
 
@@ -66,6 +69,84 @@ afterAll(async () => {
 });
 
 describe('room service', () => {
+  it('keeps one-player start rejected when solo debug is disabled', async () => {
+    await seedUsers(['user-1']);
+    await joinSingleton(['user-1']);
+    const service = createService();
+    await service.takeSeat('user-1', SINGLETON_ROOM_KEY, {
+      seatIndex: 0,
+      expectedRoomVersion: await roomVersion(),
+    });
+    await service.setReady('user-1', SINGLETON_ROOM_KEY, {
+      ready: true,
+      expectedRoomVersion: await roomVersion(),
+    });
+    await service.connectPresence('user-1', SINGLETON_ROOM_KEY);
+
+    await expect(
+      service.startMatch('user-1', SINGLETON_ROOM_KEY, {
+        expectedRoomVersion: await roomVersion(),
+      }),
+    ).resolves.toEqual({
+      ok: false,
+      error: { code: 'ROOM_NOT_READY', message: 'Room is not ready' },
+    });
+  });
+
+  it('starts a marked two-player solo debug match with a yellow debug dummy', async () => {
+    await seedUsers(['user-1']);
+    await joinSingleton(['user-1']);
+    const service = createService({ enableSoloGameDebug: true });
+    await service.takeSeat('user-1', SINGLETON_ROOM_KEY, {
+      seatIndex: 0,
+      expectedRoomVersion: await roomVersion(),
+    });
+    await service.setReady('user-1', SINGLETON_ROOM_KEY, {
+      ready: true,
+      expectedRoomVersion: await roomVersion(),
+    });
+    await service.connectPresence('user-1', SINGLETON_ROOM_KEY);
+
+    const result = await service.startMatch('user-1', SINGLETON_ROOM_KEY, {
+      expectedRoomVersion: await roomVersion(),
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const match = await database.prisma.match.findUniqueOrThrow({
+      where: { id: result.matchId },
+    });
+    const snapshot = match.snapshot as unknown as {
+      debugMode?: string;
+      players: Array<{
+        playerId: string;
+        color: string;
+        participantKind?: string;
+      }>;
+      pawns: Array<{ playerId: string; color: string; position: { zone: string } }>;
+    };
+    expect(match.seatOrder).toEqual(['user-1', 'debug-dummy:single-room']);
+    expect(snapshot.debugMode).toBe('SOLO');
+    expect(snapshot.players).toEqual([
+      expect.objectContaining({ playerId: 'user-1', color: 'RED', participantKind: 'REAL' }),
+      expect.objectContaining({
+        playerId: 'debug-dummy:single-room',
+        color: 'YELLOW',
+        participantKind: 'DEBUG_DUMMY',
+      }),
+    ]);
+    expect(snapshot.pawns.filter((pawn) => pawn.playerId === 'debug-dummy:single-room')).toHaveLength(4);
+    expect(snapshot.pawns).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          playerId: 'debug-dummy:single-room',
+          color: 'YELLOW',
+          position: { zone: 'OFF_BOARD' },
+        }),
+      ]),
+    );
+  });
+
   it('takes a free seat for a room member', async () => {
     await seedUsers(['user-1']);
     await joinSingleton(['user-1']);

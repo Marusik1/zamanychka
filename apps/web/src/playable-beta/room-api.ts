@@ -168,6 +168,8 @@ export interface RoomApi {
     expectedRoomVersion: number,
     signal?: AbortSignal,
   ): Promise<RoomCommandResult>;
+  addBot?(roomId: string, seatIndex: RoomSeatIndex, expectedRoomVersion: number, signal?: AbortSignal): Promise<RoomCommandResult>;
+  removeBot?(roomId: string, seatIndex: RoomSeatIndex, expectedRoomVersion: number, signal?: AbortSignal): Promise<RoomCommandResult>;
   leaveSeat(roomId: string, expectedRoomVersion: number, signal?: AbortSignal): Promise<RoomCommandResult>;
   leaveRoom(roomId: string, expectedRoomVersion: number, signal?: AbortSignal): Promise<RoomCommandResult>;
   setReady(
@@ -213,6 +215,24 @@ export function createRoomApi(fetcher: Fetcher = fetch): RoomApi {
         post({ seatIndex, expectedRoomVersion }, signal),
         roomCommandResultSchema,
         { operation: 'takeSeat', roomId },
+      );
+    },
+    async addBot(roomId, seatIndex, expectedRoomVersion, signal) {
+      return request(
+        fetcher,
+        `/api/rooms/${roomId}/seats/${seatIndex}/bot`,
+        post({ seatIndex, expectedRoomVersion }, signal),
+        roomCommandResultSchema,
+        { operation: 'addBot', roomId },
+      );
+    },
+    async removeBot(roomId, seatIndex, expectedRoomVersion, signal) {
+      return request(
+        fetcher,
+        `/api/rooms/${roomId}/seats/${seatIndex}/bot`,
+        del({ seatIndex, expectedRoomVersion }, signal),
+        roomCommandResultSchema,
+        { operation: 'removeBot', roomId },
       );
     },
     async leaveSeat(roomId, expectedRoomVersion, signal) {

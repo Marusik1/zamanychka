@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { FullscreenScrubPortal } from './FullscreenScrubPortal';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { INTRO_ASSETS } from './introSequenceConfig';
 import './fullscreen-intro.css';
+import './fullscreen-scrub-portal.css';
 
 export type IntroScrubRenderProps = {
   /** false = keep the existing scrub frozen at progress 0; true = run the existing approved scrub */
@@ -20,6 +21,53 @@ export type FullscreenIntroGateProps = {
 };
 
 const POSTER_FADE_MS = 140;
+
+type FullscreenScrubPortalProps = {
+  active: boolean;
+  children: ReactNode;
+};
+
+export function FullscreenScrubPortal({ active, children }: FullscreenScrubPortalProps) {
+  useLayoutEffect(() => {
+    if (!active) return;
+
+    const html = document.documentElement;
+    const body = document.body;
+
+    const updateViewportHeight = () => {
+      const height = window.visualViewport?.height ?? window.innerHeight;
+
+      html.style.setProperty('--zamanushka-viewport-height', `${height}px`);
+    };
+
+    updateViewportHeight();
+
+    html.classList.add('zamanushka-scrub-active');
+    body.classList.add('zamanushka-scrub-active');
+
+    window.addEventListener('resize', updateViewportHeight);
+    window.visualViewport?.addEventListener('resize', updateViewportHeight);
+
+    return () => {
+      html.classList.remove('zamanushka-scrub-active');
+      body.classList.remove('zamanushka-scrub-active');
+
+      html.style.removeProperty('--zamanushka-viewport-height');
+
+      window.removeEventListener('resize', updateViewportHeight);
+      window.visualViewport?.removeEventListener('resize', updateViewportHeight);
+    };
+  }, [active]);
+
+  if (!active) return null;
+
+  return createPortal(
+    <div className="zScrubViewport">
+      <div className="zScrubViewport__stage">{children}</div>
+    </div>,
+    document.body,
+  );
+}
 
 function preloadImage(src: string) {
   return new Promise<void>((resolve) => {
@@ -45,7 +93,7 @@ function introAssetSources(posterSrc: string) {
 export function FullscreenIntroGate({
   renderScrub,
   onComplete,
-  posterSrc = '/intro/idle-mobile.webp',
+  posterSrc = '/intro/approved-start.png',
   playLabel = 'Играть',
 }: FullscreenIntroGateProps) {
   const [running, setRunning] = useState(false);

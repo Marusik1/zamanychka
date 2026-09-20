@@ -1,4 +1,5 @@
 import type {
+  ParticipantKind,
   CreateRoomRequest,
   JoinRoomRequest,
   ListRoomsResponse,
@@ -11,8 +12,10 @@ import type {
   StartMatchResult,
   TakeSeatRequest,
 } from '@zamanushka/shared';
+import { buildBotParticipantId } from '@zamanushka/shared';
 
 import { createActiveGameState } from '@zamanushka/game-engine';
+import type { GameState } from '@zamanushka/game-engine';
 import type { Prisma } from '../generated/prisma/client.js';
 import {
   cloneRoom,
@@ -57,6 +60,13 @@ const ERROR_MESSAGES: Record<RoomCommandError['error']['code'], string> = {
   USER_ALREADY_IN_ANOTHER_ROOM: 'User already belongs to another room',
 };
 
+export const SOLO_DEBUG_DUMMY_PARTICIPANT_KIND = 'DEBUG_DUMMY' as const;
+export const SOLO_DEBUG_MATCH_MODE = 'SOLO' as const;
+
+function soloDebugDummyPlayerId(roomId: string): string {
+  return `debug-dummy:${roomId}`;
+}
+
 export interface RoomPresenceStore {
   connect(input: { roomId: RoomId; userId: string }): Promise<void>;
   disconnect(input: { roomId: RoomId; userId: string }): Promise<void>;
@@ -76,6 +86,8 @@ export interface RoomService {
   leaveSeat(actorUserId: string, roomId: string, request: LeaveSeatRequest): Promise<MutatingRoomResult>;
   setReady(actorUserId: string, roomId: string, request: SetReadyRequest): Promise<MutatingRoomResult>;
   leaveRoom(actorUserId: string, roomId: string, request: LeaveRoomRequest): Promise<MutatingRoomResult>;
+  addBot(actorUserId: string, roomId: string, request: TakeSeatRequest): Promise<MutatingRoomResult>;
+  removeBot(actorUserId: string, roomId: string, request: LeaveSeatRequest & { seatIndex: RoomSeatIndex }): Promise<MutatingRoomResult>;
   startMatch(actorUserId: string, roomId: string, request: StartMatchRequest): Promise<StartMatchResult>;
   connectPresence(actorUserId: string, roomId: string): Promise<RoomView>;
   disconnectPresence(actorUserId: string, roomId: string): Promise<RoomView>;
@@ -103,6 +115,10 @@ function startMatchError(code: RoomCommandError['error']['code']): StartMatchRes
   return { ok: false, error: { code, message: ERROR_MESSAGES[code] } };
 }
 
+function isRoomHost(room: PersistedRoom, userId: string): boolean {
+  return room.members[0]?.userId === userId;
+}
+
 function isRoomNotFoundError(error: unknown): boolean {
   return error instanceof Error && error.message === 'ROOM_NOT_FOUND';
 }
@@ -119,6 +135,8 @@ function isUniqueConstraintError(error: unknown): boolean {
 export function createRoomService(options: {
   repository: RoomRepository;
   presenceStore: RoomPresenceStore;
+  enableSoloGameDebug?: boolean;
+  onMatchStarted?: (matchId: string) => void;
   selectFirstPlayerId?: (
     participants: readonly { userId: string; seatIndex: RoomSeatIndex }[],
   ) => string;
@@ -136,6 +154,9 @@ export function createRoomService(options: {
       actorUserId,
       presence,
       displayNames,
+      ...(options.enableSoloGameDebug === undefined
+        ? {}
+        : { enableSoloGameDebug: options.enableSoloGameDebug }),
     });
 
     return {
@@ -149,6 +170,10 @@ export function createRoomService(options: {
 
   function hasMembership(room: PersistedRoom, userId: string) {
     return room.members.some((member) => member.userId === userId);
+  }
+
+  function occupied(seat: { participantId?: string | null; userId?: string | null }) {
+    return (seat.participantId ?? seat.userId ?? null) !== null;
   }
 
   function checkExpectedVersion(
@@ -238,7 +263,7 @@ export function createRoomService(options: {
       if (!actorUserId) return roomError('NOT_ALLOWED');
 
       try {
-        return await options.repository.withLockedRoom(roomId, async (tx, room) => {
+        const result = await options.repository.withLockedRoom(roomId, async (tx, room) => {
           if (hasMembership(room, actorUserId)) {
             return roomSuccess(await loadView(room, actorUserId));
           }
@@ -277,6 +302,7 @@ export function createRoomService(options: {
 
           return roomSuccess(await loadView(saved, actorUserId));
         });
+        return result;
       } catch (error) {
         if (isRoomNotFoundError(error)) return roomError('ROOM_NOT_FOUND');
 
@@ -322,11 +348,13 @@ export function createRoomService(options: {
         }
 
         const targetSeat = seatByIndex(room, request.seatIndex);
-        if (!targetSeat || targetSeat.userId !== null) {
+        if (!targetSeat || occupied(targetSeat)) {
           return { kind: 'error', code: 'SEAT_TAKEN' };
         }
 
         targetSeat.userId = actorUserId;
+        targetSeat.participantId = actorUserId;
+        targetSeat.participantKind = 'HUMAN';
         targetSeat.ready = false;
         room.version += 1;
 
@@ -357,6 +385,8 @@ export function createRoomService(options: {
         }
 
         ownedSeat.userId = null;
+        ownedSeat.participantId = null;
+        ownedSeat.participantKind = null;
         ownedSeat.ready = false;
         room.version += 1;
 
@@ -415,6 +445,8 @@ export function createRoomService(options: {
 
           if (ownedSeat) {
             ownedSeat.userId = null;
+            ownedSeat.participantId = null;
+            ownedSeat.participantKind = null;
             ownedSeat.ready = false;
           }
 
@@ -451,11 +483,55 @@ export function createRoomService(options: {
       }
     },
 
+    async addBot(actorUserId, roomId, request) {
+      return mutateRoom(actorUserId, roomId, (room) => {
+        if (!hasMembership(room, actorUserId)) return { kind: 'error', code: 'NOT_ROOM_MEMBER' };
+        if (!isRoomHost(room, actorUserId)) return { kind: 'error', code: 'NOT_ALLOWED' };
+        if (room.status === 'CLOSED') return { kind: 'error', code: 'ROOM_CLOSED' };
+        if (room.status !== 'WAITING' || room.currentMatchId !== null) {
+          return { kind: 'error', code: 'ROOM_ALREADY_ACTIVE' };
+        }
+        const stale = checkExpectedVersion(room, request.expectedRoomVersion);
+        if (stale) return stale;
+        const targetSeat = seatByIndex(room, request.seatIndex);
+        if (!targetSeat || occupied(targetSeat)) return { kind: 'error', code: 'SEAT_TAKEN' };
+        targetSeat.userId = null;
+        targetSeat.participantId = buildBotParticipantId(room.roomId, targetSeat.seatIndex);
+        targetSeat.participantKind = 'BOT';
+        targetSeat.ready = true;
+        room.version += 1;
+        return { kind: 'success', room, presence: null };
+      });
+    },
+
+    async removeBot(actorUserId, roomId, request) {
+      return mutateRoom(actorUserId, roomId, (room) => {
+        if (!hasMembership(room, actorUserId)) return { kind: 'error', code: 'NOT_ROOM_MEMBER' };
+        if (!isRoomHost(room, actorUserId)) return { kind: 'error', code: 'NOT_ALLOWED' };
+        if (room.status === 'CLOSED') return { kind: 'error', code: 'ROOM_CLOSED' };
+        if (room.status !== 'WAITING' || room.currentMatchId !== null) {
+          return { kind: 'error', code: 'ROOM_ALREADY_ACTIVE' };
+        }
+        const stale = checkExpectedVersion(room, request.expectedRoomVersion);
+        if (stale) return stale;
+        const targetSeat = seatByIndex(room, request.seatIndex);
+        if (!targetSeat || targetSeat.participantKind !== 'BOT') {
+          return { kind: 'error', code: 'SEAT_NOT_OWNED' };
+        }
+        targetSeat.userId = null;
+        targetSeat.participantId = null;
+        targetSeat.participantKind = null;
+        targetSeat.ready = false;
+        room.version += 1;
+        return { kind: 'success', room, presence: null };
+      });
+    },
+
     async startMatch(actorUserId, roomId, request) {
       if (!actorUserId) return startMatchError('NOT_ALLOWED');
 
       try {
-        return await options.repository.withLockedRoom(roomId, async (tx, room) => {
+        const result = await options.repository.withLockedRoom(roomId, async (tx, room) => {
           if (!hasMembership(room, actorUserId)) {
             return startMatchError('NOT_ROOM_MEMBER');
           }
@@ -474,20 +550,50 @@ export function createRoomService(options: {
 
           const presence = await options.presenceStore.snapshot(room.roomId);
           const seatedParticipants = room.seats
-            .filter((seat): seat is typeof seat & { userId: string } => seat.userId !== null)
+            .filter(
+              (
+                seat,
+              ): seat is typeof seat & {
+                participantId: string;
+                participantKind: ParticipantKind;
+              } => seat.participantId !== null && seat.participantKind !== null,
+            )
             .map((seat) => ({
+              participantId: seat.participantId,
+              participantKind: seat.participantKind,
               userId: seat.userId,
               seatIndex: seat.seatIndex,
               ready: seat.ready,
-              connected: presence.get(seat.userId) ?? false,
+              connected:
+                seat.participantKind === 'BOT'
+                  ? true
+                  : seat.userId !== null && (presence.get(seat.userId) ?? false),
             }))
             .sort((left, right) => left.seatIndex - right.seatIndex);
 
-          if (!seatedParticipants.some((participant) => participant.userId === actorUserId)) {
+          if (
+            !seatedParticipants.some(
+              (participant) =>
+                participant.participantKind === 'HUMAN' && participant.userId === actorUserId,
+            )
+          ) {
             return startMatchError('SEAT_NOT_OWNED');
           }
 
-          if (seatedParticipants.length < 2) {
+          const soloDebugStart =
+            options.enableSoloGameDebug === true &&
+            seatedParticipants.length === 1 &&
+            seatedParticipants[0]?.userId === actorUserId;
+          const soloDebugParticipant = soloDebugStart ? seatedParticipants[0] : null;
+          const humanCount = seatedParticipants.filter(
+            (participant) => participant.participantKind === 'HUMAN',
+          ).length;
+
+          if (seatedParticipants.length < 2 && !soloDebugStart) {
+            return startMatchError('ROOM_NOT_READY');
+          }
+
+          if (humanCount < 1) {
             return startMatchError('ROOM_NOT_READY');
           }
 
@@ -502,14 +608,44 @@ export function createRoomService(options: {
           if (seatedParticipants.some((participant) => !participant.connected)) {
             return startMatchError('SEATED_PARTICIPANT_DISCONNECTED');
           }
-
-          const firstPlayerId = selectFirstPlayerId(seatedParticipants);
-          if (!seatedParticipants.some((participant) => participant.userId === firstPlayerId)) {
+          if (soloDebugStart && !soloDebugParticipant) {
             return startMatchError('NOT_ALLOWED');
           }
 
-          const seatOrder = seatedParticipants.map((participant) => participant.userId);
-          const initialState = createActiveGameState({
+          const dummyPlayerId = soloDebugDummyPlayerId(room.roomId);
+          const matchParticipants = (() => {
+            if (!soloDebugStart) return seatedParticipants;
+            if (!soloDebugParticipant) return null;
+            return [
+                soloDebugParticipant,
+                {
+                  userId: dummyPlayerId,
+                  participantId: dummyPlayerId,
+                  participantKind: 'DEBUG_DUMMY' as const,
+                  seatIndex: 1 as RoomSeatIndex,
+                  ready: true,
+                  connected: true,
+                },
+              ];
+          })();
+          if (!matchParticipants) {
+            return startMatchError('NOT_ALLOWED');
+          }
+
+          const firstPlayerId = soloDebugStart
+            ? actorUserId
+            : selectFirstPlayerId(
+                matchParticipants.map((participant) => ({
+                  userId: participant.participantId,
+                  seatIndex: participant.seatIndex,
+                })),
+              );
+          if (!matchParticipants.some((participant) => participant.participantId === firstPlayerId)) {
+            return startMatchError('NOT_ALLOWED');
+          }
+
+          const seatOrder = matchParticipants.map((participant) => participant.participantId);
+          const activeState = createActiveGameState({
             playerCount: seatOrder.length as 2 | 3 | 4,
             seatOrder: seatOrder as
               | [string, string]
@@ -517,6 +653,28 @@ export function createRoomService(options: {
               | [string, string, string, string],
             firstPlayerId,
           });
+          const initialState: GameState = soloDebugStart
+            ? {
+                ...activeState,
+                debugMode: SOLO_DEBUG_MATCH_MODE,
+                players: activeState.players.map((player) => ({
+                  ...player,
+                  participantKind:
+                    player.playerId === dummyPlayerId
+                      ? SOLO_DEBUG_DUMMY_PARTICIPANT_KIND
+                      : 'HUMAN',
+                })),
+              }
+            : {
+                ...activeState,
+                players: activeState.players.map((player) => ({
+                  ...player,
+                  participantKind:
+                    matchParticipants.find(
+                      (participant) => participant.participantId === player.playerId,
+                    )?.participantKind ?? 'HUMAN',
+                })),
+              };
 
           const match = options.matchStore
             ? await options.matchStore.createInitialMatch({
@@ -544,14 +702,16 @@ export function createRoomService(options: {
           });
 
           return {
-            ok: true,
+            ok: true as const,
             room: await loadView(saved, actorUserId),
             matchId: match.id,
-            status: 'ACTIVE',
+            status: 'ACTIVE' as const,
             stateVersion: initialState.stateVersion,
             lastSequence: 0,
           };
         });
+        if (result.ok) options.onMatchStarted?.(result.matchId);
+        return result;
       } catch (error) {
         if (isRoomNotFoundError(error)) {
           return startMatchError('ROOM_NOT_FOUND');

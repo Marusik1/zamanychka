@@ -13,6 +13,7 @@ const boardCoordSchema = z
 const seatIndexSchema = z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]);
 const colorSchema = z.enum(['RED', 'BLUE', 'GREEN', 'YELLOW']);
 const playerStatusSchema = z.enum(['ACTIVE', 'SURRENDERED', 'FINISHED']);
+const participantKindSchema = z.enum(['HUMAN', 'BOT', 'DEBUG_DUMMY']);
 
 const commandIdentitySchema = z
   .object({
@@ -47,6 +48,7 @@ const playerSchema = z
     color: colorSchema,
     seatIndex: seatIndexSchema,
     status: playerStatusSchema,
+    participantKind: participantKindSchema.optional(),
   })
   .strict();
 
@@ -91,6 +93,7 @@ export const gameWatermarkSchema = z
 export const matchSnapshotSchema = z
   .object({
     status: z.enum(['ACTIVE', 'FINISHED', 'ABANDONED']),
+    debugMode: z.enum(['SOLO']).optional(),
     stateVersion: version,
     turnNumber: z.number().int().positive(),
     turnPhase: z.enum(['WAITING_FOR_ROLL', 'WAITING_FOR_ACTION']).nullable(),

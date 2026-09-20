@@ -13,6 +13,11 @@ enum AuthMethod {
   DEVELOPMENT
 }
 
+enum ParticipantKind {
+  HUMAN
+  BOT
+}
+
 model User {
   id           String        @id @default(cuid())
   telegramId   BigInt?       @unique
@@ -173,6 +178,8 @@ model RoomSeat {
   roomKey  String
   seatIndex Int
   userId   String?  @unique
+  participantId String? @unique
+  participantKind ParticipantKind?
   ready    Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -183,6 +190,7 @@ model RoomSeat {
 
   @@id([roomKey, seatIndex])
   @@index([roomKey])
+  @@index([participantKind])
 }
 
 model RoomChatMessage {

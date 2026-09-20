@@ -14,11 +14,13 @@ export interface RoomSummary {
 
 export interface PlayerSlot {
   id?: string;
+  seatIndex?: 0 | 1 | 2 | 3;
   name?: string;
   initials?: string;
   avatarUrl?: string;
   ready?: boolean;
   isOwner?: boolean;
+  participantKind?: 'HUMAN' | 'BOT' | null;
 }
 
 export interface RoomDetails extends RoomSummary {

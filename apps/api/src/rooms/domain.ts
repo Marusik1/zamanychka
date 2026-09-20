@@ -1,4 +1,5 @@
 import type {
+  ParticipantKind,
   LeaveRoomRequest,
   LeaveSeatRequest,
   RoomCommandError,
@@ -38,6 +39,8 @@ export type ParticipantUserId = string;
 export interface RoomSeatRecord {
   seatIndex: RoomSeatIndex;
   userId: ParticipantUserId | null;
+  participantId?: string | null;
+  participantKind?: ParticipantKind | null;
   ready: boolean;
 }
 
@@ -65,13 +68,14 @@ export interface RoomMapperInput {
   actorUserId: string;
   presence: ReadonlyMap<string, boolean>;
   displayNames: ReadonlyMap<string, string>;
+  enableSoloGameDebug?: boolean;
 }
 
 function buildCounts(room: PersistedRoom) {
   return {
     memberCount: room.members.length,
-    seatedCount: room.seats.filter((seat) => seat.userId !== null).length,
-    readyCount: room.seats.filter((seat) => seat.userId !== null && seat.ready).length,
+    seatedCount: room.seats.filter((seat) => (seat.participantId ?? seat.userId) !== null).length,
+    readyCount: room.seats.filter((seat) => (seat.participantId ?? seat.userId) !== null && seat.ready).length,
   };
 }
 
@@ -90,26 +94,44 @@ function buildCurrentUser(
   room: PersistedRoom,
   actorUserId: string,
   presence: ReadonlyMap<string, boolean>,
+  enableSoloGameDebug = false,
 ): RoomCurrentUser {
   const membership = room.members.find((member) => member.userId === actorUserId) ?? null;
   const ownedSeat = room.seats.find((seat) => seat.userId === actorUserId) ?? null;
-  const seatedMembers = room.seats.filter(
-    (seat): seat is typeof seat & { userId: string } => seat.userId !== null,
+  const seatedParticipants = room.seats.filter(
+    (seat): seat is typeof seat & { participantId: string; participantKind: ParticipantKind } =>
+      (seat.participantId ?? seat.userId) !== null && (seat.participantKind ?? (seat.userId ? 'HUMAN' : null)) !== null,
   );
+  const seatedHumans = seatedParticipants.filter((seat) => seat.participantKind === 'HUMAN');
+  const ownsHumanSeat = ownedSeat?.participantKind === 'HUMAN' && ownedSeat.userId === actorUserId;
 
-  const enoughPlayers = seatedMembers.length >= 2 && seatedMembers.length <= 4;
-  const allReady = enoughPlayers && seatedMembers.every((seat) => seat.ready);
+  const enoughPlayers = seatedParticipants.length >= 2 && seatedParticipants.length <= 4;
+  const hasHuman = seatedHumans.length > 0;
+  const soloDebugReady =
+    enableSoloGameDebug &&
+    seatedParticipants.length === 1 &&
+    seatedParticipants[0]?.userId === actorUserId &&
+    seatedParticipants[0].ready &&
+    (presence.get(actorUserId) ?? false);
+  const allReady = enoughPlayers && seatedParticipants.every((seat) => seat.ready);
   const allConnected =
-    enoughPlayers && seatedMembers.every((seat) => presence.get(seat.userId) ?? false);
+    enoughPlayers &&
+    seatedParticipants.every((seat) =>
+      seat.participantKind === 'BOT' ? true : presence.get(seat.userId ?? '') ?? false,
+    );
+  const canManageBots =
+    membership !== null &&
+    room.status === 'WAITING' &&
+    room.currentMatchId === null &&
+    room.members[0]?.userId === actorUserId;
 
   const canStart =
     membership !== null &&
-    ownedSeat !== null &&
+    ownsHumanSeat &&
     room.status === 'WAITING' &&
     room.currentMatchId === null &&
-    enoughPlayers &&
-    allReady &&
-    allConnected;
+    hasHuman &&
+    ((enoughPlayers && allReady && allConnected) || soloDebugReady);
 
   let startBlockedReason: string | null = null;
 
@@ -119,11 +141,11 @@ function buildCurrentUser(
     startBlockedReason = 'ROOM_CLOSED';
   } else if (room.status !== 'WAITING' || room.currentMatchId !== null) {
     startBlockedReason = 'ROOM_ALREADY_ACTIVE';
-  } else if (ownedSeat === null) {
+  } else if (!ownsHumanSeat) {
     startBlockedReason = 'SEAT_NOT_OWNED';
-  } else if (!enoughPlayers || !allReady) {
+  } else if (!hasHuman || !((enoughPlayers && allReady) || soloDebugReady)) {
     startBlockedReason = 'ROOM_NOT_READY';
-  } else if (!allConnected) {
+  } else if (!(allConnected || soloDebugReady)) {
     startBlockedReason = 'SEATED_PARTICIPANT_DISCONNECTED';
   }
 
@@ -133,6 +155,7 @@ function buildCurrentUser(
     ready: ownedSeat?.ready ?? false,
     canLeave: membership !== null && room.currentMatchId === null && room.status !== 'ACTIVE',
     canStart,
+    canManageBots,
     startBlockedReason,
   };
 }
@@ -142,6 +165,7 @@ export function toRoomState({
   actorUserId,
   presence,
   displayNames,
+  enableSoloGameDebug,
 }: RoomMapperInput): RoomState {
   return {
     id: room.roomId,
@@ -150,9 +174,13 @@ export function toRoomState({
     version: room.version,
     currentMatchId: room.currentMatchId,
     members: buildMembers(room, displayNames),
-    seats: room.seats.map((seat) => ({ ...seat })) as RoomSeat[],
+    seats: room.seats.map((seat) => ({
+      ...seat,
+      participantId: seat.participantId ?? seat.userId,
+      participantKind: seat.participantKind ?? (seat.userId ? 'HUMAN' : null),
+    })) as RoomSeat[],
     counts: buildCounts(room),
-    currentUser: buildCurrentUser(room, actorUserId, presence),
+    currentUser: buildCurrentUser(room, actorUserId, presence, enableSoloGameDebug),
   };
 }
 

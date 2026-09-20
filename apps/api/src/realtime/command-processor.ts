@@ -1,4 +1,7 @@
+import { randomUUID } from 'node:crypto';
+
 import { transition as defaultTransition } from '@zamanushka/game-engine';
+import { getLegalActions } from '@zamanushka/game-engine';
 import type {
   GameCommand as EngineCommand,
   GameState,
@@ -16,11 +19,32 @@ import { buildMatchResultDraft } from '../profile/result-draft.js';
 import { createEventJournal } from './event-journal.js';
 
 type Json = Prisma.InputJsonValue;
+type DiceValue = 1 | 2 | 3 | 4 | 5 | 6;
 type Transition = (
   state: GameState,
   command: EngineCommand,
-  context: { actorPlayerId: string; diceValue?: 1 | 2 | 3 | 4 | 5 | 6 },
+  context: { actorPlayerId: string; diceValue?: DiceValue },
 ) => GameTransitionResult;
+
+type DebugSkipDummyTurnErrorCode =
+  | 'SOLO_DEBUG_DISABLED'
+  | 'MATCH_NOT_FOUND'
+  | 'MATCH_NOT_SOLO_DEBUG'
+  | 'DEBUG_DUMMY_NOT_FOUND'
+  | 'NOT_DEBUG_DUMMY_TURN'
+  | 'STALE_STATE_VERSION'
+  | 'INVALID_ACTION';
+
+export type DebugSkipDummyTurnResult =
+  | GameCommandResult
+  | {
+      ok: false;
+      matchId: string;
+      code: DebugSkipDummyTurnErrorCode;
+      message: string;
+      stateVersion: number;
+      snapshot?: MatchSnapshot;
+    };
 
 export type TerminalMatchHook = (input: {
   tx: Prisma.TransactionClient;
@@ -116,19 +140,19 @@ function snapshot(
 export function createCommandProcessor(options: {
   repository: MatchRepository;
   onTerminalMatch: TerminalMatchHook;
-  rollDice?: () => 1 | 2 | 3 | 4 | 5 | 6;
+  enableSoloGameDebug?: boolean;
+  rollDice?: () => DiceValue;
   transition?: Transition;
 }) {
-  const rollDice =
-    options.rollDice ?? (() => (Math.floor(Math.random() * 6) + 1) as 1 | 2 | 3 | 4 | 5 | 6);
+  const rollDice = options.rollDice ?? (() => (Math.floor(Math.random() * 6) + 1) as DiceValue);
   const transition = options.transition ?? defaultTransition;
   const journal = createEventJournal();
 
-  return {
-    async process(input: {
-      authenticatedUserId: string | null | undefined;
-      command: GameCommandRequest;
-    }): Promise<GameCommandResult> {
+  async function process(input: {
+    authenticatedUserId: string | null | undefined;
+    command: GameCommandRequest;
+    diceValueOverride?: DiceValue;
+  }): Promise<GameCommandResult> {
       const { command } = input;
       if (!input.authenticatedUserId)
         return failure(command, 'UNAUTHORIZED', 'Authenticated session is required', 0);
@@ -185,7 +209,9 @@ export function createCommandProcessor(options: {
           const engineCommand = { ...command, actorPlayerId: authenticatedUserId } as EngineCommand;
           const engineResult = transition(currentSnapshot, engineCommand, {
             actorPlayerId: authenticatedUserId,
-            ...(command.type === 'ROLL_DICE' ? { diceValue: rollDice() } : {}),
+            ...(command.type === 'ROLL_DICE'
+              ? { diceValue: input.diceValueOverride ?? rollDice() }
+              : {}),
           });
           if (!engineResult.ok)
             return failure(
@@ -242,7 +268,14 @@ export function createCommandProcessor(options: {
               lastSequence,
             },
           };
-          if (engineResult.state.status === 'FINISHED') {
+          const hasNonHumanParticipant = engineResult.state.players.some(
+            (player) => player.participantKind === 'BOT' || player.participantKind === 'DEBUG_DUMMY',
+          );
+          if (
+            engineResult.state.status === 'FINISHED' &&
+            engineResult.state.debugMode !== 'SOLO' &&
+            !hasNonHumanParticipant
+          ) {
             if (!persistedMatch?.finishedAt) {
               throw new Error('terminal match finishedAt was not persisted');
             }
@@ -338,6 +371,194 @@ export function createCommandProcessor(options: {
         },
       );
       return result;
-    },
+  }
+
+  function debugError(input: {
+    matchId: string;
+    code: DebugSkipDummyTurnErrorCode;
+    message: string;
+    stateVersion?: number;
+    snapshot?: MatchSnapshot;
+  }): DebugSkipDummyTurnResult {
+    return {
+      ok: false,
+      matchId: input.matchId,
+      code: input.code,
+      message: input.message,
+      stateVersion: input.stateVersion ?? 0,
+      ...(input.snapshot ? { snapshot: input.snapshot } : {}),
+    };
+  }
+
+  function dummyPlayer(state: GameState) {
+    return state.players.find((player) => player.participantKind === 'DEBUG_DUMMY') ?? null;
+  }
+
+  function nextDummyCommand(input: {
+    matchId: string;
+    state: GameState;
+    dummyPlayerId: string;
+    expectedStateVersion: number;
+  }): GameCommandRequest | null {
+    if (input.state.turnPhase === 'WAITING_FOR_ROLL') {
+      return {
+        type: 'ROLL_DICE',
+        matchId: input.matchId,
+        actionId: `debug-dummy-skip:${randomUUID()}`,
+        expectedStateVersion: input.expectedStateVersion,
+      };
+    }
+
+    const action = getLegalActions(input.state, input.dummyPlayerId).find(
+      (candidate) => candidate.type === 'ENTER_PAWN' || candidate.type === 'MOVE_PAWN',
+    );
+    if (!action) return null;
+    return {
+      type: action.type,
+      matchId: input.matchId,
+      actionId: `debug-dummy-skip:${randomUUID()}`,
+      expectedStateVersion: input.expectedStateVersion,
+      pawnId: action.pawnId,
+    };
+  }
+
+  async function skipDebugDummyTurn(input: {
+    authenticatedUserId: string | null | undefined;
+    matchId: string;
+    expectedStateVersion: number;
+  }): Promise<DebugSkipDummyTurnResult> {
+    if (!options.enableSoloGameDebug) {
+      return debugError({
+        matchId: input.matchId,
+        code: 'SOLO_DEBUG_DISABLED',
+        message: 'Solo debug mode is disabled',
+      });
+    }
+
+    if (!input.authenticatedUserId) {
+      return debugError({
+        matchId: input.matchId,
+        code: 'MATCH_NOT_SOLO_DEBUG',
+        message: 'Authenticated session is required',
+      });
+    }
+
+    const match = await options.repository.loadCurrentMatch(input.matchId);
+    if (!match) {
+      return debugError({
+        matchId: input.matchId,
+        code: 'MATCH_NOT_FOUND',
+        message: 'Match was not found',
+      });
+    }
+
+    const state = match.snapshot as unknown as GameState;
+    const current = snapshot(state, match.lastSequence, {
+      startedAt: match.createdAt,
+      finishedAt: match.finishedAt,
+    });
+
+    if (state.debugMode !== 'SOLO') {
+      return debugError({
+        matchId: input.matchId,
+        code: 'MATCH_NOT_SOLO_DEBUG',
+        message: 'Match is not a solo debug match',
+        stateVersion: match.stateVersion,
+        snapshot: current,
+      });
+    }
+
+    const dummy = dummyPlayer(state);
+    if (!dummy) {
+      return debugError({
+        matchId: input.matchId,
+        code: 'DEBUG_DUMMY_NOT_FOUND',
+        message: 'Solo debug dummy participant is missing',
+        stateVersion: match.stateVersion,
+        snapshot: current,
+      });
+    }
+
+    const hasRealAccess = state.players.some(
+      (player) => player.playerId === input.authenticatedUserId && player.participantKind !== 'DEBUG_DUMMY',
+    );
+    if (!hasRealAccess) {
+      return debugError({
+        matchId: input.matchId,
+        code: 'MATCH_NOT_SOLO_DEBUG',
+        message: 'Only a real participant can control the debug dummy',
+        stateVersion: match.stateVersion,
+        snapshot: current,
+      });
+    }
+
+    if (state.currentPlayerId !== dummy.playerId) {
+      return debugError({
+        matchId: input.matchId,
+        code: 'NOT_DEBUG_DUMMY_TURN',
+        message: 'It is not the debug dummy turn',
+        stateVersion: match.stateVersion,
+        snapshot: current,
+      });
+    }
+
+    if (input.expectedStateVersion !== match.stateVersion) {
+      return debugError({
+        matchId: input.matchId,
+        code: 'STALE_STATE_VERSION',
+        message: 'State version is stale',
+        stateVersion: match.stateVersion,
+        snapshot: current,
+      });
+    }
+
+    let latestState = state;
+    let latestVersion = match.stateVersion;
+    let latestResult: GameCommandResult | null = null;
+
+    for (let guard = 0; guard < 8 && latestState.currentPlayerId === dummy.playerId; guard += 1) {
+      const command = nextDummyCommand({
+        matchId: input.matchId,
+        state: latestState,
+        dummyPlayerId: dummy.playerId,
+        expectedStateVersion: latestVersion,
+      });
+      if (!command) {
+        return debugError({
+          matchId: input.matchId,
+          code: 'INVALID_ACTION',
+          message: 'Debug dummy has no safe action to advance',
+          stateVersion: latestVersion,
+          snapshot: snapshot(latestState, match.lastSequence, {
+            startedAt: match.createdAt,
+            finishedAt: match.finishedAt,
+          }),
+        });
+      }
+      latestResult = await process({
+        authenticatedUserId: dummy.playerId,
+        command,
+        ...(command.type === 'ROLL_DICE' ? { diceValueOverride: 1 as const } : {}),
+      });
+      if (!latestResult.ok) return latestResult;
+      latestState = latestResult.snapshot as unknown as GameState;
+      latestVersion = latestResult.stateVersion;
+    }
+
+    if (!latestResult) {
+      return debugError({
+        matchId: input.matchId,
+        code: 'INVALID_ACTION',
+        message: 'Debug dummy turn was not advanced',
+        stateVersion: latestVersion,
+      });
+    }
+
+    return latestResult;
+  }
+
+  return {
+    process,
+    skipDebugDummyTurn,
   };
 }

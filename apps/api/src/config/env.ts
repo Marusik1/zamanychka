@@ -47,7 +47,10 @@ export type AuthRuntimeConfig =
       cookie: CookiePolicy;
       sessionTtlSeconds: number;
     };
-export type AppEnv = z.infer<typeof infrastructureSchema> & { auth: AuthRuntimeConfig };
+export type AppEnv = z.infer<typeof infrastructureSchema> & {
+  auth: AuthRuntimeConfig;
+  enableSoloGameDebug: boolean;
+};
 
 function required(input: Record<string, string | undefined>, key: string): string {
   const value = input[key]?.trim();
@@ -81,6 +84,18 @@ function parseFlag(
     throw new Error('DEV_AUTH_ENABLED must be true or false');
   if (nodeEnv === 'production' && raw === 'true')
     throw new Error('DEV_AUTH_ENABLED=true is forbidden in production');
+  return raw === 'true';
+}
+
+function parseSoloGameDebugFlag(
+  input: Record<string, string | undefined>,
+  nodeEnv: AppEnv['NODE_ENV'],
+): boolean {
+  const raw = input.ENABLE_SOLO_GAME_DEBUG;
+  if (raw !== undefined && raw !== 'true' && raw !== 'false')
+    throw new Error('ENABLE_SOLO_GAME_DEBUG must be true or false');
+  if (nodeEnv === 'production' && raw === 'true')
+    throw new Error('ENABLE_SOLO_GAME_DEBUG=true is forbidden in production');
   return raw === 'true';
 }
 
@@ -142,6 +157,7 @@ export function parseEnv(input: Record<string, string | undefined>): AppEnv {
   const infrastructure = infrastructureSchema.parse(input);
   const apiPort = infrastructure.PORT ?? infrastructure.API_PORT;
   const devAuthEnabled = parseFlag(input, infrastructure.NODE_ENV);
+  const enableSoloGameDebug = parseSoloGameDebugFlag(input, infrastructure.NODE_ENV);
   const allowedOrigins = parseOrigins(input, infrastructure.NODE_ENV);
   const sessionTtlSeconds = boundedInteger(
     input,
@@ -194,5 +210,5 @@ export function parseEnv(input: Record<string, string | undefined>): AppEnv {
           300,
         ),
       };
-  return { ...infrastructure, API_PORT: apiPort, auth };
+  return { ...infrastructure, API_PORT: apiPort, auth, enableSoloGameDebug };
 }

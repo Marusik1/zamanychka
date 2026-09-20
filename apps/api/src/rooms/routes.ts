@@ -1,11 +1,13 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
+  addBotToSeatRequestSchema,
   createRoomRequestSchema,
   joinRoomRequestSchema,
   leaveRoomRequestSchema,
   leaveSeatRequestSchema,
   roomChatHistorySchema,
   roomReconnectRequestSchema,
+  removeBotFromSeatRequestSchema,
   sendRoomChatMessageRequestSchema,
   setReadyRequestSchema,
   startMatchRequestSchema,
@@ -256,6 +258,45 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
     return mapRoomResult(
       reply,
       await options.service.takeSeat(userId, String(params.roomId), parsed.data),
+    );
+  });
+
+  app.post('/api/rooms/:roomId/seats/:seatIndex/bot', async (request, reply) => {
+    if (!requireOrigin(request, reply, options.allowedOrigins) || !requireJson(request, reply)) {
+      return;
+    }
+
+    const userId = await actorId(request, reply, options.auth, options.cookieName);
+    if (!userId) return;
+
+    const params = request.params as { roomId: string; seatIndex: string };
+    const parsed = addBotToSeatRequestSchema.safeParse({
+      ...(typeof request.body === 'object' && request.body !== null ? request.body : {}),
+      seatIndex: Number(params.seatIndex),
+    });
+    if (!parsed.success) return publicError(reply, 400, 'VALIDATION_ERROR');
+
+    return mapRoomResult(reply, await options.service.addBot(userId, String(params.roomId), parsed.data));
+  });
+
+  app.delete('/api/rooms/:roomId/seats/:seatIndex/bot', async (request, reply) => {
+    if (!requireOrigin(request, reply, options.allowedOrigins) || !requireJson(request, reply)) {
+      return;
+    }
+
+    const userId = await actorId(request, reply, options.auth, options.cookieName);
+    if (!userId) return;
+
+    const params = request.params as { roomId: string; seatIndex: string };
+    const parsed = removeBotFromSeatRequestSchema.safeParse({
+      ...(typeof request.body === 'object' && request.body !== null ? request.body : {}),
+      seatIndex: Number(params.seatIndex),
+    });
+    if (!parsed.success) return publicError(reply, 400, 'VALIDATION_ERROR');
+
+    return mapRoomResult(
+      reply,
+      await options.service.removeBot(userId, String(params.roomId), parsed.data),
     );
   });
 

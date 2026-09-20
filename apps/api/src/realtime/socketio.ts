@@ -135,7 +135,13 @@ export function createRealtimeRuntime(options: {
       authenticatedUserId: string | null | undefined;
       command: GameCommandRequest;
     }): Promise<GameCommandResult>;
+    skipDebugDummyTurn?(input: {
+      authenticatedUserId: string | null | undefined;
+      matchId: string;
+      expectedStateVersion: number;
+    }): Promise<unknown>;
   };
+  botRunner?: { kick(matchId: string): void };
   allowedOrigins: string[];
   redisUrl?: string;
 }) {
@@ -296,9 +302,54 @@ export function createRealtimeRuntime(options: {
         serverMs,
         ackBytes: byteLength(result),
       });
-      if (result.ok) dispatchOutboxSoon();
+      if (result.ok) {
+        dispatchOutboxSoon();
+        options.botRunner?.kick(parsed.data.matchId);
+      }
       ack?.(result);
     });
+
+    socket.on(
+      'game:debug-skip-dummy-turn',
+      async (
+        input: unknown,
+        ack?: (result: unknown) => void,
+      ) => {
+        if (!options.commandProcessor.skipDebugDummyTurn) {
+          ack?.({
+            ok: false,
+            matchId: '',
+            code: 'SOLO_DEBUG_DISABLED',
+            message: 'Solo debug mode is disabled',
+            stateVersion: 0,
+          });
+          return;
+        }
+        const parsed = gameSyncRequestSchema.pick({ matchId: true, stateVersion: true }).safeParse(
+          input,
+        );
+        if (!parsed.success) {
+          ack?.({
+            ok: false,
+            matchId: '',
+            code: 'INVALID_ACTION',
+            message: 'Request validation failed',
+            stateVersion: 0,
+          });
+          return;
+        }
+        const result = await options.commandProcessor.skipDebugDummyTurn({
+          authenticatedUserId: (socket.data as SocketData).userId,
+          matchId: parsed.data.matchId,
+          expectedStateVersion: parsed.data.stateVersion,
+        });
+        if (typeof result === 'object' && result !== null && 'ok' in result && result.ok) {
+          dispatchOutboxSoon();
+          options.botRunner?.kick(parsed.data.matchId);
+        }
+        ack?.(result);
+      },
+    );
 
     socket.on('game:sync', async (input: unknown, ack?: (result: unknown) => void) => {
       const parsed = gameSyncRequestSchema.safeParse(input);

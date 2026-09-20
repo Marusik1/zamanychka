@@ -1,8 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { FullscreenIntroGate } from './FullscreenIntroGate.js';
-import { FullscreenScrubPortal } from './FullscreenScrubPortal.js';
+import { FullscreenIntroGate, FullscreenScrubPortal } from './FullscreenIntroGate.js';
 
 describe('FullscreenIntroGate', () => {
   beforeEach(() => {
@@ -42,9 +41,15 @@ describe('FullscreenIntroGate', () => {
 
     expect(screen.getByRole('region')).toBeInTheDocument();
     expect(screen.queryByRole('banner')).not.toBeInTheDocument();
+    expect(screen.queryByRole('navigation')).not.toBeInTheDocument();
     expect(document.documentElement.dataset.introActive).toBe('true');
     expect(screen.getByRole('button')).toBeInTheDocument();
+    expect(document.querySelector('.z-fullscreen-intro__poster-image')).toHaveAttribute(
+      'src',
+      '/intro/approved-start.png',
+    );
     expect(screen.queryByText('scrub idle')).not.toBeInTheDocument();
+    expect(screen.queryByText('scrub running')).not.toBeInTheDocument();
     expect(document.body.querySelector('.zScrubViewport')).toBeNull();
 
     await waitFor(() => expect(screen.getByRole('button')).toBeEnabled());

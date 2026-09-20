@@ -13,7 +13,13 @@ function toDomain(room: {
   status: string;
   version: number;
   currentMatchId: string | null;
-  seats: { seatIndex: number; userId: string | null; ready: boolean }[];
+  seats: {
+    seatIndex: number;
+    userId: string | null;
+    participantId: string | null;
+    participantKind: 'HUMAN' | 'BOT' | null;
+    ready: boolean;
+  }[];
   memberships: { userId: string; joinedAt: Date }[];
 }): PersistedRoom {
   return {
@@ -35,6 +41,8 @@ function toDomain(room: {
       .map((seat) => ({
         seatIndex: seat.seatIndex as RoomSeatIndex,
         userId: seat.userId,
+        participantId: seat.participantId ?? seat.userId,
+        participantKind: seat.participantKind ?? (seat.userId ? 'HUMAN' : null),
         ready: seat.ready,
       }))
       .sort((left, right) => left.seatIndex - right.seatIndex),
@@ -79,6 +87,8 @@ export async function persistRoom(tx: TxClient, room: PersistedRoom) {
       },
       data: {
         userId: seat.userId,
+        participantId: seat.participantId ?? seat.userId,
+        participantKind: seat.participantKind ?? (seat.userId ? 'HUMAN' : null),
         ready: seat.ready,
       },
     });

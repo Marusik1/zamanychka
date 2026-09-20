@@ -1,5 +1,6 @@
 import React from 'react';
 import type { PlayerSlot, RoomDetails } from '../../types/ui';
+import { BotSeatControls } from '../../../components/BotSeatControls';
 import { Icon } from '../ui/Icon';
 import './lobby.css';
 
@@ -10,6 +11,14 @@ type LobbyAction = {
   destructive?: boolean;
 };
 
+type BotAwarePlayerSlot = PlayerSlot & {
+  participantKind?: 'HUMAN' | 'BOT' | null;
+};
+
+function getParticipantKind(slot?: PlayerSlot): 'HUMAN' | 'BOT' | null {
+  return (slot as BotAwarePlayerSlot | undefined)?.participantKind ?? null;
+}
+
 interface Props {
   room: RoomDetails;
   isOwner: boolean;
@@ -19,26 +28,59 @@ interface Props {
   onMore: () => void;
   onStart: () => void;
   onLeave: () => void;
+  onAddBot?: (seatIndex: 0 | 1 | 2 | 3) => void;
+  onRemoveBot?: (seatIndex: 0 | 1 | 2 | 3) => void;
+  busy?: boolean;
   primaryAction?: LobbyAction | null;
   secondaryActions?: readonly LobbyAction[];
 }
 
-function PlayerSlotCard({ slot }: { slot?: PlayerSlot }) {
+function PlayerSlotCard({
+  slot,
+  seatIndex,
+  isHost,
+  roomLocked,
+  busy,
+  onAddBot,
+  onRemoveBot,
+}: {
+  slot?: PlayerSlot;
+  seatIndex: 0 | 1 | 2 | 3;
+  isHost: boolean;
+  roomLocked: boolean;
+  busy: boolean;
+  onAddBot?: (seatIndex: 0 | 1 | 2 | 3) => void;
+  onRemoveBot?: (seatIndex: 0 | 1 | 2 | 3) => void;
+}) {
+  const participantKind = getParticipantKind(slot);
+  const controls = {
+    isHost,
+    roomLocked,
+    participantKind,
+    busy,
+    onAddBot: () => onAddBot?.(seatIndex),
+    onRemoveBot: () => onRemoveBot?.(seatIndex),
+  };
+
   if (!slot?.name) {
     return (
-      <div className="z-player-slot is-empty">
-        <span className="z-slot-plus"><Icon name="plus" /></span>
-        <small>Ожидает<br />игрока</small>
-      </div>
+      <BotSeatControls {...controls}>
+        <div className="z-player-slot is-empty">
+          <span className="z-slot-plus"><Icon name="plus" /></span>
+          <small>Ожидает<br />игрока</small>
+        </div>
+      </BotSeatControls>
     );
   }
 
   return (
-    <div className="z-player-slot">
-      <div className="z-player-avatar">{slot.avatarUrl ? <img src={slot.avatarUrl} alt="" /> : slot.initials}</div>
-      <strong>{slot.name}{slot.isOwner ? ' ♛' : ''}</strong>
-      <span className={slot.ready ? 'is-ready' : ''}><i />{slot.ready ? 'Готов' : 'Не готов'}</span>
-    </div>
+    <BotSeatControls {...controls}>
+      <div className="z-player-slot">
+        <div className="z-player-avatar">{slot.avatarUrl ? <img src={slot.avatarUrl} alt="" /> : slot.initials}</div>
+        <strong>{slot.name}{slot.isOwner ? ' ♛' : ''}</strong>
+        <span className={slot.ready ? 'is-ready' : ''}><i />{slot.ready ? 'Готов' : 'Не готов'}</span>
+      </div>
+    </BotSeatControls>
   );
 }
 
@@ -51,10 +93,14 @@ export function RoomLobbyScreen({
   onMore,
   onStart,
   onLeave,
+  onAddBot,
+  onRemoveBot,
+  busy = false,
   primaryAction = null,
   secondaryActions = [],
 }: Props) {
   const slots = Array.from({ length: room.maxPlayers }, (_, i) => room.playersList[i]);
+  const roomLocked = room.status === 'playing';
 
   return (
     <div className="z-screen">
@@ -77,7 +123,16 @@ export function RoomLobbyScreen({
         <div className="z-lobby-section-title"><strong>Игроки ({room.players} / {room.maxPlayers})</strong></div>
         <section className="z-player-grid">
           {slots.map((slot, idx) => (
-            <PlayerSlotCard key={slot?.id ?? `empty-${idx}`} {...(slot ? { slot } : {})} />
+            <PlayerSlotCard
+              key={slot?.id ?? `empty-${idx}`}
+              {...(slot ? { slot } : {})}
+              seatIndex={idx as 0 | 1 | 2 | 3}
+              isHost={isOwner}
+              roomLocked={roomLocked}
+              busy={busy}
+              {...(onAddBot ? { onAddBot } : {})}
+              {...(onRemoveBot ? { onRemoveBot } : {})}
+            />
           ))}
         </section>
 

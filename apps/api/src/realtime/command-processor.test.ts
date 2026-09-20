@@ -57,6 +57,57 @@ async function createMatch() {
   return match;
 }
 
+async function createSoloDebugMatch(input: { currentPlayerId?: string } = {}) {
+  const dummyId = 'debug-dummy:single-room';
+  await database.prisma.user.create({
+    data: { id: 'user-1', firstName: 'User 1' },
+  });
+  await database.prisma.room.create({
+    data: {
+      key: 'single-room',
+      code: 'MAIN',
+      status: 'ACTIVE',
+      memberships: {
+        create: [{ userId: 'user-1' }],
+      },
+      seats: {
+        create: [
+          { seatIndex: 0, userId: 'user-1', ready: true },
+          { seatIndex: 1, ready: false },
+          { seatIndex: 2, ready: false },
+          { seatIndex: 3, ready: false },
+        ],
+      },
+    },
+  });
+  const base = createActiveGameState({
+    playerCount: 2,
+    seatOrder: ['user-1', dummyId],
+    firstPlayerId: input.currentPlayerId ?? 'user-1',
+  });
+  const snapshot = {
+    ...base,
+    debugMode: 'SOLO' as const,
+    players: base.players.map((player) => ({
+      ...player,
+      participantKind: player.playerId === dummyId ? ('DEBUG_DUMMY' as const) : ('REAL' as const),
+    })),
+  };
+  const match = await database.prisma.match.create({
+    data: {
+      roomKey: 'single-room',
+      firstPlayerId: snapshot.currentPlayerId ?? 'user-1',
+      seatOrder: ['user-1', dummyId],
+      snapshot,
+    },
+  });
+  await database.prisma.room.update({
+    where: { key: 'single-room' },
+    data: { currentMatchId: match.id },
+  });
+  return { match, dummyId };
+}
+
 async function prepareHomeDiagonalWin(matchId: string) {
   const match = await database.prisma.match.findUniqueOrThrow({ where: { id: matchId } });
   const state = match.snapshot as unknown as ReturnType<typeof createActiveGameState>;
@@ -110,6 +161,85 @@ afterAll(async () => {
 });
 
 describe('transactional realtime command processor', () => {
+  it('rejects debug dummy skip when solo debug is disabled', async () => {
+    const { processor } = createProcessor();
+
+    await expect(
+      processor.skipDebugDummyTurn({
+        authenticatedUserId: 'user-1',
+        matchId: 'match-1',
+        expectedStateVersion: 0,
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      code: 'SOLO_DEBUG_DISABLED',
+    });
+  });
+
+  it('rejects debug dummy skip unless it is currently the dummy turn', async () => {
+    const { match } = await createSoloDebugMatch({ currentPlayerId: 'user-1' });
+    const { processor } = createProcessor();
+
+    await expect(
+      processor.skipDebugDummyTurn({
+        authenticatedUserId: 'user-1',
+        matchId: match.id,
+        expectedStateVersion: 0,
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      code: 'SOLO_DEBUG_DISABLED',
+    });
+
+    const enabled = createCommandProcessor({
+      repository,
+      enableSoloGameDebug: true,
+      onTerminalMatch: async () => undefined,
+    });
+    await expect(
+      enabled.skipDebugDummyTurn({
+        authenticatedUserId: 'user-1',
+        matchId: match.id,
+        expectedStateVersion: 0,
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      code: 'NOT_DEBUG_DUMMY_TURN',
+    });
+  });
+
+  it('advances the marked debug dummy turn without persisting fake player history', async () => {
+    const { match, dummyId } = await createSoloDebugMatch({
+      currentPlayerId: 'debug-dummy:single-room',
+    });
+    const completion = createMatchCompletionService({ repository: roomRepository });
+    const processor = createCommandProcessor({
+      repository,
+      enableSoloGameDebug: true,
+      onTerminalMatch: async ({ tx, matchId }) => {
+        await completion.completeTerminalMatchInTransaction(tx, matchId);
+      },
+    });
+
+    const result = await processor.skipDebugDummyTurn({
+      authenticatedUserId: 'user-1',
+      matchId: match.id,
+      expectedStateVersion: 0,
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      snapshot: {
+        debugMode: 'SOLO',
+        currentPlayerId: 'user-1',
+        players: expect.arrayContaining([
+          expect.objectContaining({ playerId: dummyId, participantKind: 'DEBUG_DUMMY' }),
+        ]),
+      },
+    });
+    await expect(database.prisma.matchResult.count({ where: { matchId: match.id } })).resolves.toBe(0);
+  });
+
   it('persists HOME_DIAGONAL_COMPLETED and resets only its matching room inside PostgreSQL', async () => {
     const match = await createMatch();
     await prepareHomeDiagonalWin(match.id);

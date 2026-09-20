@@ -43,6 +43,22 @@ const pawns: readonly GameScreenPawnView[] = [
   },
 ];
 
+function offBoardPawnSet(
+  players: readonly { playerId: string; color: GameScreenPawnView['color']; isLocal?: boolean }[],
+): readonly GameScreenPawnView[] {
+  return players.flatMap((player) =>
+    Array.from({ length: 4 }, (_, index) => ({
+      pawnId: `${player.playerId}-${index + 1}`,
+      playerId: player.playerId,
+      color: player.color,
+      position: { zone: 'OFF_BOARD' as const },
+      coord: null,
+      coordKey: null,
+      isLocalPlayerPawn: Boolean(player.isLocal),
+    })),
+  );
+}
+
 describe('GameBoard', () => {
   it('renders exactly 64 board cells with alternating material tones', () => {
     render(<GameBoard pawns={pawns} />);
@@ -63,6 +79,56 @@ describe('GameBoard', () => {
     );
     expect(screen.getByRole('grid').querySelector('[data-cell="0:0"]')).toHaveAttribute('data-tone', 'light');
     expect(screen.getByRole('grid').querySelector('[data-cell="0:1"]')).toHaveAttribute('data-tone', 'dark');
+  });
+
+  it('renders every OFF_BOARD pawn from an initial 2-player snapshot as visible reserve DOM', () => {
+    const initialPawns = offBoardPawnSet([
+      { playerId: 'red-seat', color: 'RED', isLocal: true },
+      { playerId: 'yellow-seat', color: 'YELLOW' },
+    ]);
+
+    const { container } = render(
+      <GameBoard
+        pawns={initialPawns}
+        players={[
+          { playerId: 'red-seat', color: 'RED', seatIndex: 0, status: 'ACTIVE', isLocalPlayer: true, isCurrentPlayer: true, isWinner: false, pawnCount: 4 },
+          { playerId: 'yellow-seat', color: 'YELLOW', seatIndex: 1, status: 'ACTIVE', isLocalPlayer: false, isCurrentPlayer: false, isWinner: false, pawnCount: 4 },
+        ]}
+      />,
+    );
+
+    const reserveLayer = container.querySelector('.game-board-scene__players');
+    expect(reserveLayer?.querySelectorAll('.game-board-scene__reserve-mini [data-pawn-id]')).toHaveLength(8);
+    expect(reserveLayer?.querySelectorAll('.game-pawn--red')).toHaveLength(5);
+    expect(reserveLayer?.querySelectorAll('.game-pawn--yellow')).toHaveLength(5);
+  });
+
+  it('renders every OFF_BOARD pawn from an initial 4-player snapshot as visible reserve DOM', () => {
+    const initialPawns = offBoardPawnSet([
+      { playerId: 'red-seat', color: 'RED', isLocal: true },
+      { playerId: 'blue-seat', color: 'BLUE' },
+      { playerId: 'yellow-seat', color: 'YELLOW' },
+      { playerId: 'green-seat', color: 'GREEN' },
+    ]);
+
+    const { container } = render(
+      <GameBoard
+        pawns={initialPawns}
+        players={[
+          { playerId: 'red-seat', color: 'RED', seatIndex: 0, status: 'ACTIVE', isLocalPlayer: true, isCurrentPlayer: true, isWinner: false, pawnCount: 4 },
+          { playerId: 'blue-seat', color: 'BLUE', seatIndex: 1, status: 'ACTIVE', isLocalPlayer: false, isCurrentPlayer: false, isWinner: false, pawnCount: 4 },
+          { playerId: 'yellow-seat', color: 'YELLOW', seatIndex: 2, status: 'ACTIVE', isLocalPlayer: false, isCurrentPlayer: false, isWinner: false, pawnCount: 4 },
+          { playerId: 'green-seat', color: 'GREEN', seatIndex: 3, status: 'ACTIVE', isLocalPlayer: false, isCurrentPlayer: false, isWinner: false, pawnCount: 4 },
+        ]}
+      />,
+    );
+
+    const reserveLayer = container.querySelector('.game-board-scene__players');
+    expect(reserveLayer?.querySelectorAll('.game-board-scene__reserve-mini [data-pawn-id]')).toHaveLength(16);
+    expect(reserveLayer?.querySelectorAll('.game-pawn--red')).toHaveLength(5);
+    expect(reserveLayer?.querySelectorAll('.game-pawn--blue')).toHaveLength(5);
+    expect(reserveLayer?.querySelectorAll('.game-pawn--yellow')).toHaveLength(5);
+    expect(reserveLayer?.querySelectorAll('.game-pawn--green')).toHaveLength(5);
   });
 
   it('clears the transient pawn-control focus before its authoritative action can replace the button', () => {

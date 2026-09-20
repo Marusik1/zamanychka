@@ -29,12 +29,14 @@ export type PlayerState = Readonly<{
   color: PlayerColor;
   seatIndex: 0 | 1 | 2 | 3;
   status: 'ACTIVE' | 'SURRENDERED' | 'FINISHED';
+  participantKind?: 'HUMAN' | 'BOT' | 'DEBUG_DUMMY';
 }>;
 
 export type WinReason = 'HOME_DIAGONAL_COMPLETED' | 'LAST_ACTIVE_PLAYER';
 
 export type GameState = Readonly<{
   status: MatchStatus;
+  debugMode?: 'SOLO';
   stateVersion: number;
   turnNumber: number;
   turnPhase: TurnPhase | null;
