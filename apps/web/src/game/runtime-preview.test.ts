@@ -39,10 +39,21 @@ describe('runtime preview fixture', () => {
     const fixture = createRuntimePreviewFixture('green-seat');
 
     expect(fixture.scenarios.map((scenario) => scenario.key)).toEqual([
-      'dice',
+      'dice-1',
+      'dice-2',
+      'dice-3',
+      'dice-4',
+      'dice-5',
+      'dice-6',
       'enter',
+      'move-short',
       'move4',
       'capture',
+      'dice-pawn',
+      'dice-capture',
+      'queue-3',
+      'duplicate-event',
+      'simulate-reconnect',
       'home-entry',
       'home-complete',
       'victory',

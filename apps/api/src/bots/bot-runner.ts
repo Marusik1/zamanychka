@@ -27,9 +27,15 @@ function logBotTelemetry(event: string, payload: Record<string, unknown>) {
 
 export class BotRunner {
   private readonly localInFlight = new Set<string>();
+  private readonly watchdogs = new Set<string>();
   private readonly minDelayMs: number;
   private readonly maxDelayMs: number;
   private readonly maxActionsPerKick: number;
+  private readonly maxLeaseRetryAttempts: number;
+  private readonly leaseRetryDelayMs: number;
+  private readonly recoveryDelayMs: number;
+  private readonly watchdogDelayMs: number;
+  private readonly stallTelemetryDelayMs: number;
   private readonly logger: Pick<Console, 'debug' | 'warn' | 'error'>;
   private readonly random: () => number;
 
@@ -41,17 +47,40 @@ export class BotRunner {
     this.minDelayMs = options.minDelayMs ?? 450;
     this.maxDelayMs = options.maxDelayMs ?? 850;
     this.maxActionsPerKick = options.maxActionsPerKick ?? 8;
+    this.maxLeaseRetryAttempts = options.maxLeaseRetryAttempts ?? 3;
+    this.leaseRetryDelayMs = options.leaseRetryDelayMs ?? 250;
+    this.recoveryDelayMs = options.recoveryDelayMs ?? 3_000;
+    this.watchdogDelayMs = options.watchdogDelayMs ?? 3_000;
+    this.stallTelemetryDelayMs = options.stallTelemetryDelayMs ?? 10_000;
     this.logger = options.logger ?? console;
     this.random = options.random ?? Math.random;
   }
 
   kick(matchId: string): void {
+    this.kickWithRetry(matchId, 0);
+  }
+
+  private kickWithRetry(matchId: string, attempt: number): void {
     if (this.localInFlight.has(matchId)) return;
     this.localInFlight.add(matchId);
 
     void this.lease
       .runExclusive(matchId, async () => {
         await this.runLoop(matchId);
+        return 'executed' as const;
+      })
+      .then((result) => {
+        if (result === 'executed') return;
+        this.scheduleWatchdog(matchId);
+        if (attempt >= this.maxLeaseRetryAttempts) {
+          this.logger.warn('[bot-runner] lease busy retry limit reached', {
+            matchId,
+            maxLeaseRetryAttempts: this.maxLeaseRetryAttempts,
+          });
+          this.scheduleRecovery(matchId);
+          return;
+        }
+        setTimeout(() => this.kickWithRetry(matchId, attempt + 1), this.leaseRetryDelayMs);
       })
       .catch((error) => {
         this.logger.error('[bot-runner] failed', { matchId, error });
@@ -59,6 +88,72 @@ export class BotRunner {
       .finally(() => {
         this.localInFlight.delete(matchId);
       });
+  }
+
+  private scheduleRecovery(matchId: string): void {
+    setTimeout(() => this.kick(matchId), this.recoveryDelayMs);
+  }
+
+  private scheduleWatchdog(matchId: string): void {
+    void this.runtime
+      .readTurn(matchId)
+      .then((snapshot) => {
+        if (!snapshot || snapshot.status !== 'ACTIVE' || snapshot.activeParticipantKind !== 'BOT') return;
+        const observed = {
+          stateVersion: snapshot.stateVersion,
+          participantId: snapshot.activeParticipantId,
+          phase: snapshot.phase ?? null,
+        };
+        const watchdogKey = `${matchId}:${observed.stateVersion}:${observed.participantId ?? 'unknown'}`;
+        if (this.watchdogs.has(watchdogKey)) return;
+        this.watchdogs.add(watchdogKey);
+        setTimeout(() => {
+          void this.reconcileBotProgress(matchId, observed).finally(() => {
+            this.watchdogs.delete(watchdogKey);
+          });
+        }, this.watchdogDelayMs);
+        setTimeout(() => {
+          void this.logIfStillStalled(matchId, observed);
+        }, this.stallTelemetryDelayMs);
+      })
+      .catch((error) => {
+        this.logger.warn('[bot-runner] watchdog snapshot failed', { matchId, error });
+      });
+  }
+
+  private async reconcileBotProgress(
+    matchId: string,
+    observed: { stateVersion: number; participantId: string | null; phase: string | null },
+  ): Promise<void> {
+    const snapshot = await this.runtime.readTurn(matchId);
+    if (!snapshot || snapshot.status !== 'ACTIVE' || snapshot.activeParticipantKind !== 'BOT') return;
+    if (snapshot.stateVersion !== observed.stateVersion) return;
+    if (snapshot.activeParticipantId !== observed.participantId) return;
+    this.kick(matchId);
+  }
+
+  private async logIfStillStalled(
+    matchId: string,
+    observed: { stateVersion: number; participantId: string | null; phase: string | null },
+  ): Promise<void> {
+    const snapshot = await this.runtime.readTurn(matchId);
+    if (!snapshot || snapshot.status !== 'ACTIVE' || snapshot.activeParticipantKind !== 'BOT') return;
+    if (snapshot.stateVersion !== observed.stateVersion) return;
+    if (snapshot.activeParticipantId !== observed.participantId) return;
+    logBotTelemetry('BOT_TURN_STALLED', {
+      matchId,
+      stateVersion: snapshot.stateVersion,
+      phase: snapshot.phase ?? observed.phase,
+      participantId: snapshot.activeParticipantId,
+      leaseAttempts: this.maxLeaseRetryAttempts + 1,
+    });
+    this.logger.warn('[bot-runner] BOT_TURN_STALLED', {
+      matchId,
+      stateVersion: snapshot.stateVersion,
+      phase: snapshot.phase ?? observed.phase,
+      participantId: snapshot.activeParticipantId,
+      leaseAttempts: this.maxLeaseRetryAttempts + 1,
+    });
   }
 
   private async runLoop(matchId: string): Promise<void> {

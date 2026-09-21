@@ -4,6 +4,7 @@ import type { MatchSnapshot, TransitionEnvelope } from '@zamanushka/shared';
 import type { GameScreenPlayerView } from './domain.js';
 import type { DieValue } from './dice.js';
 import type { GameplayPresentationPlan } from './event-presentation.js';
+import { recordGameplayTelemetry } from './gameplay-telemetry.js';
 import type {
   PremiumBoardCoord,
   PremiumHomeCompletionAnimation,
@@ -134,9 +135,37 @@ export async function playPremiumTransition(
 
     switch (event.type) {
       case 'diceRolled':
+        recordGameplayTelemetry('DICE_ROLL_VISUAL_START', {
+          matchId: transition.matchId,
+          eventId: transition.transitionId,
+          actionId: transition.actionId,
+          sequence: transition.toSequence,
+          stateVersion: transition.stateVersion,
+          transitionType: event.type,
+          diceValue: event.payload.diceValue,
+        });
         await handle.diceRolled(event.payload.diceValue as DieValue, signal);
+        recordGameplayTelemetry('DICE_SETTLE', {
+          matchId: transition.matchId,
+          eventId: transition.transitionId,
+          actionId: transition.actionId,
+          sequence: transition.toSequence,
+          stateVersion: transition.stateVersion,
+          transitionType: event.type,
+          diceValue: event.payload.diceValue,
+          aborted: signal.aborted,
+        });
         break;
       case 'pawnEntered':
+        recordGameplayTelemetry('PAWN_ANIMATION_START', {
+          matchId: transition.matchId,
+          eventId: transition.transitionId,
+          actionId: transition.actionId,
+          sequence: transition.toSequence,
+          stateVersion: transition.stateVersion,
+          transitionType: event.type,
+          pawnId: event.payload.pawnId,
+        });
         await handle.pawnEntered(
           {
             pawnId: event.payload.pawnId,
@@ -144,8 +173,26 @@ export async function playPremiumTransition(
           },
           signal,
         );
+        recordGameplayTelemetry('PAWN_ANIMATION_COMPLETE', {
+          matchId: transition.matchId,
+          eventId: transition.transitionId,
+          actionId: transition.actionId,
+          sequence: transition.toSequence,
+          stateVersion: transition.stateVersion,
+          transitionType: event.type,
+          pawnId: event.payload.pawnId,
+        });
         break;
       case 'pawnMoved':
+        recordGameplayTelemetry('PAWN_ANIMATION_START', {
+          matchId: transition.matchId,
+          eventId: transition.transitionId,
+          actionId: transition.actionId,
+          sequence: transition.toSequence,
+          stateVersion: transition.stateVersion,
+          transitionType: event.type,
+          pawnId: event.payload.pawnId,
+        });
         await handle.pawnMoved(
           {
             pawnId: event.payload.pawnId,
@@ -159,6 +206,15 @@ export async function playPremiumTransition(
           },
           signal,
         );
+        recordGameplayTelemetry('PAWN_ANIMATION_COMPLETE', {
+          matchId: transition.matchId,
+          eventId: transition.transitionId,
+          actionId: transition.actionId,
+          sequence: transition.toSequence,
+          stateVersion: transition.stateVersion,
+          transitionType: event.type,
+          pawnId: event.payload.pawnId,
+        });
         break;
       case 'pawnCaptured':
         await handle.pawnCaptured(

@@ -19,6 +19,10 @@ import { GameBoard } from './board.js';
 import { projectGameScreenModel } from './domain.js';
 import { createGameplayPresentationPlan } from './event-presentation.js';
 import {
+  recordGameplayTelemetry,
+  type GameplayTelemetryEvent,
+} from './gameplay-telemetry.js';
+import {
   acceptCommittedTransition,
   completeActivePresentation,
   createPresentationController,
@@ -37,10 +41,21 @@ type PreviewFixture = Readonly<{
 }>;
 
 type PreviewScenarioKey =
-  | 'dice'
+  | 'dice-1'
+  | 'dice-2'
+  | 'dice-3'
+  | 'dice-4'
+  | 'dice-5'
+  | 'dice-6'
   | 'enter'
+  | 'move-short'
   | 'move4'
   | 'capture'
+  | 'dice-pawn'
+  | 'dice-capture'
+  | 'queue-3'
+  | 'duplicate-event'
+  | 'simulate-reconnect'
   | 'home-entry'
   | 'home-complete'
   | 'victory'
@@ -696,6 +711,25 @@ export function createRuntimePreviewFixture(localPlayerId: string): PreviewFixtu
     snapshot: redDiceOnlySnapshot,
   };
 
+  const diceScenarioFor = (value: 1 | 2 | 3 | 4 | 5 | 6): TransitionEnvelope => ({
+    ...diceScenario,
+    transitionId: `dice-${value}`,
+    actionId: `dice-${value}-action`,
+    events: diceScenario.events.map((event) =>
+      event.type === 'diceRolled'
+        ? {
+            ...event,
+            eventId: `dice-${value}-e2`,
+            payload: { playerId: 'red-seat', diceValue: value },
+          }
+        : event,
+    ),
+    snapshot: {
+      ...redDiceOnlySnapshot,
+      diceValue: value,
+    },
+  });
+
   const moveOnlyScenario: TransitionEnvelope = {
     matchId: 'epic-06-preview',
     transitionId: 'move-only',
@@ -728,6 +762,43 @@ export function createRuntimePreviewFixture(localPlayerId: string): PreviewFixtu
     ],
     watermark: { stateVersion: 3, lastSequence: 3 },
     snapshot: redMoveSnapshot,
+  };
+
+  const moveShortSnapshot = toMatchSnapshot(
+    {
+      ...base,
+      pawns: updatePawn(base.pawns, 'red-seat-pawn-1', (pawn) => ({
+        ...pawn,
+        position: { zone: 'PERIMETER', progress: 1 },
+      })),
+    },
+    {
+      stateVersion: 3,
+      lastSequence: 3,
+      currentPlayerId: 'red-seat',
+      turnPhase: 'WAITING_FOR_ACTION',
+      diceValue: 1,
+    },
+  );
+
+  const moveShortScenario: TransitionEnvelope = {
+    ...moveOnlyScenario,
+    transitionId: 'move-short',
+    actionId: 'move-short-action',
+    events: moveOnlyScenario.events.map((event) =>
+      event.type === 'pawnMoved'
+        ? {
+            ...event,
+            eventId: 'move-short-e3',
+            payload: {
+              ...event.payload,
+              toCoord: coordFor(moveShortSnapshot, 'red-seat-pawn-1'),
+              physicalPath: [{ row: 0, col: 1 }],
+            },
+          }
+        : event,
+    ),
+    snapshot: moveShortSnapshot,
   };
 
   const homeEntryScenario: TransitionEnvelope = {
@@ -828,24 +899,66 @@ export function createRuntimePreviewFixture(localPlayerId: string): PreviewFixtu
   };
 
   const scenarios: readonly PreviewScenario[] = [
-    { key: 'dice', label: 'DICE', startSnapshot: initialSnapshot, transitions: [diceScenario] },
+    { key: 'dice-1', label: 'Roll → 1', startSnapshot: initialSnapshot, transitions: [diceScenarioFor(1)] },
+    { key: 'dice-2', label: 'Roll → 2', startSnapshot: initialSnapshot, transitions: [diceScenarioFor(2)] },
+    { key: 'dice-3', label: 'Roll → 3', startSnapshot: initialSnapshot, transitions: [diceScenarioFor(3)] },
+    { key: 'dice-4', label: 'Roll → 4', startSnapshot: initialSnapshot, transitions: [diceScenarioFor(4)] },
+    { key: 'dice-5', label: 'Roll → 5', startSnapshot: initialSnapshot, transitions: [diceScenarioFor(5)] },
+    { key: 'dice-6', label: 'Roll → 6', startSnapshot: initialSnapshot, transitions: [diceScenarioFor(6)] },
     {
       key: 'enter',
-      label: 'ENTER',
+      label: 'Pawn Enter',
       startSnapshot: blueRollSnapshot,
       transitions: [transitions[2]!],
     },
     {
+      key: 'move-short',
+      label: 'Pawn Move Short',
+      startSnapshot: redMoveOnlyStartSnapshot,
+      transitions: [moveShortScenario],
+    },
+    {
       key: 'move4',
-      label: 'MOVE 4',
+      label: 'Pawn Move Long',
       startSnapshot: redMoveOnlyStartSnapshot,
       transitions: [moveOnlyScenario],
     },
     {
       key: 'capture',
-      label: 'CAPTURE',
+      label: 'Pawn Capture',
       startSnapshot: blueEnterSnapshot,
       transitions: [transitions[3]!],
+    },
+    {
+      key: 'dice-pawn',
+      label: 'Dice → Pawn',
+      startSnapshot: initialSnapshot,
+      transitions: [transitions[0]!],
+    },
+    {
+      key: 'dice-capture',
+      label: 'Dice → Capture',
+      startSnapshot: blueEnterSnapshot,
+      transitions: [transitions[1]!, transitions[3]!],
+    },
+    {
+      key: 'queue-3',
+      label: 'Queue 3 Events',
+      startSnapshot: initialSnapshot,
+      transitions: [transitions[0]!, transitions[1]!, transitions[2]!],
+    },
+    {
+      key: 'duplicate-event',
+      label: 'Duplicate Event',
+      startSnapshot: initialSnapshot,
+      transitions: [diceScenarioFor(4), diceScenarioFor(4)],
+    },
+    {
+      key: 'simulate-reconnect',
+      label: 'Simulate Reconnect',
+      startSnapshot: redMoveOnlyStartSnapshot,
+      transitions: [moveOnlyScenario],
+      invalidateToSnapshot: invalidateSnapshot,
     },
     {
       key: 'home-entry',
@@ -920,22 +1033,41 @@ function useGameplayAnimationRuntime(
   boardRef: { current: PremiumPresentationHandle | null },
   players: ReturnType<typeof projectGameScreenModel>['players'],
   onComplete: (state: PresentationControllerState) => void,
+  controllerInstanceId: number,
 ) {
   const reducedMotion = usePrefersReducedMotion();
   const [runtime, setRuntime] = useState(() =>
     createIdleAnimationState(controller.presentationSnapshot),
   );
+  const active = controller.queue.active;
+  const token = getActivePresentationToken(controller);
+  const activePresentationRunKey = active && token
+    ? [
+        token.matchId,
+        token.generation,
+        token.transitionId,
+        token.stateVersion,
+        token.toSequence,
+      ].join(':')
+    : null;
 
   useEffect(() => {
-    const active = controller.queue.active;
-    const token = getActivePresentationToken(controller);
-
     if (!active || !token) {
       setRuntime(createIdleAnimationState(controller.presentationSnapshot));
       return;
     }
 
     const abort = new AbortController();
+    recordGameplayTelemetry('PRESENTATION_START', {
+      matchId: active.matchId,
+      eventId: active.transitionId,
+      actionId: active.actionId,
+      sequence: active.toSequence,
+      stateVersion: active.stateVersion,
+      transitionType: active.events.map((event) => event.type).join('+'),
+      controllerInstanceId,
+      reason: 'debug-harness',
+    });
     const frames = buildGameplayAnimationFrames({
       transition: active,
       initialSnapshot: controller.presentationSnapshot,
@@ -960,16 +1092,42 @@ function useGameplayAnimationRuntime(
       if (!abort.signal.aborted) {
         const completion = completeActivePresentation(controller, token);
         if (completion.kind === 'completed') {
+          recordGameplayTelemetry('PRESENTATION_COMPLETE', {
+            matchId: active.matchId,
+            eventId: active.transitionId,
+            actionId: active.actionId,
+            sequence: active.toSequence,
+            stateVersion: active.stateVersion,
+            transitionType: active.events.map((event) => event.type).join('+'),
+            controllerInstanceId,
+            reason: 'debug-harness',
+          });
           onComplete(completion.state);
         }
       }
     });
 
     return () => {
+      recordGameplayTelemetry('PRESENTATION_CANCEL', {
+        matchId: active.matchId,
+        eventId: active.transitionId,
+        actionId: active.actionId,
+        sequence: active.toSequence,
+        stateVersion: active.stateVersion,
+        transitionType: active.events.map((event) => event.type).join('+'),
+        controllerInstanceId,
+        reason: 'debug-harness-effect-cleanup',
+      });
       abort.abort();
+      recordGameplayTelemetry('SNAP_TO_AUTHORITATIVE', {
+        matchId: controller.matchId,
+        stateVersion: controller.authoritativeSnapshot.stateVersion,
+        controllerInstanceId,
+        reason: 'debug-harness-effect-cleanup',
+      });
       boardRef.current?.snapToAuthoritativeState(controller.authoritativeSnapshot);
     };
-  }, [boardRef, controller, onComplete, players, reducedMotion]);
+  }, [activePresentationRunKey, reducedMotion]);
 
   return runtime;
 }
@@ -986,6 +1144,8 @@ export function GameplayRuntimePreview({
   onRequestMobileChatClose?: (() => void) | undefined;
 }) {
   const fixture = useMemo(() => createRuntimePreviewFixture(localPlayerId), [localPlayerId]);
+  const nextControllerInstanceId = useRef(1);
+  const [controllerInstanceId, setControllerInstanceId] = useState(1);
   const [controller, setController] = useState(() =>
     createPresentationController('epic-06-preview', fixture.initialSnapshot),
   );
@@ -1002,10 +1162,37 @@ export function GameplayRuntimePreview({
     [controller.presentationSnapshot, fixture.localPlayerId],
   );
   const boardRef = useRef<PremiumPresentationHandle | null>(null);
-  const runtime = useGameplayAnimationRuntime(controller, boardRef, screen.players, setController);
+  const [telemetryVersion, setTelemetryVersion] = useState(0);
+  const runtime = useGameplayAnimationRuntime(
+    controller,
+    boardRef,
+    screen.players,
+    setController,
+    controllerInstanceId,
+  );
 
   useEffect(() => {
-    setController(createPresentationController('epic-06-preview', fixture.initialSnapshot));
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem('zamanushka:gameplayTelemetry', 'true');
+    const interval = window.setInterval(() => setTelemetryVersion((value) => value + 1), 250);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  function createController(reason: string, snapshot: MatchSnapshot) {
+    const nextId = nextControllerInstanceId.current + 1;
+    nextControllerInstanceId.current = nextId;
+    setControllerInstanceId(nextId);
+    recordGameplayTelemetry('PRESENTATION_CONTROLLER_CREATE', {
+      matchId: 'epic-06-preview',
+      stateVersion: snapshot.stateVersion,
+      controllerInstanceId: nextId,
+      reason,
+    });
+    return createPresentationController('epic-06-preview', snapshot);
+  }
+
+  useEffect(() => {
+    setController(createController('debug-harness-fixture-reset', fixture.initialSnapshot));
     setPlaylist(mode === 'auto' ? fixture.transitions : []);
     setNextIndex(0);
   }, [fixture, mode]);
@@ -1022,7 +1209,7 @@ export function GameplayRuntimePreview({
     if (nextIndex >= playlist.length) {
       if (mode !== 'auto') return;
       const timeout = window.setTimeout(() => {
-        setController(createPresentationController('epic-06-preview', fixture.initialSnapshot));
+        setController(createController('debug-harness-auto-loop', fixture.initialSnapshot));
         setPlaylist(fixture.transitions);
         setNextIndex(0);
       }, 1400);
@@ -1031,13 +1218,24 @@ export function GameplayRuntimePreview({
 
     const accepted = acceptCommittedTransition(controller, playlist[nextIndex]!);
     if (accepted.kind === 'queued') {
+      const transition = playlist[nextIndex]!;
+      recordGameplayTelemetry('PRESENTATION_TRANSITION_ENQUEUE', {
+        matchId: transition.matchId,
+        eventId: transition.transitionId,
+        actionId: transition.actionId,
+        sequence: transition.toSequence,
+        stateVersion: transition.stateVersion,
+        transitionType: transition.events.map((event) => event.type).join('+'),
+        controllerInstanceId,
+        reason: 'debug-harness-playlist',
+      });
       setController(accepted.state);
       setNextIndex((value) => value + 1);
     }
   }, [controller, fixture, mode, nextIndex, playlist]);
 
   function playScenario(scenario: PreviewScenario) {
-    setController(createPresentationController('epic-06-preview', scenario.startSnapshot));
+    setController(createController(`debug-harness-scenario:${scenario.key}`, scenario.startSnapshot));
     setPlaylist(scenario.transitions);
     setNextIndex(0);
     if (scenario.invalidateToSnapshot) {
@@ -1054,10 +1252,16 @@ export function GameplayRuntimePreview({
   }
 
   function resetPreview() {
-    setController(createPresentationController('epic-06-preview', fixture.initialSnapshot));
+    setController(createController('debug-harness-reset-button', fixture.initialSnapshot));
     setPlaylist(mode === 'auto' ? fixture.transitions : []);
     setNextIndex(0);
   }
+
+  const telemetry = typeof window === 'undefined'
+    ? []
+    : [...(window.__zGameplayTelemetry ?? [])].slice(-40).reverse();
+  void telemetryVersion;
+  const current = controller.queue.active;
 
   return (
     <div className="epic06-runtime-preview" data-testid="epic06-runtime-preview">
@@ -1081,6 +1285,30 @@ export function GameplayRuntimePreview({
             RESET
           </button>
         </div>
+      ) : null}
+      {mode === 'manual' ? (
+        <section className="epic06-runtime-preview__telemetry" aria-label="Gameplay presentation telemetry">
+          <h2>Presentation telemetry</h2>
+          <dl>
+            <dt>controller instance id</dt>
+            <dd>{controllerInstanceId}</dd>
+            <dt>current eventId</dt>
+            <dd>{current?.transitionId ?? 'none'}</dd>
+            <dt>sequence</dt>
+            <dd>{current?.toSequence ?? controller.presentationWatermark.lastSequence}</dd>
+            <dt>stateVersion</dt>
+            <dd>{current?.stateVersion ?? controller.presentationSnapshot.stateVersion}</dd>
+          </dl>
+          <ol>
+            {telemetry.map((entry: GameplayTelemetryEvent, index) => (
+              <li key={`${entry.event}-${entry.clientNowMs ?? entry.at}-${index}`}>
+                <code>{entry.event}</code>
+                {' '}
+                <span>{String(entry.transitionType ?? entry.eventId ?? entry.reason ?? '')}</span>
+              </li>
+            ))}
+          </ol>
+        </section>
       ) : null}
       <GameBoard
         ref={boardRef}

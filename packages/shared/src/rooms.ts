@@ -200,6 +200,28 @@ export const roomCommandResultSchema = z.discriminatedUnion('ok', [
     .strict(),
 ]);
 
+export const createRoomSuccessSchema = z
+  .object({
+    ok: z.literal(true),
+    kind: z.literal('CREATED_NEW_ROOM'),
+    room: roomStateSchema,
+  })
+  .strict();
+
+export const createRoomActiveMatchExistsSchema = z
+  .object({
+    ok: z.literal(false),
+    kind: z.literal('ACTIVE_MATCH_EXISTS'),
+    roomId: z.string().min(1),
+    matchId: z.string().min(1),
+  })
+  .strict();
+
+export const createRoomResultSchema = z.discriminatedUnion('ok', [
+  createRoomSuccessSchema,
+  createRoomActiveMatchExistsSchema,
+]);
+
 export const roomViewResponseSchema = roomStateSchema;
 
 export const startMatchSuccessSchema = z
@@ -250,5 +272,6 @@ export type RoomCommandErrorCode = z.infer<typeof roomCommandErrorCodeSchema>;
 export type RoomCommandError = z.infer<typeof roomCommandErrorSchema>;
 export type RoomCommandSuccess = z.infer<typeof roomCommandSuccessSchema>;
 export type RoomCommandResult = z.infer<typeof roomCommandResultSchema>;
+export type CreateRoomResult = z.infer<typeof createRoomResultSchema>;
 export type StartMatchSuccess = z.infer<typeof startMatchSuccessSchema>;
 export type StartMatchResult = z.infer<typeof startMatchResultSchema>;

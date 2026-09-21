@@ -3,7 +3,7 @@ import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
 import {
   roomChatHistorySchema,
-  roomCommandSuccessSchema,
+  createRoomResultSchema,
   sendRoomChatMessageResponseSchema,
   roomStateSchema,
 } from '@zamanushka/shared';
@@ -393,7 +393,7 @@ describe('room routes', () => {
       payload: {},
     });
     expect(createResponse.statusCode).toBe(200);
-    expect(roomCommandSuccessSchema.safeParse(createResponse.json()).success).toBe(true);
+    expect(createRoomResultSchema.safeParse(createResponse.json()).success).toBe(true);
 
     const getResponse = await instance.inject({
       method: 'GET',
@@ -415,6 +415,35 @@ describe('room routes', () => {
     const reconnectBody = reconnectResponse.json();
     expect(roomStateSchema.safeParse(reconnectBody).success).toBe(true);
     expect(reconnectBody).not.toHaveProperty('presence');
+  });
+
+  it('returns an explicit active-match conflict instead of silently reusing an active room on create', async () => {
+    const service = {
+      ...roomService(),
+      createRoom: vi.fn(async () =>
+        roomState(11, {
+          status: 'ACTIVE',
+          currentMatchId: 'match-active-1',
+        }),
+      ),
+    } as unknown as RoomService;
+    const instance = await app(service);
+
+    const response = await instance.inject({
+      method: 'POST',
+      url: '/api/rooms',
+      headers: mutationHeaders,
+      payload: {},
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      ok: false,
+      kind: 'ACTIVE_MATCH_EXISTS',
+      roomId,
+      matchId: 'match-active-1',
+    });
+    expect(createRoomResultSchema.safeParse(response.json()).success).toBe(true);
   });
 
   it('returns canonical room chat history and send DTOs', async () => {

@@ -186,6 +186,12 @@ export function createCommandProcessor(options: {
       let engineMs = 0;
       let persistenceMs = 0;
       let eventCount = 0;
+      logCommandTelemetry('COMMAND_PROCESS_START', {
+        matchId: command.matchId,
+        actionId: command.actionId,
+        type: command.type,
+        expectedStateVersion: command.expectedStateVersion,
+      });
       const result = await options.repository.withLockedMatch(
         command.matchId,
         async (tx, match, timing) => {
@@ -247,6 +253,14 @@ export function createCommandProcessor(options: {
               : {}),
           });
           engineMs = roundMs(performance.now() - engineStartedAt);
+          logCommandTelemetry('ENGINE_TRANSITION', {
+            matchId: command.matchId,
+            actionId: command.actionId,
+            type: command.type,
+            ok: engineResult.ok,
+            stateVersion: engineResult.ok ? engineResult.state.stateVersion : match.stateVersion,
+            engineMs,
+          });
           if (!engineResult.ok)
             return failure(
               command,
@@ -401,7 +415,19 @@ export function createCommandProcessor(options: {
             }),
           });
           if (engineResult.state.status === 'FINISHED') {
+            logCommandTelemetry('MATCH_COMPLETION_START', {
+              matchId: command.matchId,
+              actionId: command.actionId,
+              stateVersion: engineResult.state.stateVersion,
+              lastSequence,
+            });
             await options.onTerminalMatch({ tx, matchId: command.matchId });
+            logCommandTelemetry('ROOM_RESET_COMPLETE', {
+              matchId: command.matchId,
+              actionId: command.actionId,
+              stateVersion: engineResult.state.stateVersion,
+              lastSequence,
+            });
           }
           persistenceMs = roundMs(performance.now() - persistenceStartedAt);
           dbTransactionMs = roundMs(performance.now() - txStartedAt);
@@ -421,6 +447,15 @@ export function createCommandProcessor(options: {
         persistenceMs,
         dbTransactionMs,
         dbLockWaitMs: lockWaitMs,
+      });
+      logCommandTelemetry('DB_COMMIT', {
+        matchId: command.matchId,
+        actionId: command.actionId,
+        type: command.type,
+        ok: result.ok,
+        stateVersion: result.stateVersion,
+        serverProcessingMs: roundMs(performance.now() - processStartedAt),
+        dbTransactionMs,
       });
       return result;
   }

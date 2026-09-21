@@ -178,6 +178,19 @@ export function createRealtimeRuntime(options: {
       const sockets = telemetry ? await io.in(room).fetchSockets() : [];
       const payloadBytes = telemetry ? byteLength(envelope) : 0;
       io.to(room).emit('game:event', envelope);
+      logTelemetry('EVENT_BROADCAST', {
+        matchId: envelope.matchId,
+        transitionId: envelope.transitionId,
+        actionId: envelope.actionId,
+        stateVersion: envelope.stateVersion,
+        fromSequence: envelope.fromSequence,
+        toSequence: envelope.toSequence,
+        socketCount: sockets.length,
+        outboxId: row.id,
+        outboxCreatedAt: row.createdAt.toISOString(),
+        outboxClaimedAt: row.claimedAt.toISOString(),
+        commitToBroadcastMs: broadcastStartedAt - row.createdAt.getTime(),
+      });
       logTelemetry('broadcast', {
         matchId: envelope.matchId,
         transitionId: envelope.transitionId,

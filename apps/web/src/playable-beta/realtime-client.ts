@@ -17,6 +17,7 @@ export type RealtimeSubscription = (transition: TransitionEnvelope) => void;
 type ClientTelemetryEvent = Readonly<{
   event: string;
   at: string;
+  clientNowMs?: number;
   [key: string]: unknown;
 }>;
 

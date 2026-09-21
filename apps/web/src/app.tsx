@@ -6,6 +6,7 @@ import { AuthShell } from './auth/auth-shell.js';
 import { bootstrapAuth, type AuthState } from './auth/bootstrap.js';
 import { FullscreenIntroGate, IntroHero } from './intro';
 import { PlayableBetaPage } from './playable-beta/page.js';
+import { GameplayRuntimePreview } from './game/runtime-preview.js';
 import { createRealtimeClient, type RealtimeClient } from './playable-beta/realtime-client.js';
 import { createRoomApi, type RoomApi } from './playable-beta/room-api.js';
 import { createProfileApi, type ProfileApi } from './profile/api.js';
@@ -108,10 +109,24 @@ function renderAvatar(displayName: string) {
 function IntroScrubLayer({
   running,
   onComplete,
+  routeHash,
 }: {
   running: boolean;
   onComplete: () => void;
+  routeHash: string;
 }) {
+  if (import.meta.env.DEV && routeHash === '#/__debug/game-presentation') {
+    return (
+      <AppFrame title="Р—РђРњРђРќРЈРЁРљРђ" navigation={[]}>
+        <Panel as="section">
+          <h1>Game presentation debug harness</h1>
+          <p>DEV ONLY: synthetic events, production presentation code.</p>
+          <GameplayRuntimePreview localPlayerId="debug-local-player" mode="manual" />
+        </Panel>
+      </AppFrame>
+    );
+  }
+
   return (
     <IntroHero
       autoStart={running}
@@ -391,7 +406,18 @@ export function App({
     const showRulesOnboarding = !state.rulesOnboardingSeenAt && !rulesOnboardingDismissed;
     const shellRoute = resolveShellRoute(routeHash);
     const route =
-      routeHash === '#/profile' && profileState.status === 'ready' && profileState.data
+      routeHash === '#/__debug/game-presentation'
+        ? {
+            activeKey: 'rooms' as const,
+            page: (
+              <Panel as="section">
+                <h1>Game presentation debug harness</h1>
+                <p>DEV ONLY: synthetic events, production presentation code.</p>
+                <GameplayRuntimePreview localPlayerId={state.user.id} mode="manual" />
+              </Panel>
+            ),
+          }
+        : routeHash === '#/profile' && profileState.status === 'ready' && profileState.data
         ? {
             activeKey: 'profile' as const,
             page: shellViewport === 'mobile' ? (
@@ -491,7 +517,7 @@ export function App({
       return (
         <FullscreenIntroGate
           onComplete={() => setIntroComplete(true)}
-          renderScrub={(props) => <IntroScrubLayer {...props} />}
+          renderScrub={(props) => <IntroScrubLayer {...props} routeHash={routeHash} />}
         />
       );
     }

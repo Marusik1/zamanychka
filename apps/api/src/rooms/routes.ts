@@ -186,7 +186,17 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
     const parsed = createRoomRequestSchema.safeParse(request.body);
     if (!parsed.success) return publicError(reply, 400, 'VALIDATION_ERROR');
 
-    return reply.send({ ok: true, room: await options.service.createRoom(userId, parsed.data) });
+    const room = await options.service.createRoom(userId, parsed.data);
+    if (room.currentMatchId || room.status === 'ACTIVE') {
+      return reply.send({
+        ok: false,
+        kind: 'ACTIVE_MATCH_EXISTS',
+        roomId: room.id,
+        matchId: room.currentMatchId ?? room.id,
+      });
+    }
+
+    return reply.send({ ok: true, kind: 'CREATED_NEW_ROOM', room });
   });
 
   app.get('/api/rooms/:roomId', async (request, reply) => {

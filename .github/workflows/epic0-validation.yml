@@ -1,0 +1,119 @@
+name: EPIC 0 validation
+
+on:
+  workflow_dispatch:
+
+jobs:
+  epic0-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: zamanushka
+          POSTGRES_PASSWORD: zamanushka
+          POSTGRES_DB: zamanushka_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U zamanushka -d zamanushka_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://zamanushka:zamanushka@127.0.0.1:5432/zamanushka_test
+      TEST_DATABASE_URL: postgresql://zamanushka:zamanushka@127.0.0.1:5432/zamanushka_test
+      REDIS_URL: redis://127.0.0.1:6379
+      TELEGRAM_BOT_TOKEN: 000000:test-token
+      JWT_SECRET: ci-test-jwt-secret
+      SESSION_SECRET: ci-test-session-secret
+      COOKIE_SECRET: ci-test-cookie-secret
+      CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
+      DEV_AUTH_ENABLED: "true"
+      DEV_AUTH_USERS: player1:Player One,player2:Player Two,player3:Player Three,player4:Player Four
+      ENABLE_SOLO_GAME_DEBUG: "true"
+      GAMEPLAY_TELEMETRY: "true"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm -C apps/api prisma:generate
+
+      - name: Apply disposable test schema
+        run: pnpm -C apps/api exec prisma migrate deploy --config prisma.test.config.ts
+
+      - name: Typecheck
+        run: |
+          pnpm -C packages/shared typecheck
+          pnpm -C packages/game-engine typecheck
+          pnpm -C apps/api typecheck
+          pnpm -C apps/web typecheck
+
+      - name: Shared and game-engine tests
+        run: |
+          pnpm -C packages/shared test
+          pnpm -C packages/game-engine test
+
+      - name: API focused unit tests
+        run: |
+          pnpm -C apps/api test -- \
+            src/bots/bot-runner.test.ts \
+            src/rooms/routes.test.ts \
+            src/rooms/legacy-cleanup-dry-run.test.ts
+
+      - name: API PostgreSQL integration tests
+        run: pnpm -C apps/api test:integration
+
+      - name: API realtime/socket tests with Redis
+        run: |
+          pnpm -C apps/api test -- \
+            src/realtime/socketio.test.ts \
+            src/realtime/sync.test.ts \
+            src/realtime/watchdog.test.ts
+
+      - name: Web presentation tests
+        run: |
+          pnpm -C apps/web test -- \
+            src/game/presentation-controller.test.ts \
+            src/game/animation-director.test.ts \
+            src/game/premium3d/PremiumAnimationBridge.test.ts \
+            src/game/runtime-preview.test.ts \
+            src/playable-beta/app-playable.test.tsx
+
+      - name: Build
+        run: |
+          pnpm -C apps/api build
+          pnpm -C apps/web build
+
+      - name: Diff check
+        run: git diff --check

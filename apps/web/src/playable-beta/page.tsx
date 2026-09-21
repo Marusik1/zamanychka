@@ -19,6 +19,11 @@ import { GameAvatar } from '../game/avatar.js';
 import { GameBoard } from '../game/board.js';
 import type { DieValue } from '../game/dice.js';
 import { projectGameScreenModel } from '../game/domain.js';
+import {
+  latestGameplayTelemetryEvent,
+  recordGameplayTelemetry,
+  type GameplayTelemetryEvent,
+} from '../game/gameplay-telemetry.js';
 import { formatMatchDuration, matchDurationMilliseconds } from '../game/match-duration.js';
 import { createGameplayPresentationPlan } from '../game/event-presentation.js';
 import { HomeScreen, RoomLobbyScreen, RoomsScreen, type MatchSummary, type NavTab, type RoomDetails, type RoomSummary } from '../redesign-v1/index.js';
@@ -34,6 +39,7 @@ import { playPremiumTransition, type PremiumPresentationHandle } from '../game/p
 import { GAMEPLAY_SOUND_ENABLED_KEY } from '../game/premium3d/audio.js';
 import { RulesPage } from '../rules/rules-page.js';
 import { RealtimeClientError, type RealtimeClient } from './realtime-client.js';
+import { canShowRoomSettings } from './room-domain-actions.js';
 import { RoomApiError, type RoomApi } from './room-api.js';
 
 type Variant = 'home' | 'rooms';
@@ -483,33 +489,8 @@ function usePrefersReducedMotion() {
   return reduced;
 }
 
-type GameplayTelemetryEvent = Readonly<{
-  event: string;
-  at: string;
-  clientNowMs?: number;
-  [key: string]: unknown;
-}>;
-
-function gameplayTelemetryEnabled() {
-  if (typeof window === 'undefined') return false;
-  return window.localStorage.getItem('zamanushka:gameplayTelemetry') === 'true';
-}
-
-function recordGameplayTelemetry(event: string, payload: Record<string, unknown> = {}) {
-  if (!gameplayTelemetryEnabled()) return;
-  const entry: GameplayTelemetryEvent = {
-    event,
-    at: new Date().toISOString(),
-    clientNowMs: Math.round(performance.now() * 100) / 100,
-    ...payload,
-  };
-  window.__zGameplayTelemetry = [...(window.__zGameplayTelemetry ?? []), entry].slice(-800);
-  console.info('[gameplay-presentation]', entry);
-}
-
 function latestClientTelemetryEvent(predicate: (event: GameplayTelemetryEvent) => boolean) {
-  if (typeof window === 'undefined') return null;
-  return [...(window.__zGameplayTelemetry ?? [])].reverse().find(predicate) ?? null;
+  return latestGameplayTelemetryEvent(predicate);
 }
 
 function commandFromAction(action: LegalAction, matchId: string, expectedStateVersion: number) {
@@ -560,6 +541,10 @@ export function PlayableBetaPage({
   );
   const [roomPending, setRoomPending] = useState(false);
   const [roomError, setRoomError] = useState<string | null>(null);
+  const [createRoomConflict, setCreateRoomConflict] = useState<{
+    roomId: string;
+    matchId: string;
+  } | null>(null);
   const selectedRoomIdRef = useRef<string | null>(selectedRoomId);
   const roomScopeRef = useRef(0);
   const matchScopeRef = useRef(0);
@@ -589,6 +574,8 @@ export function PlayableBetaPage({
   const ackSyncTimeoutRef = useRef<number | null>(null);
   const [presentationController, setPresentationController] =
     useState<PresentationControllerState | null>(null);
+  const presentationControllerRef = useRef<PresentationControllerState | null>(null);
+  presentationControllerRef.current = presentationController;
   const [presentationRuntime, setPresentationRuntime] =
     useState<GameplayAnimationRuntimeState | null>(null);
   const reducedMotion = usePrefersReducedMotion();
@@ -611,6 +598,14 @@ export function PlayableBetaPage({
   );
 
   const clearMatchPresentation = useCallback(() => {
+    const controller = presentationControllerRef.current;
+    if (controller) {
+      recordGameplayTelemetry('PRESENTATION_CONTROLLER_DISPOSE', {
+        matchId: controller.matchId,
+        stateVersion: controller.authoritativeSnapshot.stateVersion,
+        reason: 'clear-match-presentation',
+      });
+    }
     matchScopeRef.current += 1;
     activeMatchRef.current = null;
     matchWatermarkRef.current = null;
@@ -632,6 +627,7 @@ export function PlayableBetaPage({
     setRoom(null);
     setCurrentMembershipRoom(null);
     setRoomError(null);
+    setCreateRoomConflict(null);
     setRoomPending(Boolean(selectedRoomId));
     setUtilityPanel(null);
     setMobileChatOpen(false);
@@ -652,6 +648,7 @@ export function PlayableBetaPage({
         setRoomList(next.rooms);
         setCurrentMembershipRoom(next.currentMembershipRoom ?? null);
         setRoomError(null);
+        setCreateRoomConflict(null);
       }
       return next.rooms;
     },
@@ -712,11 +709,17 @@ export function PlayableBetaPage({
   );
 
   function reconcilePresentation(matchId: string, snapshot: MatchSnapshot) {
-    setPresentationController((current) =>
-      current && current.matchId === matchId
-        ? reconcileAuthoritativeSnapshot(current, matchId, snapshot)
-        : createPresentationController(matchId, snapshot),
-    );
+    setPresentationController((current) => {
+      if (current && current.matchId === matchId) {
+        return reconcileAuthoritativeSnapshot(current, matchId, snapshot);
+      }
+      recordGameplayTelemetry('PRESENTATION_CONTROLLER_CREATE', {
+        matchId,
+        stateVersion: snapshot.stateVersion,
+        reason: 'reconcile-presentation',
+      });
+      return createPresentationController(matchId, snapshot);
+    });
     setPresentationRuntime(createIdleAnimationState(snapshot));
   }
 
@@ -845,8 +848,23 @@ export function PlayableBetaPage({
               break;
             }
 
+            recordGameplayTelemetry('PRESENTATION_CONTROLLER_CREATE', {
+              matchId,
+              stateVersion: snapshot.stateVersion,
+              lastSequence: syncedLastSequence,
+              reason: isInitialHydration ? 'initial-sync' : 'sync',
+            });
             let nextController = createPresentationController(matchId, snapshot);
             for (const transition of replayTransitions) {
+              recordGameplayTelemetry('PRESENTATION_TRANSITION_ENQUEUE', {
+                matchId: transition.matchId,
+                eventId: transition.transitionId,
+                actionId: transition.actionId,
+                sequence: transition.toSequence,
+                stateVersion: transition.stateVersion,
+                transitionType: transition.events.map((event) => event.type).join('+'),
+                reason: 'hydration-buffer-drain',
+              });
               const accepted = acceptCommittedTransition(nextController, transition);
               if (accepted.kind === 'recovery_required') {
                 needsResync = true;
@@ -1006,6 +1024,14 @@ export function PlayableBetaPage({
 
   useEffect(() => {
     if (!room?.currentMatchId) {
+      const controller = presentationControllerRef.current;
+      if (controller) {
+        recordGameplayTelemetry('PRESENTATION_CONTROLLER_DISPOSE', {
+          matchId: controller.matchId,
+          stateVersion: controller.authoritativeSnapshot.stateVersion,
+          reason: 'room-current-match-cleared',
+        });
+      }
       activeMatchRef.current = null;
       matchWatermarkRef.current = null;
       hydrationRef.current = null;
@@ -1081,14 +1107,15 @@ export function PlayableBetaPage({
       typeof received?.clientNowMs === 'number'
         ? Math.round((performance.now() - received.clientNowMs) * 100) / 100
         : null;
-    recordGameplayTelemetry('presentation-animation-start', {
+    recordGameplayTelemetry('PRESENTATION_START', {
       matchId: active.matchId,
-      transitionId: active.transitionId,
+      eventId: active.transitionId,
       actionId: active.actionId,
+      sequence: active.toSequence,
       stateVersion: active.stateVersion,
+      transitionType: active.events.map((event) => event.type).join('+'),
       fromSequence: active.fromSequence,
       toSequence: active.toSequence,
-      eventTypes: active.events.map((event) => event.type),
       receiveToAnimationMs,
       estimatedDurationMs: plan.estimatedDurationMs,
       queuedCount: presentationController.queue.queued.length,
@@ -1112,12 +1139,36 @@ export function PlayableBetaPage({
       setPresentationController((current) => {
         if (!current) return current;
         const completion = completeActivePresentation(current, token);
+        if (completion.kind === 'completed') {
+          recordGameplayTelemetry('PRESENTATION_COMPLETE', {
+            matchId: active.matchId,
+            eventId: active.transitionId,
+            actionId: active.actionId,
+            sequence: active.toSequence,
+            stateVersion: active.stateVersion,
+            transitionType: active.events.map((event) => event.type).join('+'),
+          });
+        }
         return completion.kind === 'completed' ? completion.state : current;
       });
     });
 
     return () => {
+      recordGameplayTelemetry('PRESENTATION_CANCEL', {
+        matchId: active.matchId,
+        eventId: active.transitionId,
+        actionId: active.actionId,
+        sequence: active.toSequence,
+        stateVersion: active.stateVersion,
+        transitionType: active.events.map((event) => event.type).join('+'),
+        reason: 'effect-cleanup',
+      });
       abort.abort();
+      recordGameplayTelemetry('SNAP_TO_AUTHORITATIVE', {
+        matchId: presentationController.matchId,
+        stateVersion: presentationController.authoritativeSnapshot.stateVersion,
+        reason: 'presentation-effect-cleanup',
+      });
       boardRef.current?.snapToAuthoritativeState(presentationController.authoritativeSnapshot);
     };
   }, [activePresentationRunKey, reducedMotion]);
@@ -1140,6 +1191,15 @@ export function PlayableBetaPage({
           return current;
         }
 
+        recordGameplayTelemetry('PRESENTATION_TRANSITION_ENQUEUE', {
+          matchId: transition.matchId,
+          eventId: transition.transitionId,
+          actionId: transition.actionId,
+          sequence: transition.toSequence,
+          stateVersion: transition.stateVersion,
+          transitionType: transition.events.map((event) => event.type).join('+'),
+          reason: 'realtime-event',
+        });
         const accepted = acceptCommittedTransition(current, transition);
         if (
           accepted.kind === 'recovery_required' &&
@@ -1591,11 +1651,15 @@ export function PlayableBetaPage({
     const controller = new AbortController();
     setRoomPending(true);
     setRoomError(null);
+    setCreateRoomConflict(null);
 
     try {
       const created = await roomApi.createRoom(controller.signal);
       if (!created.ok) {
-        setRoomError(created.error.message);
+        if (created.kind === 'ACTIVE_MATCH_EXISTS') {
+          setCreateRoomConflict({ roomId: created.roomId, matchId: created.matchId });
+          setRoomError('У вас уже есть активная игра.');
+        }
         return;
       }
 
@@ -1652,6 +1716,12 @@ export function PlayableBetaPage({
     if (match.status !== 'ready' || match.pending) return;
 
     boardRef.current?.unlockAudio();
+    if (action.type === 'SURRENDER') {
+      recordGameplayTelemetry('SURRENDER_UI_CLICK', {
+        matchId: match.matchId,
+        stateVersion: match.snapshot.stateVersion,
+      });
+    }
 
     if (
       action.type === 'SURRENDER' &&
@@ -1660,8 +1730,21 @@ export function PlayableBetaPage({
       return;
     }
 
+    if (action.type === 'SURRENDER') {
+      recordGameplayTelemetry('SURRENDER_CONFIRMED', {
+        matchId: match.matchId,
+        stateVersion: match.snapshot.stateVersion,
+      });
+    }
+
     const command = commandFromAction(action, match.matchId, match.snapshot.stateVersion);
     const tappedAt = performance.now();
+    recordGameplayTelemetry('COMMAND_CREATED', {
+      matchId: command.matchId,
+      actionId: command.actionId,
+      type: command.type,
+      stateVersion: command.expectedStateVersion,
+    });
     recordGameplayTelemetry('command-tap', {
       matchId: command.matchId,
       actionId: command.actionId,
@@ -1677,7 +1760,22 @@ export function PlayableBetaPage({
     });
 
     try {
+      recordGameplayTelemetry('COMMAND_SENT', {
+        matchId: command.matchId,
+        actionId: command.actionId,
+        type: command.type,
+        stateVersion: command.expectedStateVersion,
+      });
       const result = await realtimeClient.sendCommand(command);
+      recordGameplayTelemetry('COMMAND_ACK', {
+        matchId: command.matchId,
+        actionId: command.actionId,
+        type: command.type,
+        ok: result.ok,
+        code: result.ok ? undefined : result.code,
+        stateVersion: result.ok ? result.stateVersion : undefined,
+        sequence: result.ok ? result.lastSequence : undefined,
+      });
 
       if (!result.ok) {
         setMatch({
@@ -1791,6 +1889,27 @@ export function PlayableBetaPage({
     }
   }
 
+  function renderRoomStatusBanner() {
+    if (!roomError) return null;
+    return (
+      <Panel as="section" className="beta-status-banner">
+        <p>{roomError}</p>
+        {createRoomConflict ? (
+          <Button
+            variant="secondary"
+            onClick={() => {
+              activeMatchRef.current = createRoomConflict.matchId;
+              navigateTo(roomRoute(createRoomConflict.roomId));
+              void syncMatch(createRoomConflict.matchId, 0, 0, { retryStartup: true });
+            }}
+          >
+            Продолжить матч
+          </Button>
+        ) : null}
+      </Panel>
+    );
+  }
+
   if (!selectedRoomId) {
     if (compactViewport) {
       return <>
@@ -1801,7 +1920,7 @@ export function PlayableBetaPage({
           onOpenRoom={(roomId) => navigateTo(roomRoute(roomId))}
           onNavigate={redesignNavigate}
         />
-        {roomError ? <Panel as="section" className="beta-status-banner">{roomError}</Panel> : null}
+        {renderRoomStatusBanner()}
       </>;
     }
     return (
@@ -1844,11 +1963,7 @@ export function PlayableBetaPage({
           ))}
         </div>
 
-        {roomError ? (
-          <Panel as="section" className="beta-status-banner">
-            {roomError}
-          </Panel>
-        ) : null}
+        {renderRoomStatusBanner()}
 
         <div className="beta-room-page__lobby">
           <Panel as="section" className="beta-room-page__seats">
@@ -2394,7 +2509,7 @@ export function PlayableBetaPage({
         <Panel as="section">Подключение к матчу…</Panel>
       ) : null}
 
-      {room && !room.currentMatchId && !showFinishedMatch ? (
+      {canShowRoomSettings(room, showFinishedMatch) && room ? (
         <Dialog
           open={utilityPanel === 'settings'}
           onOpenChange={(open) => setUtilityPanel(open ? 'settings' : null)}

@@ -89,7 +89,7 @@ describe('playable beta room API', () => {
     const fetcher = vi
       .fn()
       .mockResolvedValueOnce(
-        new Response(JSON.stringify({ ok: true, room: roomState }), {
+        new Response(JSON.stringify({ ok: true, kind: 'CREATED_NEW_ROOM', room: roomState }), {
           status: 200,
           headers: { 'content-type': 'application/json' },
         }),
@@ -103,8 +103,29 @@ describe('playable beta room API', () => {
 
     const api = createRoomApi(fetcher);
 
-    await expect(api.createRoom()).resolves.toEqual({ ok: true, room: roomState });
+    await expect(api.createRoom()).resolves.toEqual({
+      ok: true,
+      kind: 'CREATED_NEW_ROOM',
+      room: roomState,
+    });
     await expect(api.reconnect('room-1')).resolves.toEqual(roomState);
+  });
+
+  it('accepts an active-match create-room conflict without treating it as a created room', async () => {
+    const conflict = {
+      ok: false,
+      kind: 'ACTIVE_MATCH_EXISTS',
+      roomId: 'room-active',
+      matchId: 'match-active',
+    };
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(conflict), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+
+    await expect(createRoomApi(fetcher).createRoom()).resolves.toEqual(conflict);
   });
 
   it('posts expectedRoomVersion to room-scoped mutations and start-match', async () => {

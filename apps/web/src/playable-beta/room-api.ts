@@ -1,5 +1,6 @@
 import {
   listRoomsResponseSchema,
+  createRoomResultSchema,
   roomChatHistorySchema,
   roomCommandErrorSchema,
   roomCommandResultSchema,
@@ -7,6 +8,7 @@ import {
   sendRoomChatMessageResponseSchema,
   startMatchResultSchema,
   type ListRoomsResponse,
+  type CreateRoomResult,
   type RoomChatMessage,
   type RoomChatHistory,
   type RoomCommandErrorCode,
@@ -159,7 +161,7 @@ function del(body: unknown, signal?: AbortSignal): RequestInit {
 
 export interface RoomApi {
   listRooms(signal?: AbortSignal): Promise<ListRoomsResponse>;
-  createRoom(signal?: AbortSignal): Promise<RoomCommandResult>;
+  createRoom(signal?: AbortSignal): Promise<CreateRoomResult>;
   getRoom(roomId: string, signal?: AbortSignal): Promise<RoomView>;
   joinRoom(roomId: string, signal?: AbortSignal): Promise<RoomCommandResult>;
   takeSeat(
@@ -193,7 +195,7 @@ export function createRoomApi(fetcher: Fetcher = fetch): RoomApi {
       });
     },
     async createRoom(signal) {
-      return request(fetcher, '/api/rooms', post({}, signal), roomCommandResultSchema, {
+      return request(fetcher, '/api/rooms', post({}, signal), createRoomResultSchema, {
         operation: 'createRoom',
       });
     },

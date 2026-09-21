@@ -46,6 +46,11 @@ export interface BotRunnerOptions {
   minDelayMs?: number;
   maxDelayMs?: number;
   maxActionsPerKick?: number;
+  maxLeaseRetryAttempts?: number;
+  leaseRetryDelayMs?: number;
+  recoveryDelayMs?: number;
+  watchdogDelayMs?: number;
+  stallTelemetryDelayMs?: number;
   logger?: Pick<Console, 'debug' | 'warn' | 'error'>;
   random?: () => number;
 }
