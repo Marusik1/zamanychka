@@ -390,10 +390,10 @@ describe('beta full-cycle gameplay', () => {
       status: 'WAITING',
       currentMatchId: null,
       seats: [
-        { seatIndex: 0, userId: null, ready: false },
-        { seatIndex: 1, userId: null, ready: false },
-        { seatIndex: 2, userId: null, ready: false },
-        { seatIndex: 3, userId: null, ready: false },
+        { seatIndex: 0, userId: 'user-a', participantId: 'user-a', participantKind: 'HUMAN', ready: false },
+        { seatIndex: 1, userId: 'user-b', participantId: 'user-b', participantKind: 'HUMAN', ready: false },
+        { seatIndex: 2, userId: null, participantId: null, participantKind: null, ready: false },
+        { seatIndex: 3, userId: null, participantId: null, participantKind: null, ready: false },
       ],
       members: [
         { userId: 'user-a' },
@@ -404,10 +404,10 @@ describe('beta full-cycle gameplay', () => {
       status: 'WAITING',
       currentMatchId: null,
       seats: [
-        { seatIndex: 0, userId: 'user-c', ready: true },
-        { seatIndex: 1, userId: 'user-d', ready: true },
-        { seatIndex: 2, userId: null, ready: false },
-        { seatIndex: 3, userId: null, ready: false },
+        { seatIndex: 0, userId: 'user-c', participantId: 'user-c', participantKind: 'HUMAN', ready: true },
+        { seatIndex: 1, userId: 'user-d', participantId: 'user-d', participantKind: 'HUMAN', ready: true },
+        { seatIndex: 2, userId: null, participantId: null, participantKind: null, ready: false },
+        { seatIndex: 3, userId: null, participantId: null, participantKind: null, ready: false },
       ],
     });
 
@@ -521,10 +521,10 @@ describe('beta full-cycle gameplay', () => {
       status: 'WAITING',
       currentMatchId: null,
       seats: [
-        { seatIndex: 0, userId: null, ready: false },
-        { seatIndex: 1, userId: null, ready: false },
-        { seatIndex: 2, userId: null, ready: false },
-        { seatIndex: 3, userId: null, ready: false },
+        { seatIndex: 0, userId: 'user-a', participantId: 'user-a', participantKind: 'HUMAN', ready: false },
+        { seatIndex: 1, userId: 'user-b', participantId: 'user-b', participantKind: 'HUMAN', ready: false },
+        { seatIndex: 2, userId: null, participantId: null, participantKind: null, ready: false },
+        { seatIndex: 3, userId: null, participantId: null, participantKind: null, ready: false },
       ],
       members: [
         { userId: 'user-a' },

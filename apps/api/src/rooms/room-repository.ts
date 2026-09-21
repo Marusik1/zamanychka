@@ -122,8 +122,47 @@ export function createRoomRepository(prisma: AppPrismaClient) {
         const existing = await tx.roomMembership.findUnique({ where: { userId } });
         if (existing) {
           const existingRoom = await loadRoomTx(tx, existing.roomKey);
-          if (!existingRoom) throw new Error('ROOM_NOT_FOUND');
-          return existingRoom;
+          if (
+            existingRoom &&
+            (existingRoom.status === 'ACTIVE' || existingRoom.currentMatchId !== null)
+          ) {
+            return existingRoom;
+          }
+          if (existingRoom && existingRoom.status !== 'CLOSED') {
+            // Room ownership is intentionally derived from the oldest HUMAN membership.
+            // When the current owner creates a new room, deleting their old
+            // membership below atomically transfers ownership to the next human
+            // member. Bots are only seats/participants, never room memberships,
+            // so ownership cannot move to a bot. If no other human remains, the
+            // old waiting room is closed and any bot seats are cleared.
+            const nextRoom: PersistedRoom = {
+              ...existingRoom,
+              version: existingRoom.version + 1,
+              status: existingRoom.members.length <= 1 ? 'CLOSED' : existingRoom.status,
+              seats: existingRoom.seats.map((seat) =>
+                seat.userId === userId
+                  ? {
+                      ...seat,
+                      userId: null,
+                      participantId: null,
+                      participantKind: null,
+                      ready: false,
+                    }
+                  : seat,
+              ),
+            };
+            if (nextRoom.status === 'CLOSED') {
+              nextRoom.seats = nextRoom.seats.map((seat) => ({
+                ...seat,
+                userId: null,
+                participantId: null,
+                participantKind: null,
+                ready: false,
+              }));
+            }
+            await persistRoom(tx, nextRoom);
+          }
+          await tx.roomMembership.delete({ where: { userId } });
         }
 
         const roomId = randomUUID();

@@ -32,7 +32,6 @@ function toWaitingRoom(room: PersistedRoom): PersistedRoom {
     currentMatchId: null,
     seats: room.seats.map((seat) => ({
       ...seat,
-      userId: null,
       ready: false,
     })),
   };

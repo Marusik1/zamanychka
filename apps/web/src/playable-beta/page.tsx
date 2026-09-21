@@ -1483,6 +1483,38 @@ export function PlayableBetaPage({
     }
   }
 
+  async function deleteCurrentRoom() {
+    if (!room || !selectedRoomId || roomPending || !room.currentUser.canManageBots) return;
+    if (room.status === 'ACTIVE' || room.currentMatchId) {
+      setRoomError('Нельзя удалить комнату во время активного матча.');
+      return;
+    }
+    if (!window.confirm('Удалить комнату? Это действие закроет комнату для всех участников.')) {
+      return;
+    }
+
+    const roomId = selectedRoomId;
+    const scope = roomScopeRef.current;
+    const controller = new AbortController();
+    setRoomPending(true);
+    setRoomError(null);
+
+    try {
+      const result = await roomApi.deleteRoom(roomId, room.version, controller.signal);
+      if (!result.ok || !isCurrentRoomScope(roomId, scope)) return;
+      setRoom(null);
+      setCurrentMembershipRoom(null);
+      await loadRoomList(controller.signal).catch(() => undefined);
+      navigateTo('#/rooms');
+    } catch (error) {
+      if (isCurrentRoomScope(roomId, scope)) {
+        setRoomError(roomErrorMessage(error, 'Не удалось удалить комнату.'));
+      }
+    } finally {
+      if (isCurrentRoomScope(roomId, scope)) setRoomPending(false);
+    }
+  }
+
   async function switchFromCurrentMembershipTo(targetRoomId: string) {
     const membership = currentMembershipRoom;
     if (!membership || membership.roomId === targetRoomId) return;
@@ -2165,6 +2197,11 @@ export function PlayableBetaPage({
       {roomError ? <Panel as="section" className="beta-status-banner">{roomError}</Panel> : null}
       <Dialog open={utilityPanel === 'settings'} onOpenChange={(open) => setUtilityPanel(open ? 'settings' : null)} title="Настройки комнаты" description={`Код комнаты: ${room.code}`}>
         <div className="beta-room-page__settings-dialog-actions">
+          {room.currentUser.canManageBots && !room.currentMatchId ? (
+            <Button variant="ghost" onClick={() => void deleteCurrentRoom()} loading={roomPending}>
+              Удалить комнату
+            </Button>
+          ) : null}
           <Button variant="secondary" onClick={() => void navigator.clipboard?.writeText(room.code)}>Скопировать код</Button>
           <Button variant="ghost" onClick={() => setUtilityPanel(null)}>Закрыть</Button>
         </div>
@@ -2364,6 +2401,11 @@ export function PlayableBetaPage({
           title="Настройки комнаты"
         >
           <div className="beta-room-page__settings-panel">
+            {room.currentUser.canManageBots ? (
+              <Button variant="ghost" onClick={() => void deleteCurrentRoom()} loading={roomPending}>
+                Удалить комнату
+              </Button>
+            ) : null}
             <p>{`Код комнаты: ${room.code}`}</p>
             <p>{`Участников: ${room.counts.memberCount}`}</p>
             <Button

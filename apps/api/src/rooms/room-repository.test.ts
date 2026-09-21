@@ -76,7 +76,7 @@ describe('room repository', () => {
     await expect(repository.loadMembershipForUser('missing-user')).resolves.toBeNull();
   });
 
-  it('keeps createRoom idempotent while a user already has an active membership', async () => {
+  it('creates a new waiting room from plus by moving the user out of the old room', async () => {
     await database.prisma.user.create({
       data: { id: 'u1', firstName: 'User 1' },
     });
@@ -84,10 +84,18 @@ describe('room repository', () => {
     const first = await repository.createRoom('u1');
     const second = await repository.createRoom('u1');
 
-    expect(second.roomId).toBe(first.roomId);
+    expect(second.roomId).not.toBe(first.roomId);
     await expect(
       database.prisma.roomMembership.count({ where: { userId: 'u1' } }),
     ).resolves.toBe(1);
+    await expect(repository.loadMembershipForUser('u1')).resolves.toMatchObject({
+      roomKey: second.roomId,
+      userId: 'u1',
+    });
+    await expect(repository.loadRoom(first.roomId)).resolves.toMatchObject({
+      roomId: first.roomId,
+      status: 'CLOSED',
+    });
   });
 
   it('database constraint prevents one user from belonging to two rooms', async () => {

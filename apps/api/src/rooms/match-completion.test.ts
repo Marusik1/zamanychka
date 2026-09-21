@@ -126,7 +126,7 @@ afterAll(async () => {
 });
 
 describe('match completion', () => {
-  it('clears currentMatchId and empties all seats while preserving memberships', async () => {
+  it('clears currentMatchId and keeps reusable room seats while resetting readiness', async () => {
     const { roomId, matchId } = await startCanonicalMatch(['user-1', 'user-2']);
 
     await database.prisma.match.update({
@@ -147,7 +147,7 @@ describe('match completion', () => {
           currentMatchId: null,
           counts: expect.objectContaining({
             memberCount: 2,
-            seatedCount: 0,
+            seatedCount: 2,
             readyCount: 0,
           }),
         }),
@@ -160,10 +160,10 @@ describe('match completion', () => {
     expect(room?.currentMatchId).toBeNull();
     expect(room?.members.map((member) => member.userId)).toEqual(['user-1', 'user-2']);
     expect(room?.seats).toEqual([
-      { seatIndex: 0, userId: null, ready: false },
-      { seatIndex: 1, userId: null, ready: false },
-      { seatIndex: 2, userId: null, ready: false },
-      { seatIndex: 3, userId: null, ready: false },
+      { seatIndex: 0, userId: 'user-1', participantId: 'user-1', participantKind: 'HUMAN', ready: false },
+      { seatIndex: 1, userId: 'user-2', participantId: 'user-2', participantKind: 'HUMAN', ready: false },
+      { seatIndex: 2, userId: null, participantId: null, participantKind: null, ready: false },
+      { seatIndex: 3, userId: null, participantId: null, participantKind: null, ready: false },
     ]);
 
     const match = await database.prisma.match.findUnique({ where: { id: matchId } });
@@ -203,7 +203,7 @@ describe('match completion', () => {
 
   it('allows a rematch after completion and rejects stale completion for the old match', async () => {
     const players = ['user-1', 'user-2'] as const;
-    const { roomId, matchId: matchA } = await startCanonicalMatch(players);
+    const { lobby, roomId, matchId: matchA } = await startCanonicalMatch(players);
 
     await database.prisma.match.update({
       where: { id: matchA },
@@ -216,8 +216,13 @@ describe('match completion', () => {
       expect.objectContaining({ ok: true, matchId: matchA }),
     );
 
-    const lobby = createLobbyService();
-    await seatAndReadyPlayers(lobby, roomId, players);
+    for (const userId of players) {
+      const ready = await lobby.setReady(userId, roomId, {
+        ready: true,
+        expectedRoomVersion: await roomVersion(roomId),
+      });
+      expect(ready.ok).toBe(true);
+    }
 
     const matchB = await lobby.startMatch('user-1', roomId, {
       expectedRoomVersion: await roomVersion(roomId),
@@ -238,10 +243,10 @@ describe('match completion', () => {
     expect(room?.status).toBe('ACTIVE');
     expect(room?.currentMatchId).toBe(matchB.matchId);
     expect(room?.seats).toEqual([
-      { seatIndex: 0, userId: 'user-1', ready: true },
-      { seatIndex: 1, userId: 'user-2', ready: true },
-      { seatIndex: 2, userId: null, ready: false },
-      { seatIndex: 3, userId: null, ready: false },
+      { seatIndex: 0, userId: 'user-1', participantId: 'user-1', participantKind: 'HUMAN', ready: true },
+      { seatIndex: 1, userId: 'user-2', participantId: 'user-2', participantKind: 'HUMAN', ready: true },
+      { seatIndex: 2, userId: null, participantId: null, participantKind: null, ready: false },
+      { seatIndex: 3, userId: null, participantId: null, participantKind: null, ready: false },
     ]);
   });
 
@@ -272,9 +277,9 @@ describe('match completion', () => {
     expect(match?.snapshot).toBeTruthy();
   });
 
-  it('requires TAKE_SEAT and READY again after the room reset', async () => {
+  it('requires READY again after reusable room reset', async () => {
     const players = ['user-1', 'user-2'] as const;
-    const { roomId, matchId } = await startCanonicalMatch(players);
+    const { lobby, roomId, matchId } = await startCanonicalMatch(players);
 
     await database.prisma.match.update({
       where: { id: matchId },
@@ -285,9 +290,8 @@ describe('match completion', () => {
     await completion.completeTerminalMatch(matchId);
 
     const resetRoom = await repository.loadRoom(roomId);
-    expect(resetRoom?.seats.every((seat) => seat.userId === null && !seat.ready)).toBe(true);
-
-    const lobby = createLobbyService();
+    expect(resetRoom?.seats.filter((seat) => seat.userId !== null)).toHaveLength(2);
+    expect(resetRoom?.seats.every((seat) => !seat.ready)).toBe(true);
 
     await expect(
       lobby.startMatch('user-1', roomId, {
@@ -296,12 +300,18 @@ describe('match completion', () => {
     ).resolves.toEqual({
       ok: false,
       error: {
-        code: 'SEAT_NOT_OWNED',
-        message: 'Seat is not owned by this participant',
+        code: 'ROOM_NOT_READY',
+        message: 'Room is not ready',
       },
     });
 
-    await seatAndReadyPlayers(lobby, roomId, players);
+    for (const userId of players) {
+      const ready = await lobby.setReady(userId, roomId, {
+        ready: true,
+        expectedRoomVersion: await roomVersion(roomId),
+      });
+      expect(ready.ok).toBe(true);
+    }
 
     const next = await lobby.startMatch('user-1', roomId, {
       expectedRoomVersion: await roomVersion(roomId),
@@ -350,7 +360,8 @@ describe('match completion', () => {
       status: 'WAITING',
       currentMatchId: null,
     });
-    expect(afterA?.seats.every((seat) => seat.userId === null && !seat.ready)).toBe(true);
+    expect(afterA?.seats.filter((seat) => seat.userId !== null)).toHaveLength(2);
+    expect(afterA?.seats.every((seat) => !seat.ready)).toBe(true);
 
     expect(afterB).toMatchObject({
       roomId: roomB,

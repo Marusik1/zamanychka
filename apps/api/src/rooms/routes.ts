@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
   addBotToSeatRequestSchema,
   createRoomRequestSchema,
+  deleteRoomRequestSchema,
   joinRoomRequestSchema,
   leaveRoomRequestSchema,
   leaveSeatRequestSchema,
@@ -343,6 +344,21 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
     if (!parsed.success) return publicError(reply, 400, 'VALIDATION_ERROR');
 
     return mapRoomResult(reply, await options.service.leaveRoom(userId, roomId, parsed.data));
+  });
+
+  app.delete('/api/rooms/:roomId', async (request, reply) => {
+    if (!requireOrigin(request, reply, options.allowedOrigins) || !requireJson(request, reply)) {
+      return;
+    }
+
+    const userId = await actorId(request, reply, options.auth, options.cookieName);
+    if (!userId) return;
+
+    const roomId = String((request.params as { roomId: string }).roomId);
+    const parsed = deleteRoomRequestSchema.safeParse(request.body);
+    if (!parsed.success) return publicError(reply, 400, 'VALIDATION_ERROR');
+
+    return mapRoomResult(reply, await options.service.deleteRoom(userId, roomId, parsed.data));
   });
 
   app.post('/api/rooms/:roomId/start', async (request, reply) => {

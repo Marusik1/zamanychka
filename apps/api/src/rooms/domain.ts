@@ -113,7 +113,9 @@ function buildCurrentUser(
     seatedParticipants[0]?.userId === actorUserId &&
     seatedParticipants[0].ready &&
     (presence.get(actorUserId) ?? false);
-  const allReady = enoughPlayers && seatedParticipants.every((seat) => seat.ready);
+  const allReady =
+    enoughPlayers &&
+    seatedParticipants.every((seat) => seat.participantKind === 'BOT' || seat.ready);
   const allConnected =
     enoughPlayers &&
     seatedParticipants.every((seat) =>

@@ -184,6 +184,7 @@ function roomApi(): RoomApi {
     takeSeat: vi.fn(),
     leaveSeat: vi.fn(),
     leaveRoom: vi.fn(),
+    deleteRoom: vi.fn(),
     setReady: vi.fn(),
     startMatch: vi.fn(),
     reconnect: vi.fn().mockResolvedValue(room),

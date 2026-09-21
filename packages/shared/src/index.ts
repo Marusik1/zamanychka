@@ -30,6 +30,7 @@ export {
 } from './bots.js';
 export {
   createRoomRequestSchema,
+  deleteRoomRequestSchema,
   addBotToSeatRequestSchema,
   joinRoomRequestSchema,
   leaveRoomRequestSchema,
@@ -59,6 +60,7 @@ export {
   startMatchRequestSchema,
   takeSeatRequestSchema,
   type CreateRoomRequest,
+  type DeleteRoomRequest,
   type AddBotToSeatRequest,
   type JoinRoomRequest,
   type LeaveRoomRequest,
