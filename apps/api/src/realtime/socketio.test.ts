@@ -490,6 +490,58 @@ describe('Socket.IO realtime publication and subscriptions', () => {
     socket.disconnect();
   }, 10_000);
 
+  it('keeps manual and immediate outbox dispatch single-flight within one runtime', async () => {
+    const payload = {
+      matchId: 'match-1',
+      transitionId: randomUUID(),
+      stateVersion: 2,
+      fromSequence: 7,
+      toSequence: 7,
+      events: [
+        {
+          matchId: 'match-1',
+          eventId: 'match-1:7',
+          sequence: 7,
+          stateVersion: 2,
+          type: 'turnChanged',
+          payload: { fromPlayerId: 'user-a', toPlayerId: 'user-b' },
+          createdAt: '2026-08-25T00:00:00.000Z',
+        },
+      ],
+    };
+    let activeClaims = 0;
+    let maxActiveClaims = 0;
+    const rows = [
+      {
+        id: 'outbox-1',
+        matchId: 'match-1',
+        resultingStateVersion: 2,
+        createdAt: new Date('2026-09-20T12:00:00.000Z'),
+        claimedAt: new Date('2026-09-20T12:00:00.125Z'),
+        payload,
+      },
+    ];
+    const outbox = {
+      claim: vi.fn(async () => {
+        activeClaims += 1;
+        maxActiveClaims = Math.max(maxActiveClaims, activeClaims);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        activeClaims -= 1;
+        return rows.shift() ?? null;
+      }),
+      markPublished: vi.fn(async () => true),
+      release: vi.fn(async () => undefined),
+    };
+    const server = await startRuntime({ outbox });
+    servers.push(server);
+
+    await Promise.all([server.runtime.dispatchOutboxOnce(), server.runtime.dispatchOutboxOnce()]);
+
+    expect(maxActiveClaims).toBe(1);
+    expect(outbox.claim).toHaveBeenCalledTimes(2);
+    expect(outbox.markPublished).toHaveBeenCalledTimes(1);
+  }, 10_000);
+
   it('delivers one ordered committed event identity to every 4-player subscriber', async () => {
     const payload = {
       matchId: 'match-1',

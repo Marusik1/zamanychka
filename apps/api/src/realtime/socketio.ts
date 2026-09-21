@@ -36,7 +36,8 @@ export interface RealtimeRuntime {
   ready: Promise<void>;
   publishCommittedTransition(input: { matchId: string; payload: unknown }): Promise<void>;
   dispatchOutboxOnce(): Promise<
-    { dispatched: true } | { dispatched: false; reason: 'EMPTY' | 'PUBLISH_FAILED' }
+    | { dispatched: true }
+    | { dispatched: false; reason: 'EMPTY' | 'CLAIM_FAILED' | 'PUBLISH_FAILED' | 'MARK_FAILED' }
   >;
   close(): Promise<void>;
 }
@@ -208,20 +209,71 @@ export function createRealtimeRuntime(options: {
       });
     },
   });
-  let immediateDispatching = false;
-  const dispatchOutboxSoon = () => {
-    if (immediateDispatching) return;
-    immediateDispatching = true;
+  let activeOutboxDispatches = 0;
+  let outboxDispatchRunning = false;
+  let outboxWakeRequested = false;
+  let outboxDispatchPromise: Promise<
+    | { dispatched: true }
+    | { dispatched: false; reason: 'EMPTY' | 'CLAIM_FAILED' | 'PUBLISH_FAILED' | 'MARK_FAILED' }
+  > | null = null;
+
+  const dispatchOutboxOnce = (source: 'immediate' | 'manual' = 'manual') => {
+    if (outboxDispatchRunning && outboxDispatchPromise) {
+      outboxWakeRequested = true;
+      logTelemetry('OUTBOX_DISPATCH_ALREADY_RUNNING', {
+        source,
+        activeDispatchers: activeOutboxDispatches,
+      });
+      return outboxDispatchPromise;
+    }
+
     const startedAt = performance.now();
-    void dispatcher.dispatchOne().then((result) => {
-      logTelemetry('immediate-dispatch', {
+    outboxDispatchRunning = true;
+    activeOutboxDispatches += 1;
+    logTelemetry('OUTBOX_DISPATCH_START', { source, activeDispatchers: activeOutboxDispatches });
+
+    outboxDispatchPromise = (async () => {
+      let latest:
+        | { dispatched: true }
+        | { dispatched: false; reason: 'EMPTY' | 'CLAIM_FAILED' | 'PUBLISH_FAILED' | 'MARK_FAILED' } = {
+        dispatched: false,
+        reason: 'EMPTY',
+      };
+      do {
+        outboxWakeRequested = false;
+        latest = await dispatcher.dispatchOne();
+        if (!latest.dispatched && latest.reason === 'CLAIM_FAILED') {
+          logTelemetry('OUTBOX_CLAIM_FAILED', { source, activeDispatchers: activeOutboxDispatches });
+        }
+        if (!latest.dispatched && latest.reason === 'MARK_FAILED') {
+          logTelemetry('OUTBOX_MARK_FAILED', { source, activeDispatchers: activeOutboxDispatches });
+        }
+      } while (outboxWakeRequested);
+      return latest;
+    })().then((result) => {
+      logTelemetry(source === 'immediate' ? 'immediate-dispatch' : 'fallback-dispatch', {
         dispatched: result.dispatched,
         reason: result.dispatched ? null : result.reason,
+        activeDispatchers: activeOutboxDispatches,
         elapsedMs: Math.round((performance.now() - startedAt) * 100) / 100,
       });
+      return result;
     }).finally(() => {
-      immediateDispatching = false;
+      activeOutboxDispatches -= 1;
+      logTelemetry('OUTBOX_DISPATCH_END', {
+        source,
+        activeDispatchers: activeOutboxDispatches,
+        elapsedMs: Math.round((performance.now() - startedAt) * 100) / 100,
+      });
+      outboxDispatchRunning = false;
+      outboxDispatchPromise = null;
     });
+
+    return outboxDispatchPromise;
+  };
+
+  const dispatchOutboxSoon = () => {
+    void dispatchOutboxOnce('immediate');
   };
 
   const emptySnapshot = {
@@ -468,7 +520,7 @@ export function createRealtimeRuntime(options: {
       const envelope = await resolveTransitionEnvelope(options.matchRepository, input.payload);
       io.to(roomName(input.matchId)).emit('game:event', envelope);
     },
-    dispatchOutboxOnce: () => dispatcher.dispatchOne(),
+    dispatchOutboxOnce: () => dispatchOutboxOnce('manual'),
     async close() {
       io.removeAllListeners();
       await new Promise<void>((resolve) => io.close(() => resolve()));

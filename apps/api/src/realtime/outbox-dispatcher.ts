@@ -17,12 +17,33 @@ export function createOutboxDispatcher(options: {
   workerId: string;
   outbox: OutboxLeaseStore;
   publish: (payload: unknown, row: ClaimedOutboxRow) => Promise<void>;
+  claimRetryDelaysMs?: readonly number[];
 }) {
+  const claimRetryDelaysMs = options.claimRetryDelaysMs ?? [100, 250, 500];
+  const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
   return {
     async dispatchOne(): Promise<
-      { dispatched: true } | { dispatched: false; reason: 'EMPTY' | 'PUBLISH_FAILED' }
+      | { dispatched: true }
+      | { dispatched: false; reason: 'EMPTY' | 'CLAIM_FAILED' | 'PUBLISH_FAILED' | 'MARK_FAILED' }
     > {
-      const row = await options.outbox.claim({ leaseToken: options.workerId });
+      let row: ClaimedOutboxRow | null = null;
+      let claimFailed = false;
+      for (let attempt = 0; attempt <= claimRetryDelaysMs.length; attempt += 1) {
+        try {
+          row = await options.outbox.claim({ leaseToken: options.workerId });
+          claimFailed = false;
+          break;
+        } catch {
+          claimFailed = true;
+          const delay = claimRetryDelaysMs[attempt];
+          if (delay === undefined) break;
+          if (delay > 0) await wait(delay);
+        }
+      }
+      if (claimFailed) {
+        return { dispatched: false, reason: 'CLAIM_FAILED' };
+      }
       if (!row) return { dispatched: false, reason: 'EMPTY' };
       try {
         await options.publish(row.payload, row);
@@ -30,7 +51,11 @@ export function createOutboxDispatcher(options: {
         await options.outbox.release({ outboxId: row.id, leaseToken: options.workerId });
         return { dispatched: false, reason: 'PUBLISH_FAILED' };
       }
-      await options.outbox.markPublished({ outboxId: row.id, leaseToken: options.workerId });
+      try {
+        await options.outbox.markPublished({ outboxId: row.id, leaseToken: options.workerId });
+      } catch {
+        return { dispatched: false, reason: 'MARK_FAILED' };
+      }
       return { dispatched: true };
     },
   };

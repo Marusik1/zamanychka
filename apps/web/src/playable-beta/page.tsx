@@ -1669,7 +1669,25 @@ export function PlayableBetaPage({
         return;
       }
 
-      setRoom(joined.room);
+      let nextRoom = joined.room;
+      if (nextRoom.currentUser.seatIndex === null) {
+        const firstOpenSeat = nextRoom.seats.find((seat) => seat.userId === null);
+        if (firstOpenSeat) {
+          const seated = await roomApi.takeSeat(
+            nextRoom.id,
+            firstOpenSeat.seatIndex,
+            nextRoom.version,
+            controller.signal,
+          );
+          if (!seated.ok) {
+            setRoomError(seated.error.message);
+            return;
+          }
+          nextRoom = seated.room;
+        }
+      }
+
+      setRoom(nextRoom);
       navigateTo(roomRoute(created.room.id));
     } catch (error) {
       setRoomError(roomErrorMessage(error, 'Не удалось создать комнату.'));

@@ -66,7 +66,7 @@ async function createSoloDebugMatch(input: { currentPlayerId?: string } = {}) {
     data: {
       key: 'single-room',
       code: 'MAIN',
-      status: 'ACTIVE',
+      status: 'WAITING',
       memberships: {
         create: [{ userId: 'user-1' }],
       },
@@ -103,7 +103,7 @@ async function createSoloDebugMatch(input: { currentPlayerId?: string } = {}) {
   });
   await database.prisma.room.update({
     where: { key: 'single-room' },
-    data: { currentMatchId: match.id },
+    data: { status: 'ACTIVE', currentMatchId: match.id },
   });
   return { match, dummyId };
 }
@@ -495,8 +495,8 @@ describe('transactional realtime command processor', () => {
     expect(await roomRepository.loadRoom('single-room')).toMatchObject({
       currentMatchId: null,
       seats: [
-        { seatIndex: 0, userId: null, ready: false },
-        { seatIndex: 1, userId: null, ready: false },
+        { seatIndex: 0, userId: 'user-1', ready: false },
+        { seatIndex: 1, userId: 'user-2', ready: false },
         { seatIndex: 2, userId: null, ready: false },
         { seatIndex: 3, userId: null, ready: false },
       ],
@@ -624,8 +624,20 @@ describe('transactional realtime command processor', () => {
     expect(await roomRepository.loadRoom('single-room')).toMatchObject({
       currentMatchId: matchB.id,
       seats: expect.arrayContaining([
-        { seatIndex: 0, userId: 'user-1', ready: true },
-        { seatIndex: 1, userId: 'user-2', ready: true },
+        {
+          seatIndex: 0,
+          participantId: 'user-1',
+          participantKind: 'HUMAN',
+          userId: 'user-1',
+          ready: true,
+        },
+        {
+          seatIndex: 1,
+          participantId: 'user-2',
+          participantKind: 'HUMAN',
+          userId: 'user-2',
+          ready: true,
+        },
       ]),
     });
   });

@@ -76,4 +76,69 @@ describe('transactional outbox dispatcher', () => {
       leaseToken: 'worker-b',
     });
   });
+
+  it('contains claim failures so one database timeout does not crash the realtime runtime', async () => {
+    const outbox = {
+      claim: vi.fn(async () => {
+        throw new Error('Unable to start a transaction in the given time');
+      }),
+      markPublished: vi.fn(async () => true),
+      release: vi.fn(async () => undefined),
+    };
+    const publish = vi.fn(async () => undefined);
+
+    await expect(
+      createOutboxDispatcher({ workerId: 'worker-a', outbox, publish }).dispatchOne(),
+    ).resolves.toEqual({ dispatched: false, reason: 'CLAIM_FAILED' });
+
+    expect(publish).not.toHaveBeenCalled();
+    expect(outbox.markPublished).not.toHaveBeenCalled();
+    expect(outbox.release).not.toHaveBeenCalled();
+  });
+
+  it('retries a transient claim failure with bounded backoff and then publishes', async () => {
+    const outbox = {
+      claim: vi
+        .fn()
+        .mockRejectedValueOnce(new Error('P2028'))
+        .mockResolvedValueOnce(structuredClone(row)),
+      markPublished: vi.fn(async () => true),
+      release: vi.fn(async () => undefined),
+    };
+    const publish = vi.fn(async () => undefined);
+
+    await expect(
+      createOutboxDispatcher({
+        workerId: 'worker-a',
+        outbox,
+        publish,
+        claimRetryDelaysMs: [0],
+      }).dispatchOne(),
+    ).resolves.toEqual({ dispatched: true });
+
+    expect(outbox.claim).toHaveBeenCalledTimes(2);
+    expect(publish).toHaveBeenCalledWith(row.payload, expect.objectContaining({ id: row.id }));
+    expect(outbox.markPublished).toHaveBeenCalledWith({
+      outboxId: 'outbox-1',
+      leaseToken: 'worker-a',
+    });
+  });
+
+  it('keeps mark failures non-fatal so the durable row can be retried at least once', async () => {
+    const outbox = {
+      claim: vi.fn(async () => structuredClone(row)),
+      markPublished: vi.fn(async () => {
+        throw new Error('mark failed');
+      }),
+      release: vi.fn(async () => undefined),
+    };
+    const publish = vi.fn(async () => undefined);
+
+    await expect(
+      createOutboxDispatcher({ workerId: 'worker-a', outbox, publish }).dispatchOne(),
+    ).resolves.toEqual({ dispatched: false, reason: 'MARK_FAILED' });
+
+    expect(publish).toHaveBeenCalledTimes(1);
+    expect(outbox.release).not.toHaveBeenCalled();
+  });
 });

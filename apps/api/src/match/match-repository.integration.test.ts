@@ -242,7 +242,7 @@ describe('match persistence repository', () => {
     const match = await createMatch();
     await database.prisma.room.update({
       where: { key: 'single-room' },
-      data: { currentMatchId: match.id },
+      data: { currentMatchId: match.id, status: 'ACTIVE' },
     });
 
     await repository.withLockedMatch(match.id, async (tx) => {
@@ -254,7 +254,7 @@ describe('match persistence repository', () => {
       });
       await tx.room.update({
         where: { key: 'single-room' },
-        data: { currentMatchId: null },
+        data: { currentMatchId: null, status: 'WAITING' },
       });
     });
 

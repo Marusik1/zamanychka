@@ -433,11 +433,32 @@ describe('playable beta room flow', () => {
         startBlockedReason: 'Нужно занять место.',
       },
     });
+    const seatedRoom = roomState({
+      id: 'room-2',
+      code: 'WXYZ',
+      members: joinedRoom.members,
+      seats: [
+        { seatIndex: 0, userId: 'user-1', ready: false },
+        { seatIndex: 1, userId: null, ready: false },
+        { seatIndex: 2, userId: null, ready: false },
+        { seatIndex: 3, userId: null, ready: false },
+      ],
+      counts: { memberCount: 1, seatedCount: 1, readyCount: 0 },
+      currentUser: {
+        isMember: true,
+        seatIndex: 0,
+        ready: false,
+        canLeave: true,
+        canStart: false,
+        startBlockedReason: 'РќСѓР¶РЅРѕ РґРѕР¶РґР°С‚СЊСЃСЏ РёРіСЂРѕРєРѕРІ.',
+      },
+    });
     const api = createRoomApi({
       listRooms: vi.fn().mockResolvedValue({ rooms: [] }),
       createRoom: vi.fn().mockResolvedValue({ ok: true, room: createdRoom }),
       joinRoom: vi.fn().mockResolvedValue({ ok: true, room: joinedRoom }),
-      getRoom: vi.fn().mockResolvedValue(joinedRoom),
+      takeSeat: vi.fn().mockResolvedValue({ ok: true, room: seatedRoom }),
+      getRoom: vi.fn().mockResolvedValue(seatedRoom),
     });
 
     renderAuthenticated('#/rooms', { roomApi: api });
@@ -448,8 +469,11 @@ describe('playable beta room flow', () => {
     await waitFor(() =>
       expect(api.joinRoom).toHaveBeenCalledWith('room-2', expect.any(AbortSignal)),
     );
+    await waitFor(() =>
+      expect(api.takeSeat).toHaveBeenCalledWith('room-2', 0, joinedRoom.version, expect.any(AbortSignal)),
+    );
     expect(await screen.findByRole('heading', { name: 'Комната WXYZ' })).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Занять место 1' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Покинуть место' })).toBeVisible();
   });
 
   it('keeps create and room navigation wired on the mobile rooms surface', async () => {
