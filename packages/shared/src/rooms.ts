@@ -140,6 +140,8 @@ export const leaveRoomRequestSchema = z
   })
   .strict();
 
+export const deleteRoomRequestSchema = leaveRoomRequestSchema;
+
 export const setReadyRequestSchema = z
   .object({
     ready: z.boolean(),
@@ -240,6 +242,7 @@ export type AddBotToSeatRequest = z.infer<typeof addBotToSeatRequestSchema>;
 export type LeaveSeatRequest = z.infer<typeof leaveSeatRequestSchema>;
 export type RemoveBotFromSeatRequest = z.infer<typeof removeBotFromSeatRequestSchema>;
 export type LeaveRoomRequest = z.infer<typeof leaveRoomRequestSchema>;
+export type DeleteRoomRequest = z.infer<typeof deleteRoomRequestSchema>;
 export type SetReadyRequest = z.infer<typeof setReadyRequestSchema>;
 export type StartMatchRequest = z.infer<typeof startMatchRequestSchema>;
 export type RoomReconnectRequest = z.infer<typeof roomReconnectRequestSchema>;

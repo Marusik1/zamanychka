@@ -1,0 +1,73 @@
+name: P0 Room Validation
+
+on:
+  push:
+    branches:
+      - p0-room-validation
+  workflow_dispatch:
+
+jobs:
+  postgres-room-validation:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: zamanushka_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d zamanushka_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/zamanushka_test
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/zamanushka_test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm -C apps/api prisma:generate
+
+      - name: Apply Prisma migrations
+        run: pnpm -C apps/api exec prisma migrate deploy --config prisma.config.ts
+
+      - name: Build workspace packages
+        run: pnpm -C packages/shared build && pnpm -C packages/game-engine build
+
+      - name: Typecheck API
+        run: pnpm -C apps/api typecheck
+
+      - name: Run room DB tests
+        run: >-
+          pnpm -C apps/api exec vitest run --config vitest.config.ts
+          src/rooms/room-service.test.ts
+          src/rooms/room-repository.test.ts
+          src/rooms/room-repository-create-room-rollback.test.ts
+          src/rooms/room-concurrency.test.ts
+          src/rooms/match-completion.test.ts
+
+      - name: Run full-cycle DB integration tests
+        run: >-
+          pnpm -C apps/api exec vitest run --config vitest.integration.config.ts
+          src/realtime/full-cycle.integration.test.ts

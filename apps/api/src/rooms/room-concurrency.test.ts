@@ -178,10 +178,10 @@ describe('room concurrency', () => {
     const room = await repository.loadRoom(roomId);
 
     expect(room?.seats).toEqual([
-      { seatIndex: 0, userId: null, ready: false },
-      { seatIndex: 1, userId: null, ready: false },
-      { seatIndex: 2, userId: null, ready: false },
-      { seatIndex: 3, userId: null, ready: false },
+      { seatIndex: 0, userId: null, participantId: null, participantKind: null, ready: false },
+      { seatIndex: 1, userId: null, participantId: null, participantKind: null, ready: false },
+      { seatIndex: 2, userId: null, participantId: null, participantKind: null, ready: false },
+      { seatIndex: 3, userId: null, participantId: null, participantKind: null, ready: false },
     ]);
   });
 
@@ -218,6 +218,8 @@ describe('room concurrency', () => {
       expect(seat).toEqual({
         seatIndex: 0,
         userId: 'user-1',
+        participantId: 'user-1',
+        participantKind: 'HUMAN',
         ready: true,
       });
     }
@@ -374,6 +376,94 @@ describe('room concurrency', () => {
     expect(room?.status).toBe('ACTIVE');
     expect(room?.currentMatchId).toBe(matchB.matchId);
     expect(room?.seats.filter((seat) => seat.userId !== null)).toHaveLength(2);
+  });
+
+  it('clears post-match ghost participants so bots can be removed and seats reused', async () => {
+    const service = createService();
+    const roomId = await createRoomWithMembers(service, ['user-1']);
+
+    const seated = await service.takeSeat('user-1', roomId, {
+      seatIndex: 0,
+      expectedRoomVersion: await roomVersion(roomId),
+    });
+    expect(seated.ok).toBe(true);
+    await service.connectPresence('user-1', roomId);
+    const ready = await service.setReady('user-1', roomId, {
+      ready: true,
+      expectedRoomVersion: await roomVersion(roomId),
+    });
+    expect(ready.ok).toBe(true);
+
+    const bot = await service.addBot('user-1', roomId, {
+      seatIndex: 1,
+      expectedRoomVersion: await roomVersion(roomId),
+    });
+    expect(bot.ok).toBe(true);
+
+    const started = await service.startMatch('user-1', roomId, {
+      expectedRoomVersion: await roomVersion(roomId),
+    });
+    expect(started.ok).toBe(true);
+    if (!started.ok) throw new Error('match failed to start');
+
+    await database.prisma.match.update({
+      where: { id: started.matchId },
+      data: { status: 'FINISHED' },
+    });
+
+    const completion = createMatchCompletionService({ repository });
+    const completed = await completion.completeTerminalMatch(started.matchId);
+    expect(completed.ok).toBe(true);
+
+    const completedRoom = await service.getRoom('user-1', roomId);
+    expect(completedRoom.status).toBe('WAITING');
+    expect(completedRoom.currentMatchId).toBeNull();
+    expect(completedRoom.counts).toEqual({ memberCount: 1, seatedCount: 2, readyCount: 0 });
+    expect(completedRoom.seats[0]).toMatchObject({
+      userId: 'user-1',
+      participantId: 'user-1',
+      participantKind: 'HUMAN',
+      ready: false,
+    });
+    expect(completedRoom.seats[1]).toMatchObject({
+      userId: null,
+      participantId: expect.stringContaining('bot:'),
+      participantKind: 'BOT',
+      ready: false,
+    });
+
+    const removeBot = await service.removeBot('user-1', roomId, {
+      seatIndex: 1,
+      expectedRoomVersion: completedRoom.version,
+    });
+    expect(removeBot.ok).toBe(true);
+    if (!removeBot.ok) throw new Error('remove bot failed');
+    expect(removeBot.room.counts).toEqual({ memberCount: 1, seatedCount: 1, readyCount: 0 });
+    expect(removeBot.room.seats[1]).toMatchObject({
+      userId: null,
+      participantId: null,
+      participantKind: null,
+      ready: false,
+    });
+
+    const addBotAgain = await service.addBot('user-1', roomId, {
+      seatIndex: 1,
+      expectedRoomVersion: removeBot.room.version,
+    });
+    expect(addBotAgain.ok).toBe(true);
+    if (!addBotAgain.ok) throw new Error('add bot failed');
+    expect(addBotAgain.room.counts).toEqual({ memberCount: 1, seatedCount: 2, readyCount: 1 });
+
+    const readyAgain = await service.setReady('user-1', roomId, {
+      ready: true,
+      expectedRoomVersion: await roomVersion(roomId),
+    });
+    expect(readyAgain.ok).toBe(true);
+
+    const rematch = await service.startMatch('user-1', roomId, {
+      expectedRoomVersion: await roomVersion(roomId),
+    });
+    expect(rematch.ok).toBe(true);
   });
 
   it('allows independent START_MATCH operations in different rooms', async () => {

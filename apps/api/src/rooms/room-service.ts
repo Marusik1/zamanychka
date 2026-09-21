@@ -1,6 +1,7 @@
 import type {
   ParticipantKind,
   CreateRoomRequest,
+  DeleteRoomRequest,
   JoinRoomRequest,
   ListRoomsResponse,
   RoomCommandError,
@@ -86,6 +87,7 @@ export interface RoomService {
   leaveSeat(actorUserId: string, roomId: string, request: LeaveSeatRequest): Promise<MutatingRoomResult>;
   setReady(actorUserId: string, roomId: string, request: SetReadyRequest): Promise<MutatingRoomResult>;
   leaveRoom(actorUserId: string, roomId: string, request: LeaveRoomRequest): Promise<MutatingRoomResult>;
+  deleteRoom(actorUserId: string, roomId: string, request: DeleteRoomRequest): Promise<MutatingRoomResult>;
   addBot(actorUserId: string, roomId: string, request: TakeSeatRequest): Promise<MutatingRoomResult>;
   removeBot(actorUserId: string, roomId: string, request: LeaveSeatRequest & { seatIndex: RoomSeatIndex }): Promise<MutatingRoomResult>;
   startMatch(actorUserId: string, roomId: string, request: StartMatchRequest): Promise<StartMatchResult>;
@@ -255,7 +257,7 @@ export function createRoomService(options: {
 
     async getRoom(actorUserId, roomId) {
       const room = await options.repository.loadRoom(roomId);
-      if (!room) throw new Error('ROOM_NOT_FOUND');
+      if (!room || room.status === 'CLOSED') throw new Error('ROOM_NOT_FOUND');
       return loadView(room, actorUserId);
     },
 
@@ -483,6 +485,59 @@ export function createRoomService(options: {
       }
     },
 
+    async deleteRoom(actorUserId, roomId, request) {
+      if (!actorUserId) return roomError('NOT_ALLOWED');
+      let disconnectedMemberIds: string[] = [];
+
+      try {
+        const result = await options.repository.withLockedRoom(roomId, async (tx, room) => {
+          if (!hasMembership(room, actorUserId)) return roomError('NOT_ROOM_MEMBER');
+          if (!isRoomHost(room, actorUserId)) return roomError('NOT_ALLOWED');
+          if (room.status === 'CLOSED') return roomError('ROOM_CLOSED');
+          if (room.status === 'ACTIVE' || room.currentMatchId !== null) {
+            return roomError('ROOM_ALREADY_ACTIVE');
+          }
+          if (room.version !== request.expectedRoomVersion) {
+            return roomError('STALE_ROOM_VERSION');
+          }
+
+          disconnectedMemberIds = room.members.map((member) => member.userId);
+          const next = cloneRoom(room);
+          next.status = 'CLOSED';
+          next.currentMatchId = null;
+          next.version += 1;
+          next.seats = next.seats.map((seat) => ({
+            ...seat,
+            userId: null,
+            participantId: null,
+            participantKind: null,
+            ready: false,
+          }));
+
+          await persistRoom(tx, next);
+          await tx.roomMembership.deleteMany({ where: { roomKey: roomId } });
+
+          const saved = await options.repository.loadRoomInTransaction(tx, roomId);
+          if (!saved) return roomError('ROOM_NOT_FOUND');
+
+          return roomSuccess(await loadView(saved, actorUserId));
+        });
+
+        if (result.ok) {
+          await Promise.all(
+            disconnectedMemberIds.map((userId) =>
+              options.presenceStore.disconnect({ roomId, userId }),
+            ),
+          );
+        }
+
+        return result;
+      } catch (error) {
+        if (isRoomNotFoundError(error)) return roomError('ROOM_NOT_FOUND');
+        throw error;
+      }
+    },
+
     async addBot(actorUserId, roomId, request) {
       return mutateRoom(actorUserId, roomId, (room) => {
         if (!hasMembership(room, actorUserId)) return { kind: 'error', code: 'NOT_ROOM_MEMBER' };
@@ -601,7 +656,11 @@ export function createRoomService(options: {
             return startMatchError('ROOM_FULL');
           }
 
-          if (seatedParticipants.some((participant) => !participant.ready)) {
+          if (
+            seatedParticipants.some(
+              (participant) => participant.participantKind === 'HUMAN' && !participant.ready,
+            )
+          ) {
             return startMatchError('ROOM_NOT_READY');
           }
 
@@ -722,7 +781,7 @@ export function createRoomService(options: {
 
     async connectPresence(actorUserId, roomId) {
       const room = await options.repository.loadRoom(roomId);
-      if (!room) throw new Error('ROOM_NOT_FOUND');
+      if (!room || room.status === 'CLOSED') throw new Error('ROOM_NOT_FOUND');
 
       await options.presenceStore.connect({ roomId, userId: actorUserId });
       return loadView(room, actorUserId);
@@ -730,7 +789,7 @@ export function createRoomService(options: {
 
     async disconnectPresence(actorUserId, roomId) {
       const room = await options.repository.loadRoom(roomId);
-      if (!room) throw new Error('ROOM_NOT_FOUND');
+      if (!room || room.status === 'CLOSED') throw new Error('ROOM_NOT_FOUND');
 
       await options.presenceStore.disconnect({ roomId, userId: actorUserId });
       return loadView(room, actorUserId);

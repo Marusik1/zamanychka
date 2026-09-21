@@ -172,6 +172,7 @@ export interface RoomApi {
   removeBot?(roomId: string, seatIndex: RoomSeatIndex, expectedRoomVersion: number, signal?: AbortSignal): Promise<RoomCommandResult>;
   leaveSeat(roomId: string, expectedRoomVersion: number, signal?: AbortSignal): Promise<RoomCommandResult>;
   leaveRoom(roomId: string, expectedRoomVersion: number, signal?: AbortSignal): Promise<RoomCommandResult>;
+  deleteRoom(roomId: string, expectedRoomVersion: number, signal?: AbortSignal): Promise<RoomCommandResult>;
   setReady(
     roomId: string,
     ready: boolean,
@@ -251,6 +252,15 @@ export function createRoomApi(fetcher: Fetcher = fetch): RoomApi {
         post({ expectedRoomVersion }, signal),
         roomCommandResultSchema,
         { operation: 'leaveRoom', roomId },
+      );
+    },
+    async deleteRoom(roomId, expectedRoomVersion, signal) {
+      return request(
+        fetcher,
+        `/api/rooms/${roomId}`,
+        del({ expectedRoomVersion }, signal),
+        roomCommandResultSchema,
+        { operation: 'deleteRoom', roomId },
       );
     },
     async setReady(roomId, ready, expectedRoomVersion, signal) {

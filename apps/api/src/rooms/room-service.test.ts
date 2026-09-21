@@ -128,7 +128,7 @@ describe('room service', () => {
     expect(match.seatOrder).toEqual(['user-1', 'debug-dummy:single-room']);
     expect(snapshot.debugMode).toBe('SOLO');
     expect(snapshot.players).toEqual([
-      expect.objectContaining({ playerId: 'user-1', color: 'RED', participantKind: 'REAL' }),
+      expect.objectContaining({ playerId: 'user-1', color: 'RED', participantKind: 'HUMAN' }),
       expect.objectContaining({
         playerId: 'debug-dummy:single-room',
         color: 'YELLOW',
@@ -160,7 +160,13 @@ describe('room service', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.room.id).toBe(SINGLETON_ROOM_KEY);
-    expect(result.room.seats[0]).toEqual({ seatIndex: 0, userId: 'user-1', ready: false });
+    expect(result.room.seats[0]).toMatchObject({
+      seatIndex: 0,
+      userId: 'user-1',
+      participantId: 'user-1',
+      participantKind: 'HUMAN',
+      ready: false,
+    });
     expect(result.room.counts).toEqual({ memberCount: 1, seatedCount: 1, readyCount: 0 });
   });
 
@@ -275,5 +281,192 @@ describe('room service', () => {
     expect(left.ok).toBe(true);
     if (!left.ok) return;
     expect(left.room.counts.memberCount).toBe(1);
+  });
+
+  it('creates a distinct new room from plus instead of reusing the previous waiting room', async () => {
+    await seedUsers(['user-1']);
+    const service = createService();
+
+    const roomA = await service.createRoom('user-1', {});
+    const roomB = await service.createRoom('user-1', {});
+
+    expect(roomB.id).not.toBe(roomA.id);
+    const list = await service.listRooms('user-1');
+    expect(list.currentMembershipRoom).toMatchObject({
+      roomId: roomB.id,
+      code: roomB.code,
+      status: 'WAITING',
+      currentMatchId: null,
+    });
+    expect(list.rooms.some((room) => room.id === roomB.id)).toBe(true);
+    expect(list.rooms.some((room) => room.id === roomA.id)).toBe(false);
+    await expect(service.getRoom('user-1', roomB.id)).resolves.toMatchObject({
+      id: roomB.id,
+      currentUser: { isMember: true, canManageBots: true },
+    });
+    await expect(service.getRoom('user-1', roomA.id)).rejects.toThrow('ROOM_NOT_FOUND');
+  });
+
+  it('transfers ownership to the next human when an owner creates a new room', async () => {
+    await seedUsers(['user-1', 'user-2']);
+    const service = createService();
+
+    const roomA = await service.createRoom('user-1', {});
+    const joined = await service.joinRoom('user-2', roomA.id, {});
+    expect(joined.ok).toBe(true);
+
+    const hostSeat = await service.takeSeat('user-1', roomA.id, {
+      seatIndex: 0,
+      expectedRoomVersion: await roomVersion(roomA.id),
+    });
+    expect(hostSeat.ok).toBe(true);
+    const secondHumanSeat = await service.takeSeat('user-2', roomA.id, {
+      seatIndex: 1,
+      expectedRoomVersion: await roomVersion(roomA.id),
+    });
+    expect(secondHumanSeat.ok).toBe(true);
+    const botSeat = await service.addBot('user-1', roomA.id, {
+      seatIndex: 2,
+      expectedRoomVersion: await roomVersion(roomA.id),
+    });
+    expect(botSeat.ok).toBe(true);
+
+    const roomB = await service.createRoom('user-1', {});
+    expect(roomB.id).not.toBe(roomA.id);
+
+    const oldRoomForRemainingHuman = await service.getRoom('user-2', roomA.id);
+    expect(oldRoomForRemainingHuman.status).toBe('WAITING');
+    expect(oldRoomForRemainingHuman.currentMatchId).toBeNull();
+    expect(oldRoomForRemainingHuman.counts).toMatchObject({
+      memberCount: 1,
+      seatedCount: 2,
+    });
+    expect(oldRoomForRemainingHuman.currentUser).toMatchObject({
+      isMember: true,
+      canManageBots: true,
+    });
+    expect(oldRoomForRemainingHuman.seats[0]).toMatchObject({
+      userId: null,
+      participantId: null,
+      participantKind: null,
+      ready: false,
+    });
+    expect(oldRoomForRemainingHuman.seats[1]).toMatchObject({
+      userId: 'user-2',
+      participantId: 'user-2',
+      participantKind: 'HUMAN',
+    });
+    expect(oldRoomForRemainingHuman.seats[2]).toMatchObject({
+      userId: null,
+      participantKind: 'BOT',
+    });
+
+    const oldRoomForMovedUser = await service.getRoom('user-1', roomA.id);
+    expect(oldRoomForMovedUser.currentUser).toMatchObject({
+      isMember: false,
+      canManageBots: false,
+    });
+  });
+
+  it('closes the old room instead of leaving bot-only ownership when the owner creates a new room', async () => {
+    await seedUsers(['user-1']);
+    const service = createService();
+
+    const roomA = await service.createRoom('user-1', {});
+    const hostSeat = await service.takeSeat('user-1', roomA.id, {
+      seatIndex: 0,
+      expectedRoomVersion: await roomVersion(roomA.id),
+    });
+    expect(hostSeat.ok).toBe(true);
+    const botSeat = await service.addBot('user-1', roomA.id, {
+      seatIndex: 1,
+      expectedRoomVersion: await roomVersion(roomA.id),
+    });
+    expect(botSeat.ok).toBe(true);
+
+    const roomB = await service.createRoom('user-1', {});
+    expect(roomB.id).not.toBe(roomA.id);
+
+    await expect(service.getRoom('user-1', roomA.id)).rejects.toThrow('ROOM_NOT_FOUND');
+    await expect(repository.loadRoom(roomA.id)).resolves.toMatchObject({
+      status: 'CLOSED',
+      members: [],
+      seats: expect.arrayContaining([
+        expect.objectContaining({
+          seatIndex: 0,
+          userId: null,
+          participantId: null,
+          participantKind: null,
+          ready: false,
+        }),
+        expect.objectContaining({
+          seatIndex: 1,
+          userId: null,
+          participantId: null,
+          participantKind: null,
+          ready: false,
+        }),
+      ]),
+    });
+  });
+
+  it('soft-deletes a waiting room only for the owner', async () => {
+    await seedUsers(['user-1', 'user-2']);
+    const service = createService();
+    const created = await service.createRoom('user-1', {});
+    const joined = await service.joinRoom('user-2', created.id, {});
+    expect(joined.ok).toBe(true);
+
+    await expect(
+      service.deleteRoom('user-2', created.id, { expectedRoomVersion: await roomVersion(created.id) }),
+    ).resolves.toEqual({
+      ok: false,
+      error: { code: 'NOT_ALLOWED', message: 'Operation is not allowed' },
+    });
+
+    const deleted = await service.deleteRoom('user-1', created.id, {
+      expectedRoomVersion: await roomVersion(created.id),
+    });
+    expect(deleted.ok).toBe(true);
+    if (!deleted.ok) return;
+    expect(deleted.room.status).toBe('CLOSED');
+    expect(deleted.room.currentUser.isMember).toBe(false);
+
+    const rooms = await service.listRooms('user-1');
+    expect(rooms.rooms.some((room) => room.id === created.id)).toBe(false);
+    expect(rooms.currentMembershipRoom).toBeNull();
+    await expect(service.getRoom('user-1', created.id)).rejects.toThrow('ROOM_NOT_FOUND');
+  });
+
+  it('rejects deleting a room with an active match', async () => {
+    await seedUsers(['user-1', 'user-2']);
+    const service = createService();
+    const room = await service.createRoom('user-1', {});
+    const joined = await service.joinRoom('user-2', room.id, {});
+    expect(joined.ok).toBe(true);
+    for (const [index, userId] of ['user-1', 'user-2'].entries()) {
+      const seated = await service.takeSeat(userId, room.id, {
+        seatIndex: index as 0 | 1,
+        expectedRoomVersion: await roomVersion(room.id),
+      });
+      expect(seated.ok).toBe(true);
+      await service.connectPresence(userId, room.id);
+      const ready = await service.setReady(userId, room.id, {
+        ready: true,
+        expectedRoomVersion: await roomVersion(room.id),
+      });
+      expect(ready.ok).toBe(true);
+    }
+    const started = await service.startMatch('user-1', room.id, {
+      expectedRoomVersion: await roomVersion(room.id),
+    });
+    expect(started.ok).toBe(true);
+
+    await expect(
+      service.deleteRoom('user-1', room.id, { expectedRoomVersion: await roomVersion(room.id) }),
+    ).resolves.toEqual({
+      ok: false,
+      error: { code: 'ROOM_ALREADY_ACTIVE', message: 'Room already has an active match' },
+    });
   });
 });

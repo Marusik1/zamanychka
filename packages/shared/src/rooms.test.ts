@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   createRoomRequestSchema,
+  deleteRoomRequestSchema,
   joinRoomRequestSchema,
   leaveRoomRequestSchema,
   leaveSeatRequestSchema,
@@ -141,6 +142,9 @@ describe('room contracts', () => {
       expectedRoomVersion: 5,
     });
     expect(leaveRoomRequestSchema.parse({ expectedRoomVersion: 5 })).toEqual({
+      expectedRoomVersion: 5,
+    });
+    expect(deleteRoomRequestSchema.parse({ expectedRoomVersion: 5 })).toEqual({
       expectedRoomVersion: 5,
     });
     expect(setReadyRequestSchema.parse({ ready: true, expectedRoomVersion: 5 })).toEqual({
