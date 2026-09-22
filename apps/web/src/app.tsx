@@ -228,6 +228,35 @@ function VersionDebugPage() {
   );
 }
 
+function FrontendTestButton() {
+  return (
+    <button
+      type="button"
+      aria-label="Frontend deploy test marker"
+      onClick={() => {
+        console.info('[ZAMANUSHKA FRONT TEST]', frontendBuildInfo);
+        window.alert(`TEST FRONT\n${frontendBuildInfo.releaseId}`);
+      }}
+      style={{
+        position: 'fixed',
+        top: 'calc(env(safe-area-inset-top, 0px) + 8px)',
+        left: '8px',
+        zIndex: 2147483647,
+        border: '1px solid rgba(255,255,255,0.75)',
+        borderRadius: '999px',
+        background: 'rgba(255, 213, 128, 0.94)',
+        color: '#102030',
+        padding: '6px 10px',
+        font: '700 11px/1 system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+        letterSpacing: '0.08em',
+        boxShadow: '0 6px 18px rgba(0,0,0,0.28)',
+      }}
+    >
+      TEST FRONT
+    </button>
+  );
+}
+
 function mergeUniqueResults(current: HistoryItems, incoming: HistoryItems): HistoryItems {
   const seen = new Set(current.map((item) => item.id));
   const appended = incoming.filter((item) => {
@@ -657,10 +686,13 @@ export function App({
 
     if (route.activeKey === 'home' && !introComplete) {
       return (
-        <FullscreenIntroGate
-          onComplete={() => setIntroComplete(true)}
-          renderScrub={(props) => <IntroScrubLayer {...props} routeHash={routeHash} />}
-        />
+        <>
+          <FullscreenIntroGate
+            onComplete={() => setIntroComplete(true)}
+            renderScrub={(props) => <IntroScrubLayer {...props} routeHash={routeHash} />}
+          />
+          <FrontendTestButton />
+        </>
       );
     }
 
@@ -672,6 +704,7 @@ export function App({
         viewport={shellViewport}
       >
         <>
+          <FrontendTestButton />
           <div className="shell-authenticated-layout">
             <div className="shell-authenticated-layout__page">{route.page}</div>
             {route.activeKey !== 'home' && shellViewport !== 'mobile' ? <Panel as="section" className="shell-session-panel">
@@ -723,6 +756,7 @@ export function App({
 
   return (
     <AppFrame title="ЗАМАНУШКА" navigation={[]}>
+      <FrontendTestButton />
       <AuthShell
         state={state}
         onSelectDevUser={(key) => void selectDevelopmentUser(key)}
