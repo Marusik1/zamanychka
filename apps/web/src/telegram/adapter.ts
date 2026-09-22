@@ -30,13 +30,22 @@ export interface TelegramAdapter {
   readonly isAvailable: boolean;
   readonly isTelegram: boolean;
   readonly initData: string | undefined;
+  readonly startParam: string | undefined;
+  openTelegramLink(url: string): boolean;
+  openLink(url: string): boolean;
   shellReady(): void;
   dispose(): void;
+}
+
+function queryStartParam() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get('tgWebAppStartParam') || params.get('startapp') || undefined;
 }
 
 export function createTelegramAdapter(root = document.documentElement): TelegramAdapter {
   const webApp = window.Telegram?.WebApp;
   const initData = webApp?.initData || undefined;
+  const startParam = webApp?.initDataUnsafe?.start_param || queryStartParam();
   const onEvent = webApp?.onEvent?.bind(webApp);
   const offEvent = webApp?.offEvent?.bind(webApp);
   const supportsEvents = onEvent !== undefined && offEvent !== undefined;
@@ -59,6 +68,17 @@ export function createTelegramAdapter(root = document.documentElement): Telegram
     isAvailable: webApp !== undefined,
     isTelegram: initData !== undefined,
     initData,
+    startParam,
+    openTelegramLink(url: string) {
+      if (!webApp?.openTelegramLink) return false;
+      webApp.openTelegramLink(url);
+      return true;
+    },
+    openLink(url: string) {
+      if (!webApp?.openLink) return false;
+      webApp.openLink(url);
+      return true;
+    },
     shellReady() {
       if (webApp && !didSignalReady && !disposed) {
         didSignalReady = true;

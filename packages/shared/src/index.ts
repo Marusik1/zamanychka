@@ -29,6 +29,19 @@ export {
   type ParticipantKind,
 } from './bots.js';
 export {
+  createRoomInviteRequestSchema,
+  createRoomInviteResponseSchema,
+  resolveRoomInviteRequestSchema,
+  resolveRoomInviteResponseSchema,
+  roomInviteErrorCodeSchema,
+  roomInviteErrorSchema,
+  type CreateRoomInviteRequest,
+  type CreateRoomInviteResponse,
+  type ResolveRoomInviteRequest,
+  type ResolveRoomInviteResponse,
+  type RoomInviteErrorCode,
+} from './room-invites.js';
+export {
   createRoomRequestSchema,
   createRoomResultSchema,
   deleteRoomRequestSchema,

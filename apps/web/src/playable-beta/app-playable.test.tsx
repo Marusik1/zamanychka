@@ -29,6 +29,9 @@ function adapter(): TelegramAdapter {
     isAvailable: false,
     isTelegram: false,
     initData: undefined,
+    startParam: undefined,
+    openTelegramLink: vi.fn(() => false),
+    openLink: vi.fn(() => false),
     shellReady: vi.fn(),
     dispose: vi.fn(),
   };
@@ -222,6 +225,8 @@ function createRoomApi(overrides?: Partial<RoomApi>): RoomApi {
     setReady: vi.fn(),
     startMatch: vi.fn(),
     reconnect: vi.fn().mockResolvedValue(currentRoom),
+    createInvite: vi.fn(),
+    resolveInvite: vi.fn(),
     getChat: vi.fn().mockResolvedValue({ messages: [] }),
     sendChat: vi.fn().mockResolvedValue({
       id: 'message-1',

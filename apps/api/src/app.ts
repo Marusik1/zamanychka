@@ -12,6 +12,7 @@ import { registerProfileRoutes } from './profile/routes.js';
 import { registerRoomRoutes } from './rooms/routes.js';
 import type { ProfileService } from './profile/profile-service.js';
 import type { RoomChatService } from './rooms/room-chat.js';
+import type { RoomInviteService } from './rooms/room-invite-service.js';
 import type { RoomService } from './rooms/room-service.js';
 
 export type DependencyName = 'postgres' | 'redis';
@@ -25,7 +26,7 @@ export interface BuildAppOptions {
   probes: ReadinessProbe[];
   logger?: boolean;
   auth?: { config: AuthRuntimeConfig; service: AuthService };
-  rooms?: { service: RoomService; chat?: RoomChatService };
+  rooms?: { service: RoomService; chat?: RoomChatService; invites?: RoomInviteService };
   profile?: { service: ProfileService };
   productionWebRoot?: string;
   buildInfo?: BuildInfo;
@@ -108,6 +109,7 @@ export function buildApp({
         registerRoomRoutes(scope, {
           service: rooms.service,
           ...(rooms.chat ? { chat: rooms.chat } : {}),
+          ...(rooms.invites ? { invites: rooms.invites } : {}),
           auth: auth.service,
           cookieName: auth.config.cookie.name,
           allowedOrigins: auth.config.allowedOrigins,

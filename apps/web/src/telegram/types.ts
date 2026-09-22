@@ -9,10 +9,15 @@ export interface TelegramInsets {
 
 export interface TelegramWebApp {
   initData: string;
+  initDataUnsafe?: {
+    start_param?: string;
+  };
   viewportStableHeight?: number;
   safeAreaInset?: TelegramInsets;
   contentSafeAreaInset?: TelegramInsets;
   expand?(): void;
+  openTelegramLink?(url: string): void;
+  openLink?(url: string): void;
   ready(): void;
   onEvent?(event: TelegramEvent, listener: () => void): void;
   offEvent?(event: TelegramEvent, listener: () => void): void;

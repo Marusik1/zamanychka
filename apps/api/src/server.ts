@@ -19,6 +19,7 @@ import { createProfileRepository } from './profile/profile-repository.js';
 import { createProfileService } from './profile/profile-service.js';
 import { createMatchCompletionService } from './rooms/match-completion.js';
 import { createRoomChatService } from './rooms/room-chat.js';
+import { createRoomInviteService } from './rooms/room-invite-service.js';
 import { createRoomRepository } from './rooms/room-repository.js';
 import { createRoomService } from './rooms/room-service.js';
 import { createInMemoryRoomPresenceStore } from './rooms/presence-store.js';
@@ -49,6 +50,7 @@ const roomService = createRoomService({
   onMatchStarted: (matchId) => botRunner?.kick(matchId),
 });
 const roomChatService = createRoomChatService(dependencies.prisma);
+const roomInviteService = createRoomInviteService(dependencies.prisma);
 function createConfiguredAuthService() {
   if (env.auth.mode === 'development') {
     return createAuthService({
@@ -76,7 +78,7 @@ const app = buildApp({
   probes: dependencies.probes,
   logger: true,
   auth: { config: env.auth, service: authService },
-  rooms: { service: roomService, chat: roomChatService },
+  rooms: { service: roomService, chat: roomChatService, invites: roomInviteService },
   profile: { service: profileService },
   productionWebRoot,
   buildInfo,

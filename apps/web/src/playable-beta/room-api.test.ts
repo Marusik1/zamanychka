@@ -128,6 +128,77 @@ describe('playable beta room API', () => {
     await expect(createRoomApi(fetcher).createRoom()).resolves.toEqual(conflict);
   });
 
+  it('creates and resolves room invites through typed room invite endpoints', async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            token: 'abcdefghijklmnopqrstuvwxyzABCDEFGHJKLMNPQR0123456789_-',
+            expiresAt: '2026-09-29T00:00:00.000Z',
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ ok: true, roomId: 'room-1', roomStatus: 'WAITING' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+
+    const api = createRoomApi(fetcher);
+
+    await expect(api.createInvite('room-1')).resolves.toEqual({
+      ok: true,
+      token: 'abcdefghijklmnopqrstuvwxyzABCDEFGHJKLMNPQR0123456789_-',
+      expiresAt: '2026-09-29T00:00:00.000Z',
+    });
+    await expect(api.resolveInvite('abcdefghijklmnopqrstuvwxyzABCDEFGHJKLMNPQR0123456789_-')).resolves.toEqual({
+      ok: true,
+      roomId: 'room-1',
+      roomStatus: 'WAITING',
+    });
+
+    expect(fetcher).toHaveBeenNthCalledWith(
+      1,
+      '/api/rooms/room-1/invites',
+      expect.objectContaining({ method: 'POST', body: JSON.stringify({}) }),
+    );
+    expect(fetcher).toHaveBeenNthCalledWith(
+      2,
+      '/api/room-invites/resolve',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ token: 'abcdefghijklmnopqrstuvwxyzABCDEFGHJKLMNPQR0123456789_-' }),
+      }),
+    );
+  });
+
+  it('surfaces structured room invite errors without treating them as invalid responses', async () => {
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: { code: 'INVITE_EXPIRED', message: 'Invite has expired' },
+        }),
+        {
+          status: 409,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    await expect(createRoomApi(fetcher).resolveInvite('abcdefghijklmnopqrstuvwxyzABCDEFGHJKLMNPQR0123456789_-')).rejects.toMatchObject({
+      status: 409,
+      code: 'INVITE_EXPIRED',
+      message: 'Invite has expired',
+    });
+  });
+
   it('posts expectedRoomVersion to room-scoped mutations and start-match', async () => {
     const fetcher = vi
       .fn()

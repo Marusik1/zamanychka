@@ -1,17 +1,23 @@
 import {
+  createRoomInviteResponseSchema,
   listRoomsResponseSchema,
   createRoomResultSchema,
+  resolveRoomInviteResponseSchema,
   roomChatHistorySchema,
   roomCommandErrorSchema,
+  roomInviteErrorSchema,
   roomCommandResultSchema,
   roomStateSchema,
   sendRoomChatMessageResponseSchema,
   startMatchResultSchema,
+  type CreateRoomInviteResponse,
   type ListRoomsResponse,
   type CreateRoomResult,
+  type ResolveRoomInviteResponse,
   type RoomChatMessage,
   type RoomChatHistory,
   type RoomCommandErrorCode,
+  type RoomInviteErrorCode,
   type RoomCommandResult,
   type RoomState,
   type RoomSeatIndex,
@@ -37,7 +43,7 @@ export type StartMatchSuccess = Extract<StartMatchResult, { ok: true }>;
 export class RoomApiError extends Error {
   constructor(
     readonly status: number,
-    readonly code: RoomCommandErrorCode | 'INVALID_RESPONSE' = 'INVALID_RESPONSE',
+    readonly code: RoomCommandErrorCode | RoomInviteErrorCode | 'INVALID_RESPONSE' = 'INVALID_RESPONSE',
     message = 'Не удалось обработать ответ комнаты.',
   ) {
     super(message);
@@ -80,7 +86,9 @@ async function parse<T>(
 
   if (!response.ok) {
     const error = roomCommandErrorSchema.safeParse(body);
-    if (!error.success) {
+    const inviteError = roomInviteErrorSchema.safeParse(body);
+    const parsedError = error.success ? error : inviteError;
+    if (!parsedError.success) {
       recordRoomTelemetry('rest-error-invalid-shape', {
         ...context,
         status: response.status,
@@ -90,9 +98,9 @@ async function parse<T>(
     recordRoomTelemetry('rest-error', {
       ...context,
       status: response.status,
-      code: error.data.error.code,
+      code: parsedError.data.error.code,
     });
-    throw new RoomApiError(response.status, error.data.error.code, error.data.error.message);
+    throw new RoomApiError(response.status, parsedError.data.error.code, parsedError.data.error.message);
   }
 
   const result = schema.safeParse(body);
@@ -162,6 +170,8 @@ function del(body: unknown, signal?: AbortSignal): RequestInit {
 export interface RoomApi {
   listRooms(signal?: AbortSignal): Promise<ListRoomsResponse>;
   createRoom(signal?: AbortSignal): Promise<CreateRoomResult>;
+  createInvite(roomId: string, signal?: AbortSignal): Promise<CreateRoomInviteResponse>;
+  resolveInvite(token: string, signal?: AbortSignal): Promise<ResolveRoomInviteResponse>;
   getRoom(roomId: string, signal?: AbortSignal): Promise<RoomView>;
   joinRoom(roomId: string, signal?: AbortSignal): Promise<RoomCommandResult>;
   takeSeat(
@@ -198,6 +208,24 @@ export function createRoomApi(fetcher: Fetcher = fetch): RoomApi {
       return request(fetcher, '/api/rooms', post({}, signal), createRoomResultSchema, {
         operation: 'createRoom',
       });
+    },
+    async createInvite(roomId, signal) {
+      return request(
+        fetcher,
+        `/api/rooms/${roomId}/invites`,
+        post({}, signal),
+        createRoomInviteResponseSchema,
+        { operation: 'createInvite', roomId },
+      );
+    },
+    async resolveInvite(token, signal) {
+      return request(
+        fetcher,
+        '/api/room-invites/resolve',
+        post({ token }, signal),
+        resolveRoomInviteResponseSchema,
+        { operation: 'resolveInvite' },
+      );
     },
     async getRoom(roomId, signal) {
       return request(fetcher, `/api/rooms/${roomId}`, getOptions(signal), roomStateSchema, {

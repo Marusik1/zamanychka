@@ -2,11 +2,16 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
   addBotToSeatRequestSchema,
   createRoomRequestSchema,
+  createRoomInviteRequestSchema,
+  createRoomInviteResponseSchema,
   deleteRoomRequestSchema,
   joinRoomRequestSchema,
   leaveRoomRequestSchema,
   leaveSeatRequestSchema,
+  resolveRoomInviteRequestSchema,
+  resolveRoomInviteResponseSchema,
   roomChatHistorySchema,
+  roomInviteErrorSchema,
   roomReconnectRequestSchema,
   removeBotFromSeatRequestSchema,
   sendRoomChatMessageRequestSchema,
@@ -14,18 +19,21 @@ import {
   startMatchRequestSchema,
   takeSeatRequestSchema,
   type PublicErrorCode,
+  type RoomInviteErrorCode,
   type RoomCommandErrorCode,
 } from '@zamanushka/shared';
 
 import type { AuthService } from '../auth/auth-service.js';
 import { isAllowedOrigin } from '../auth/origin-guard.js';
 import type { RoomChatService } from './room-chat.js';
+import { RoomInviteServiceError, type RoomInviteService } from './room-invite-service.js';
 import type { RoomService } from './room-service.js';
 import type { RoomView } from './room-service.js';
 
 export interface RoomRoutesOptions {
   service: RoomService;
   chat?: RoomChatService;
+  invites?: RoomInviteService;
   auth: AuthService;
   cookieName: string;
   allowedOrigins: string[];
@@ -57,12 +65,27 @@ const roomMessages: Record<RoomCommandErrorCode, string> = {
   USER_ALREADY_IN_ANOTHER_ROOM: 'User already belongs to another room',
 };
 
+const inviteMessages: Record<RoomInviteErrorCode, string> = {
+  INVITE_NOT_FOUND: 'Invite is not available',
+  INVITE_EXPIRED: 'Invite has expired',
+  INVITE_REVOKED: 'Invite has been revoked',
+  ROOM_NOT_FOUND: 'Room is not available',
+  ROOM_CLOSED: 'Room is closed',
+  ROOM_ALREADY_ACTIVE: 'Room already has an active match',
+  NOT_ROOM_MEMBER: 'User is not a member of this room',
+  VALIDATION_ERROR: 'Request validation failed',
+};
+
 function roomError(reply: FastifyReply, status: number, code: RoomCommandErrorCode) {
   return reply.code(status).send({ error: { code, message: roomMessages[code] } });
 }
 
 function publicError(reply: FastifyReply, status: number, code: PublicErrorCode) {
   return reply.code(status).send({ error: { code, message: messages[code] } });
+}
+
+function inviteError(reply: FastifyReply, status: number, code: RoomInviteErrorCode) {
+  return reply.code(status).send(roomInviteErrorSchema.parse({ error: { code, message: inviteMessages[code] } }));
 }
 
 function roomEntryTelemetryEnabled() {
@@ -153,6 +176,20 @@ function mapRoomResult(
 ) {
   if (result.ok) return reply.send(result);
   return roomError(reply, roomStatus(result.error.code), result.error.code);
+}
+
+function inviteStatus(code: RoomInviteErrorCode) {
+  switch (code) {
+    case 'INVITE_NOT_FOUND':
+    case 'ROOM_NOT_FOUND':
+      return 404;
+    case 'NOT_ROOM_MEMBER':
+      return 403;
+    case 'VALIDATION_ERROR':
+      return 400;
+    default:
+      return 409;
+  }
 }
 
 function toRoomStateResponse(room: RoomView) {
@@ -249,6 +286,35 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
     if (!parsed.success) return publicError(reply, 400, 'VALIDATION_ERROR');
 
     return mapRoomResult(reply, await options.service.joinRoom(userId, roomId, parsed.data));
+  });
+
+  app.post('/api/rooms/:roomId/invites', async (request, reply) => {
+    if (!options.invites) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: messages.NOT_FOUND } });
+    if (!requireOrigin(request, reply, options.allowedOrigins) || !requireJson(request, reply)) {
+      return;
+    }
+
+    const userId = await actorId(request, reply, options.auth, options.cookieName);
+    if (!userId) return;
+
+    const roomId = String((request.params as { roomId: string }).roomId);
+    const parsed = createRoomInviteRequestSchema.safeParse(request.body);
+    if (!parsed.success) return inviteError(reply, 400, 'VALIDATION_ERROR');
+
+    try {
+      const invite = await options.invites.createInvite(userId, roomId);
+      return reply.send(
+        createRoomInviteResponseSchema.parse({
+          ok: true,
+          token: invite.token,
+          expiresAt: invite.expiresAt.toISOString(),
+        }),
+      );
+    } catch (error) {
+      if (error instanceof RoomInviteServiceError)
+        return inviteError(reply, inviteStatus(error.code), error.code);
+      throw error;
+    }
   });
 
   app.post('/api/rooms/:roomId/seats/:seatIndex', async (request, reply) => {
@@ -431,6 +497,29 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
         userId,
         code: error instanceof Error ? error.message : 'UNKNOWN',
       });
+      throw error;
+    }
+  });
+
+  app.post('/api/room-invites/resolve', async (request, reply) => {
+    if (!options.invites) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: messages.NOT_FOUND } });
+    if (!requireOrigin(request, reply, options.allowedOrigins) || !requireJson(request, reply)) {
+      return;
+    }
+
+    const userId = await actorId(request, reply, options.auth, options.cookieName);
+    if (!userId) return;
+    void userId;
+
+    const parsed = resolveRoomInviteRequestSchema.safeParse(request.body);
+    if (!parsed.success) return inviteError(reply, 400, 'VALIDATION_ERROR');
+
+    try {
+      const resolved = await options.invites.resolveInvite(parsed.data.token);
+      return reply.send(resolveRoomInviteResponseSchema.parse({ ok: true, ...resolved }));
+    } catch (error) {
+      if (error instanceof RoomInviteServiceError)
+        return inviteError(reply, inviteStatus(error.code), error.code);
       throw error;
     }
   });

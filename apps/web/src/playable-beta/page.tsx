@@ -38,6 +38,7 @@ import {
 import { playPremiumTransition, type PremiumPresentationHandle } from '../game/premium-runtime.js';
 import { GAMEPLAY_SOUND_ENABLED_KEY } from '../game/premium3d/audio.js';
 import { RulesPage } from '../rules/rules-page.js';
+import { defaultTelegramShareConfig, shareRoomInvite } from '../telegram/share.js';
 import { RealtimeClientError, type RealtimeClient } from './realtime-client.js';
 import { canShowRoomSettings } from './room-domain-actions.js';
 import { RoomApiError, type RoomApi } from './room-api.js';
@@ -540,6 +541,7 @@ export function PlayableBetaPage({
     () => typeof localStorage === 'undefined' || localStorage.getItem(GAMEPLAY_SOUND_ENABLED_KEY) !== 'false',
   );
   const [roomPending, setRoomPending] = useState(false);
+  const [sharePending, setSharePending] = useState(false);
   const [roomError, setRoomError] = useState<string | null>(null);
   const [createRoomConflict, setCreateRoomConflict] = useState<{
     roomId: string;
@@ -629,6 +631,7 @@ export function PlayableBetaPage({
     setRoomError(null);
     setCreateRoomConflict(null);
     setRoomPending(Boolean(selectedRoomId));
+    setSharePending(false);
     setUtilityPanel(null);
     setMobileChatOpen(false);
     setMobileMoreOpen(false);
@@ -1575,6 +1578,47 @@ export function PlayableBetaPage({
     }
   }
 
+  async function shareCurrentRoom() {
+    if (!room || !selectedRoomId || sharePending) return;
+    const roomId = selectedRoomId;
+    const scope = roomScopeRef.current;
+    const controller = new AbortController();
+    setSharePending(true);
+    setRoomError(null);
+
+    try {
+      const invite = await roomApi.createInvite(roomId, controller.signal);
+      if (!isCurrentRoomScope(roomId, scope)) return;
+      const result = await shareRoomInvite({
+        token: invite.token,
+        config: defaultTelegramShareConfig,
+        openTelegramLink: (url) => {
+          window.Telegram?.WebApp?.openTelegramLink?.(url);
+          return window.Telegram?.WebApp?.openTelegramLink !== undefined;
+        },
+        clipboard: navigator.clipboard,
+        openPopup: (url) => window.open(url, '_blank', 'noopener,noreferrer'),
+      });
+
+      if (!result.ok) {
+        setRoomError(
+          result.code === 'MISSING_BOT_USERNAME'
+            ? 'Не настроен Telegram bot username для ссылки-приглашения.'
+            : 'Не удалось открыть Telegram. Ссылка не была скопирована.',
+        );
+        return;
+      }
+
+      if (result.method === 'clipboard') setRoomError('Ссылка на комнату скопирована.');
+    } catch (error) {
+      if (isCurrentRoomScope(roomId, scope)) {
+        setRoomError(roomErrorMessage(error, 'Не удалось создать ссылку-приглашение.'));
+      }
+    } finally {
+      if (isCurrentRoomScope(roomId, scope)) setSharePending(false);
+    }
+  }
+
   async function switchFromCurrentMembershipTo(targetRoomId: string) {
     const membership = currentMembershipRoom;
     if (!membership || membership.roomId === targetRoomId) return;
@@ -2300,6 +2344,7 @@ export function PlayableBetaPage({
               ? { label: mine.ready ? 'Снять готовность' : 'Готов', onClick: () => void mutateRoom((signal) => roomApi.setReady(selectedRoomId, !mine.ready, room.version, signal)), disabled: roomPending }
               : null;
     const secondaryActions = [
+      ...(room.currentUser.isMember && !room.currentMatchId ? [{ label: 'Поделиться', onClick: () => void shareCurrentRoom(), disabled: roomPending || sharePending }] : []),
       ...(membershipConflict && membershipConflict.status !== 'ACTIVE' && !membershipConflict.currentMatchId ? [{ label: 'Перейти в эту комнату', onClick: () => void switchFromCurrentMembershipTo(selectedRoomId), disabled: roomPending }] : []),
       ...(room.currentUser.isMember && mySeatIndex === null ? availableSeats.slice(1).map((seat) => ({ label: `Занять место ${seat.seatIndex + 1}`, onClick: () => void mutateRoom((signal) => roomApi.takeSeat(selectedRoomId, seat.seatIndex, room.version, signal)), disabled: roomPending })) : []),
       ...(mine && room.currentUser.canStart ? [{ label: mine.ready ? 'Снять готовность' : 'Готов', onClick: () => void mutateRoom((signal) => roomApi.setReady(selectedRoomId, !mine.ready, room.version, signal)), disabled: roomPending }] : []),
@@ -2333,6 +2378,11 @@ export function PlayableBetaPage({
           {room.currentUser.canManageBots && !room.currentMatchId ? (
             <Button variant="ghost" onClick={() => void deleteCurrentRoom()} loading={roomPending}>
               Удалить комнату
+            </Button>
+          ) : null}
+          {room.currentUser.isMember && !room.currentMatchId ? (
+            <Button variant="secondary" onClick={() => void shareCurrentRoom()} loading={sharePending}>
+              Поделиться
             </Button>
           ) : null}
           <Button variant="secondary" onClick={() => void navigator.clipboard?.writeText(room.code)}>Скопировать код</Button>

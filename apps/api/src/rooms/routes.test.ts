@@ -10,6 +10,7 @@ import {
 
 import type { AuthService } from '../auth/auth-service.js';
 import type { RoomChatService } from './room-chat.js';
+import { RoomInviteServiceError, type RoomInviteService } from './room-invite-service.js';
 import type { RoomService } from './room-service.js';
 import { registerRoomRoutes } from './routes.js';
 
@@ -159,6 +160,19 @@ function roomChatService() {
   } as unknown as RoomChatService;
 }
 
+function roomInviteService() {
+  return {
+    createInvite: vi.fn(async () => ({
+      token: 'abcdefghijklmnopqrstuvwxyzABCDEFGHJKLMNPQR0123456789_-',
+      expiresAt: new Date('2026-09-29T00:00:00.000Z'),
+    })),
+    resolveInvite: vi.fn(async () => ({
+      roomId,
+      roomStatus: 'WAITING' as const,
+    })),
+  } as unknown as RoomInviteService;
+}
+
 describe('room routes', () => {
   const apps: ReturnType<typeof Fastify>[] = [];
 
@@ -166,7 +180,11 @@ describe('room routes', () => {
     await Promise.all(apps.splice(0).map((instance) => instance.close()));
   });
 
-  async function app(service: RoomService = roomService(), chat: RoomChatService | undefined = roomChatService()) {
+  async function app(
+    service: RoomService = roomService(),
+    chat: RoomChatService | undefined = roomChatService(),
+    invites: RoomInviteService | undefined = roomInviteService(),
+  ) {
     const instance = Fastify();
     apps.push(instance);
 
@@ -175,6 +193,7 @@ describe('room routes', () => {
     registerRoomRoutes(instance, {
       service,
       ...(chat ? { chat } : {}),
+      ...(invites ? { invites } : {}),
       auth: authService(),
       cookieName: 'zamanushka-session',
       allowedOrigins: ['http://localhost:3000', 'https://app.test'],
@@ -208,6 +227,7 @@ describe('room routes', () => {
     registerRoomRoutes(instance, {
       service,
       chat: roomChatService(),
+      invites: roomInviteService(),
       auth,
       cookieName: 'zamanushka-session',
       allowedOrigins: ['http://localhost:3000', 'https://app.test'],
@@ -380,6 +400,95 @@ describe('room routes', () => {
         })
       ).statusCode,
     ).toBe(404);
+  });
+
+  it('creates and resolves room invites through authenticated JSON routes', async () => {
+    const invites = roomInviteService();
+    const service = roomService();
+    const instance = await app(service, roomChatService(), invites);
+
+    const createResponse = await instance.inject({
+      method: 'POST',
+      url: `/api/rooms/${roomId}/invites`,
+      headers: mutationHeaders,
+      payload: {},
+    });
+
+    expect(createResponse.statusCode).toBe(200);
+    expect(createResponse.json()).toEqual({
+      ok: true,
+      token: 'abcdefghijklmnopqrstuvwxyzABCDEFGHJKLMNPQR0123456789_-',
+      expiresAt: '2026-09-29T00:00:00.000Z',
+    });
+    expect(invites.createInvite).toHaveBeenCalledWith(user.id, roomId);
+
+    const resolveResponse = await instance.inject({
+      method: 'POST',
+      url: '/api/room-invites/resolve',
+      headers: mutationHeaders,
+      payload: { token: 'abcdefghijklmnopqrstuvwxyzABCDEFGHJKLMNPQR0123456789_-' },
+    });
+
+    expect(resolveResponse.statusCode).toBe(200);
+    expect(resolveResponse.json()).toEqual({
+      ok: true,
+      roomId,
+      roomStatus: 'WAITING',
+    });
+    expect(invites.resolveInvite).toHaveBeenCalledWith(
+      'abcdefghijklmnopqrstuvwxyzABCDEFGHJKLMNPQR0123456789_-',
+    );
+    expect(service.joinRoom).not.toHaveBeenCalled();
+  });
+
+  it('requires authentication before creating room invites', async () => {
+    const instance = await app();
+
+    const response = await instance.inject({
+      method: 'POST',
+      url: `/api/rooms/${roomId}/invites`,
+      headers: {
+        origin: 'http://localhost:3000',
+        'content-type': 'application/json',
+      },
+      payload: {},
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('maps invite service errors to structured public responses', async () => {
+    const invites = {
+      createInvite: vi.fn(async () => {
+        throw new RoomInviteServiceError('NOT_ROOM_MEMBER');
+      }),
+      resolveInvite: vi.fn(async () => {
+        throw new RoomInviteServiceError('INVITE_EXPIRED');
+      }),
+    } as unknown as RoomInviteService;
+    const instance = await app(roomService(), roomChatService(), invites);
+
+    const createResponse = await instance.inject({
+      method: 'POST',
+      url: `/api/rooms/${roomId}/invites`,
+      headers: mutationHeaders,
+      payload: {},
+    });
+    expect(createResponse.statusCode).toBe(403);
+    expect(createResponse.json()).toEqual({
+      error: { code: 'NOT_ROOM_MEMBER', message: 'User is not a member of this room' },
+    });
+
+    const resolveResponse = await instance.inject({
+      method: 'POST',
+      url: '/api/room-invites/resolve',
+      headers: mutationHeaders,
+      payload: { token: 'abcdefghijklmnopqrstuvwxyzABCDEFGHJKLMNPQR0123456789_-' },
+    });
+    expect(resolveResponse.statusCode).toBe(409);
+    expect(resolveResponse.json()).toEqual({
+      error: { code: 'INVITE_EXPIRED', message: 'Invite has expired' },
+    });
   });
 
   it('returns canonical shared DTO shapes for create, get, and reconnect room responses', async () => {

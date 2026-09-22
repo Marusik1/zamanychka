@@ -17,6 +17,7 @@ import './redesign-v1/styles/tokens.css';
 import { RulesPage } from './rules/rules-page.js';
 import { resolveShellRoute, shellNavigationItems } from './shell/routes.js';
 import { createTelegramAdapter, type TelegramAdapter } from './telegram/adapter.js';
+import { isMalformedRoomStartParam, parseRoomStartParam } from './telegram/share.js';
 
 interface AppProps {
   api?: AuthApi;
@@ -91,6 +92,24 @@ const initialProfileState: ProfileScreenState = {
   historyItems: [],
   historyCursor: null,
 };
+
+function roomRoute(roomId: string) {
+  return `#/rooms/${encodeURIComponent(roomId)}`;
+}
+
+function inviteErrorMessage(code: string) {
+  switch (code) {
+    case 'INVITE_EXPIRED':
+      return 'Ссылка-приглашение устарела.';
+    case 'INVITE_REVOKED':
+      return 'Ссылка-приглашение больше не действует.';
+    case 'ROOM_CLOSED':
+    case 'ROOM_NOT_FOUND':
+      return 'Эта комната больше недоступна.';
+    default:
+      return 'Не удалось открыть приглашение.';
+  }
+}
 
 function resolveShellViewport(width: number): ShellViewport {
   return width >= DESKTOP_SHELL_BREAKPOINT ? 'desktop' : 'mobile';
@@ -167,11 +186,13 @@ export function App({
   const [profileState, setProfileState] = useState<ProfileScreenState>(initialProfileState);
   const [rulesOnboardingDismissed, setRulesOnboardingDismissed] = useState(false);
   const [rulesGuidedStartKey, setRulesGuidedStartKey] = useState(0);
+  const [inviteError, setInviteError] = useState<string | null>(null);
   const [introComplete, setIntroComplete] = useState(import.meta.env.MODE === 'test');
   const mounted = useRef(false);
   const adapter = useRef<TelegramAdapter | undefined>(undefined);
   const request = useRef<{ controller?: AbortController; epoch: number }>({ epoch: 0 });
   const profileRequest = useRef<{ controller?: AbortController; epoch: number }>({ epoch: 0 });
+  const handledStartParam = useRef<string | null>(null);
 
   const beginRequest = useCallback(() => {
     request.current.controller?.abort();
@@ -323,6 +344,43 @@ export function App({
       void loadHistory();
     }
   }, [loadHistory, loadProfile, routeHash, state.status]);
+
+  useEffect(() => {
+    if (state.status !== 'AUTHENTICATED') return;
+    const startParam = adapter.current?.startParam;
+    if (!startParam || handledStartParam.current === startParam) return;
+    handledStartParam.current = startParam;
+
+    const token = parseRoomStartParam(startParam);
+    if (!token) {
+      if (isMalformedRoomStartParam(startParam)) {
+        setInviteError(inviteErrorMessage('VALIDATION_ERROR'));
+        setIntroComplete(true);
+        window.location.hash = '#/rooms';
+      }
+      return;
+    }
+
+    const controller = new AbortController();
+    void roomApi
+      .resolveInvite(token, controller.signal)
+      .then((resolved) => {
+        setInviteError(null);
+        setIntroComplete(true);
+        window.location.hash = roomRoute(resolved.roomId);
+      })
+      .catch((error: unknown) => {
+        const code =
+          error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
+            ? error.code
+            : 'UNKNOWN';
+        setInviteError(inviteErrorMessage(code));
+        setIntroComplete(true);
+        window.location.hash = '#/rooms';
+      });
+
+    return () => controller.abort();
+  }, [roomApi, state.status]);
 
   useEffect(() => {
     if (state.status !== 'AUTHENTICATED') return;
@@ -499,7 +557,18 @@ export function App({
                         />
                       ),
                     }
-                  : {
+                  : inviteError
+                    ? {
+                        activeKey: 'rooms' as const,
+                        page: (
+                          <EmptyState
+                            title={inviteError}
+                            description="Можно открыть список комнат и выбрать доступную комнату."
+                            action={<Button onClick={() => { setInviteError(null); window.location.hash = '#/rooms'; }}>К комнатам</Button>}
+                          />
+                        ),
+                      }
+                    : {
                       activeKey: 'rooms' as const,
                       page: (
                         <PlayableBetaPage

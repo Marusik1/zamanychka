@@ -25,6 +25,9 @@ function adapter(): TelegramAdapter {
     isAvailable: false,
     isTelegram: false,
     initData: undefined,
+    startParam: undefined,
+    openTelegramLink: vi.fn(() => false),
+    openLink: vi.fn(() => false),
     shellReady: vi.fn(),
     dispose: vi.fn(),
   };
@@ -106,6 +109,8 @@ function roomApi(): RoomApi {
     setReady: vi.fn(),
     startMatch: vi.fn(),
     reconnect: vi.fn().mockResolvedValue(room),
+    createInvite: vi.fn(),
+    resolveInvite: vi.fn(),
     getChat: vi.fn().mockResolvedValue({ messages: [] }),
     sendChat: vi.fn().mockResolvedValue({ messages: [] }),
   };
@@ -138,6 +143,62 @@ describe('EPIC-01 app lifecycle', () => {
     expect(await screen.findByText('Player Two')).toBeVisible();
     expect(screen.queryByText('Player One')).not.toBeInTheDocument();
     expect(me).toHaveBeenCalledTimes(2);
+  });
+
+  it('resolves a Telegram room start parameter after authentication and opens that exact room', async () => {
+    const rooms = roomApi();
+    vi.mocked(rooms.resolveInvite).mockResolvedValue({
+      ok: true,
+      roomId: 'room-from-invite',
+      roomStatus: 'WAITING',
+    });
+
+    render(
+      <App
+        createAdapter={() => ({ ...adapter(), startParam: 'room_abcdefghijklmnopqrstuvwxyzABCDEFGHJKLMNPQR0123456789_-' })}
+        api={authenticatedApi()}
+        roomApi={rooms}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(rooms.resolveInvite).toHaveBeenCalledWith(
+        'abcdefghijklmnopqrstuvwxyzABCDEFGHJKLMNPQR0123456789_-',
+        expect.any(AbortSignal),
+      ),
+    );
+    await waitFor(() => expect(window.location.hash).toBe('#/rooms/room-from-invite'));
+  });
+
+  it('ignores unrelated Telegram start parameters', async () => {
+    const rooms = roomApi();
+
+    render(
+      <App
+        createAdapter={() => ({ ...adapter(), startParam: 'campaign_123' })}
+        api={authenticatedApi()}
+        roomApi={rooms}
+      />,
+    );
+
+    await screen.findByText('Один');
+    expect(rooms.resolveInvite).not.toHaveBeenCalled();
+    expect(window.location.hash).toBe('');
+  });
+
+  it('routes malformed room invite start parameters to a friendly rooms error', async () => {
+    const rooms = roomApi();
+
+    render(
+      <App
+        createAdapter={() => ({ ...adapter(), startParam: 'room_' })}
+        api={authenticatedApi()}
+        roomApi={rooms}
+      />,
+    );
+
+    await waitFor(() => expect(rooms.resolveInvite).not.toHaveBeenCalled());
+    expect(await screen.findByRole('button', { name: 'К комнатам' })).toBeVisible();
   });
 
   it('refreshes the authenticated identity when a shared session tab becomes visible', async () => {
