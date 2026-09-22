@@ -1,4 +1,4 @@
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
 import cookie from '@fastify/cookie';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
@@ -73,7 +73,7 @@ async function registerProductionFrontend(app: FastifyInstance, root: string) {
     return reply.header('Cache-Control', 'public, max-age=31536000, immutable').type(file.type).send(file.body);
   });
 
-  app.get('/', async (_request, reply) => {
+  const sendIndex = async (reply: FastifyReply) => {
     const index = await sendFile('index.html');
     if (!index) return reply.code(503).send({ error: 'Frontend build is missing' });
     return reply
@@ -82,6 +82,14 @@ async function registerProductionFrontend(app: FastifyInstance, root: string) {
       .header('Expires', '0')
       .type(index.type)
       .send(index.body);
+  };
+
+  app.get('/', async (_request, reply) => {
+    return sendIndex(reply);
+  });
+
+  app.get('/index.html', async (_request, reply) => {
+    return sendIndex(reply);
   });
 }
 

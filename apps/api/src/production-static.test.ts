@@ -30,6 +30,7 @@ describe('production static serving', () => {
     apps.push(app);
 
     const index = await app.inject({ method: 'GET', url: '/' });
+    const indexHtml = await app.inject({ method: 'GET', url: '/index.html' });
     const asset = await app.inject({ method: 'GET', url: '/assets/app.js' });
     const introAsset = await app.inject({ method: 'GET', url: '/intro/idle-mobile.webp' });
 
@@ -39,6 +40,9 @@ describe('production static serving', () => {
     expect(index.headers.pragma).toBe('no-cache');
     expect(index.headers.expires).toBe('0');
     expect(index.body).toContain('Zamanushka');
+    expect(indexHtml.statusCode).toBe(200);
+    expect(indexHtml.headers['cache-control']).toBe('no-cache, no-store, must-revalidate');
+    expect(indexHtml.body).toContain('Zamanushka');
     expect(asset.statusCode).toBe(200);
     expect(asset.headers['content-type']).toContain('text/javascript');
     expect(asset.headers['cache-control']).toBe('public, max-age=31536000, immutable');
