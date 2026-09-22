@@ -35,7 +35,9 @@ describe('production static serving', () => {
 
     expect(index.statusCode).toBe(200);
     expect(index.headers['content-type']).toContain('text/html');
-    expect(index.headers['cache-control']).toBe('no-cache');
+    expect(index.headers['cache-control']).toBe('no-cache, no-store, must-revalidate');
+    expect(index.headers.pragma).toBe('no-cache');
+    expect(index.headers.expires).toBe('0');
     expect(index.body).toContain('Zamanushka');
     expect(asset.statusCode).toBe(200);
     expect(asset.headers['content-type']).toContain('text/javascript');
@@ -52,6 +54,7 @@ describe('production static serving', () => {
       probes: [],
       buildInfo: {
         service: 'zamanushka-api',
+        releaseId: 'test-release',
         buildId: 'test-build',
         gitSha: 'abc123',
         builtAt: '2026-09-19T00:00:00.000Z',
@@ -65,6 +68,7 @@ describe('production static serving', () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({
       service: 'zamanushka-api',
+      releaseId: 'test-release',
       buildId: 'test-build',
       gitSha: 'abc123',
       builtAt: '2026-09-19T00:00:00.000Z',

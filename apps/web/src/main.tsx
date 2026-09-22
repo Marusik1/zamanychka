@@ -15,6 +15,7 @@ declare global {
   interface Window {
     __ZAMANUSHKA_BUILD__?: typeof frontendBuildInfo;
     __zRealtimeDiagnostics?: {
+      releaseId: string;
       buildId: string;
       protocolVersion: string;
       hydrationBufferEnabled: true;
@@ -28,6 +29,7 @@ declare global {
 
 window.__ZAMANUSHKA_BUILD__ = frontendBuildInfo;
 window.__zRealtimeDiagnostics = {
+  releaseId: frontendBuildInfo.releaseId,
   buildId: frontendBuildInfo.buildId,
   protocolVersion: frontendBuildInfo.realtimeProtocolVersion,
   hydrationBufferEnabled: true,
@@ -40,6 +42,17 @@ window.__zRealtimeDiagnostics = {
 void fetch('/health/version', { credentials: 'include', cache: 'no-store' })
   .then((response) => (response.ok ? response.json() : null))
   .then((apiBuild: unknown) => {
+    if (
+      apiBuild &&
+      typeof apiBuild === 'object' &&
+      'releaseId' in apiBuild &&
+      apiBuild.releaseId !== frontendBuildInfo.releaseId
+    ) {
+      console.info('[ZAMANUSHKA BUILD_MISMATCH]', {
+        frontendReleaseId: frontendBuildInfo.releaseId,
+        apiReleaseId: apiBuild.releaseId,
+      });
+    }
     console.info('[ZAMANUSHKA BUILD]', {
       frontend: frontendBuildInfo,
       api: apiBuild,

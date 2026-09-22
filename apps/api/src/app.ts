@@ -76,7 +76,12 @@ async function registerProductionFrontend(app: FastifyInstance, root: string) {
   app.get('/', async (_request, reply) => {
     const index = await sendFile('index.html');
     if (!index) return reply.code(503).send({ error: 'Frontend build is missing' });
-    return reply.header('Cache-Control', 'no-cache').type(index.type).send(index.body);
+    return reply
+      .header('Cache-Control', 'no-cache, no-store, must-revalidate')
+      .header('Pragma', 'no-cache')
+      .header('Expires', '0')
+      .type(index.type)
+      .send(index.body);
   });
 }
 

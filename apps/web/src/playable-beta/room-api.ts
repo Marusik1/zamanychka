@@ -24,6 +24,8 @@ import {
   type StartMatchResult,
 } from '@zamanushka/shared';
 
+import { frontendBuildInfo } from '../build-info.js';
+
 type Fetcher = typeof fetch;
 type RoomTelemetryEvent = Readonly<{
   event: string;
@@ -50,20 +52,23 @@ export class RoomApiError extends Error {
   }
 }
 
-function roomTelemetryEnabled() {
+function roomTelemetryConsoleEnabled() {
   if (typeof window === 'undefined') return false;
   return window.localStorage.getItem('zamanushka:roomTelemetry') === 'true';
 }
 
-function recordRoomTelemetry(event: string, payload: Record<string, unknown> = {}) {
-  if (!roomTelemetryEnabled()) return;
+export function recordRoomTelemetry(event: string, payload: Record<string, unknown> = {}) {
+  if (typeof window === 'undefined') return;
   const entry: RoomTelemetryEvent = {
     event,
     at: new Date().toISOString(),
+    releaseId: frontendBuildInfo.releaseId,
     ...payload,
   };
   window.__zRoomDiagnostics = [...(window.__zRoomDiagnostics ?? []), entry].slice(-300);
-  console.info('[room-entry]', entry);
+  if (roomTelemetryConsoleEnabled() || import.meta.env.DEV) {
+    console.info('[room-entry]', entry);
+  }
 }
 
 async function parse<T>(

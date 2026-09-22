@@ -41,7 +41,7 @@ import { RulesPage } from '../rules/rules-page.js';
 import { defaultTelegramShareConfig, shareRoomInvite } from '../telegram/share.js';
 import { RealtimeClientError, type RealtimeClient } from './realtime-client.js';
 import { canShowRoomSettings } from './room-domain-actions.js';
-import { RoomApiError, type RoomApi } from './room-api.js';
+import { recordRoomTelemetry, RoomApiError, type RoomApi } from './room-api.js';
 
 type Variant = 'home' | 'rooms';
 
@@ -1547,6 +1547,11 @@ export function PlayableBetaPage({
   }
 
   async function deleteCurrentRoom() {
+    recordRoomTelemetry('ROOM_DELETE_CLICK', {
+      routeHash,
+      roomId: selectedRoomId,
+      canDelete: Boolean(room && selectedRoomId && !roomPending && room.currentUser.canManageBots),
+    });
     if (!room || !selectedRoomId || roomPending || !room.currentUser.canManageBots) return;
     if (room.status === 'ACTIVE' || room.currentMatchId) {
       setRoomError('Нельзя удалить комнату во время активного матча.');
@@ -1563,13 +1568,27 @@ export function PlayableBetaPage({
     setRoomError(null);
 
     try {
+      recordRoomTelemetry('ROOM_DELETE_REQUEST', { routeHash, roomId });
       const result = await roomApi.deleteRoom(roomId, room.version, controller.signal);
+      recordRoomTelemetry('ROOM_DELETE_RESPONSE', {
+        routeHash,
+        roomId,
+        ok: result.ok,
+        code: result.ok ? undefined : result.error.code,
+      });
       if (!result.ok || !isCurrentRoomScope(roomId, scope)) return;
       setRoom(null);
       setCurrentMembershipRoom(null);
       await loadRoomList(controller.signal).catch(() => undefined);
       navigateTo('#/rooms');
     } catch (error) {
+      recordRoomTelemetry('ROOM_DELETE_RESPONSE', {
+        routeHash,
+        roomId,
+        ok: false,
+        code: error instanceof RoomApiError ? error.code : undefined,
+        status: error instanceof RoomApiError ? error.status : undefined,
+      });
       if (isCurrentRoomScope(roomId, scope)) {
         setRoomError(roomErrorMessage(error, 'Не удалось удалить комнату.'));
       }
@@ -1579,6 +1598,11 @@ export function PlayableBetaPage({
   }
 
   async function shareCurrentRoom() {
+    recordRoomTelemetry('ROOM_SHARE_CLICK', {
+      routeHash,
+      roomId: selectedRoomId,
+      canShare: Boolean(room && selectedRoomId && !sharePending),
+    });
     if (!room || !selectedRoomId || sharePending) return;
     const roomId = selectedRoomId;
     const scope = roomScopeRef.current;
@@ -1587,6 +1611,7 @@ export function PlayableBetaPage({
     setRoomError(null);
 
     try {
+      recordRoomTelemetry('ROOM_SHARE_REQUEST', { routeHash, roomId });
       const invite = await roomApi.createInvite(roomId, controller.signal);
       if (!isCurrentRoomScope(roomId, scope)) return;
       const result = await shareRoomInvite({
@@ -1601,6 +1626,12 @@ export function PlayableBetaPage({
       });
 
       if (!result.ok) {
+        recordRoomTelemetry('ROOM_SHARE_RESPONSE', {
+          routeHash,
+          roomId,
+          ok: false,
+          code: result.code,
+        });
         setRoomError(
           result.code === 'MISSING_BOT_USERNAME'
             ? 'Не настроен Telegram bot username для ссылки-приглашения.'
@@ -1609,8 +1640,21 @@ export function PlayableBetaPage({
         return;
       }
 
+      recordRoomTelemetry('ROOM_SHARE_RESPONSE', {
+        routeHash,
+        roomId,
+        ok: true,
+        method: result.method,
+      });
       if (result.method === 'clipboard') setRoomError('Ссылка на комнату скопирована.');
     } catch (error) {
+      recordRoomTelemetry('ROOM_SHARE_RESPONSE', {
+        routeHash,
+        roomId,
+        ok: false,
+        code: error instanceof RoomApiError ? error.code : undefined,
+        status: error instanceof RoomApiError ? error.status : undefined,
+      });
       if (isCurrentRoomScope(roomId, scope)) {
         setRoomError(roomErrorMessage(error, 'Не удалось создать ссылку-приглашение.'));
       }
@@ -1692,13 +1736,22 @@ export function PlayableBetaPage({
   }
 
   async function createAndJoinRoom() {
+    recordRoomTelemetry('ROOM_CREATE_CLICK', { routeHash });
     const controller = new AbortController();
     setRoomPending(true);
     setRoomError(null);
     setCreateRoomConflict(null);
 
     try {
+      recordRoomTelemetry('ROOM_CREATE_REQUEST', { routeHash });
       const created = await roomApi.createRoom(controller.signal);
+      recordRoomTelemetry('ROOM_CREATE_RESPONSE', {
+        routeHash,
+        ok: created.ok,
+        kind: created.kind,
+        roomId: created.ok ? created.room.id : created.roomId,
+        matchId: created.ok ? undefined : created.matchId,
+      });
       if (!created.ok) {
         if (created.kind === 'ACTIVE_MATCH_EXISTS') {
           setCreateRoomConflict({ roomId: created.roomId, matchId: created.matchId });

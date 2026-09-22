@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { createAuthApi, type AuthApi } from './auth/api.js';
 import { AuthShell } from './auth/auth-shell.js';
 import { bootstrapAuth, type AuthState } from './auth/bootstrap.js';
+import { frontendBuildInfo } from './build-info.js';
 import { FullscreenIntroGate, IntroHero } from './intro';
 import { PlayableBetaPage } from './playable-beta/page.js';
 import { GameplayRuntimePreview } from './game/runtime-preview.js';
@@ -158,6 +159,73 @@ function IntroScrubLayer({
 
 function isProfileRoute(hash: string) {
   return hash === '#/profile' || hash === '#/profile/history' || hash === '#/profile/rules';
+}
+
+type ApiBuildDiagnostics = Readonly<{
+  service?: string;
+  releaseId?: string;
+  buildId?: string;
+  gitSha?: string;
+  builtAt?: string;
+  realtimeProtocolVersion?: string;
+}>;
+
+function VersionDebugPage() {
+  const [apiBuild, setApiBuild] = useState<ApiBuildDiagnostics | null>(null);
+  const [apiError, setApiError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch('/health/version', {
+      cache: 'no-store',
+      credentials: 'include',
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        setApiBuild((await response.json()) as ApiBuildDiagnostics);
+        setApiError(null);
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          setApiError(error instanceof Error ? error.message : String(error));
+        }
+      });
+
+    return () => controller.abort();
+  }, []);
+
+  const mismatch =
+    apiBuild?.releaseId !== undefined && apiBuild.releaseId !== frontendBuildInfo.releaseId;
+
+  return (
+    <Panel as="section">
+      <h1>Build diagnostics</h1>
+      <p>
+        This page is safe to screenshot: it contains release metadata only, no secrets or session
+        tokens.
+      </p>
+      {mismatch ? (
+        <EmptyState
+          title="BUILD_MISMATCH"
+          description="Frontend and API are not running the same releaseId."
+        />
+      ) : null}
+      <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+        {JSON.stringify(
+          {
+            frontend: frontendBuildInfo,
+            api: apiBuild,
+            apiError,
+            mismatch: mismatch ? 'BUILD_MISMATCH' : null,
+            roomDiagnostics: window.__zRoomDiagnostics ?? [],
+          },
+          null,
+          2,
+        )}
+      </pre>
+    </Panel>
+  );
 }
 
 function mergeUniqueResults(current: HistoryItems, incoming: HistoryItems): HistoryItems {
@@ -464,7 +532,12 @@ export function App({
     const showRulesOnboarding = !state.rulesOnboardingSeenAt && !rulesOnboardingDismissed;
     const shellRoute = resolveShellRoute(routeHash);
     const route =
-      routeHash === '#/__debug/game-presentation'
+      routeHash === '#/__debug/version'
+        ? {
+            activeKey: 'profile' as const,
+            page: <VersionDebugPage />,
+          }
+        : routeHash === '#/__debug/game-presentation'
         ? {
             activeKey: 'rooms' as const,
             page: (

@@ -18,6 +18,7 @@ import {
   setReadyRequestSchema,
   startMatchRequestSchema,
   takeSeatRequestSchema,
+  ZAMANUSHKA_RELEASE_ID,
   type PublicErrorCode,
   type RoomInviteErrorCode,
   type RoomCommandErrorCode,
@@ -117,6 +118,88 @@ function logRoomEntry(
     },
     '[room-entry]',
   );
+}
+
+type RoomActionEvent =
+  | 'ROOM_CREATE'
+  | 'ROOM_JOIN'
+  | 'ROOM_TAKE_SEAT'
+  | 'ROOM_ADD_BOT'
+  | 'ROOM_REMOVE_BOT'
+  | 'ROOM_LEAVE_SEAT'
+  | 'ROOM_READY'
+  | 'ROOM_LEAVE'
+  | 'ROOM_DELETE'
+  | 'ROOM_START'
+  | 'ROOM_INVITE_CREATE'
+  | 'ROOM_INVITE_RESOLVE';
+
+type RoomActionResult =
+  | { ok?: true; room?: { id: string; status: string; currentMatchId: string | null; version: number } }
+  | { ok: false; error?: { code?: string }; kind?: string; roomId?: string; matchId?: string | null };
+
+function roomActionSummary(result: unknown): Record<string, unknown> {
+  if (typeof result !== 'object' || result === null) return {};
+  const candidate = result as RoomActionResult;
+  const room = 'room' in candidate ? candidate.room : undefined;
+  return {
+    ok: 'ok' in candidate ? candidate.ok : undefined,
+    errorCode: candidate.ok === false ? candidate.error?.code : undefined,
+    kind: 'kind' in candidate ? candidate.kind : undefined,
+    roomId: room?.id ?? ('roomId' in candidate ? candidate.roomId : undefined),
+    roomStatus: room?.status,
+    currentMatchId: room?.currentMatchId ?? ('matchId' in candidate ? candidate.matchId : undefined),
+    roomVersion: room?.version,
+  };
+}
+
+async function withRoomActionLog<T>(
+  request: FastifyRequest,
+  action: RoomActionEvent,
+  payload: Record<string, unknown>,
+  run: () => Promise<T>,
+): Promise<T> {
+  const startedAt = Date.now();
+  request.log.info(
+    {
+      scope: 'room-action',
+      action,
+      releaseId: ZAMANUSHKA_RELEASE_ID,
+      method: request.method,
+      url: request.url,
+      ...payload,
+    },
+    '[room-action:start]',
+  );
+
+  try {
+    const result = await run();
+    request.log.info(
+      {
+        scope: 'room-action',
+        action,
+        releaseId: ZAMANUSHKA_RELEASE_ID,
+        durationMs: Date.now() - startedAt,
+        ...payload,
+        ...roomActionSummary(result),
+      },
+      '[room-action:finish]',
+    );
+    return result;
+  } catch (error) {
+    request.log.error(
+      {
+        scope: 'room-action',
+        action,
+        releaseId: ZAMANUSHKA_RELEASE_ID,
+        durationMs: Date.now() - startedAt,
+        ...payload,
+        errorCode: error instanceof Error ? error.message : 'UNKNOWN',
+      },
+      '[room-action:error]',
+    );
+    throw error;
+  }
 }
 
 function requireOrigin(request: FastifyRequest, reply: FastifyReply, allowedOrigins: string[]) {
@@ -223,7 +306,9 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
     const parsed = createRoomRequestSchema.safeParse(request.body);
     if (!parsed.success) return publicError(reply, 400, 'VALIDATION_ERROR');
 
-    const room = await options.service.createRoom(userId, parsed.data);
+    const room = await withRoomActionLog(request, 'ROOM_CREATE', { userId }, () =>
+      options.service.createRoom(userId, parsed.data),
+    );
     if (room.currentMatchId || room.status === 'ACTIVE') {
       return reply.send({
         ok: false,
@@ -285,7 +370,10 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
     const parsed = joinRoomRequestSchema.safeParse(request.body);
     if (!parsed.success) return publicError(reply, 400, 'VALIDATION_ERROR');
 
-    return mapRoomResult(reply, await options.service.joinRoom(userId, roomId, parsed.data));
+    const result = await withRoomActionLog(request, 'ROOM_JOIN', { userId, roomId }, () =>
+      options.service.joinRoom(userId, roomId, parsed.data),
+    );
+    return mapRoomResult(reply, result);
   });
 
   app.post('/api/rooms/:roomId/invites', async (request, reply) => {
@@ -302,7 +390,9 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
     if (!parsed.success) return inviteError(reply, 400, 'VALIDATION_ERROR');
 
     try {
-      const invite = await options.invites.createInvite(userId, roomId);
+      const invite = await withRoomActionLog(request, 'ROOM_INVITE_CREATE', { userId, roomId }, () =>
+        options.invites!.createInvite(userId, roomId),
+      );
       return reply.send(
         createRoomInviteResponseSchema.parse({
           ok: true,
@@ -332,10 +422,13 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
     });
     if (!parsed.success) return publicError(reply, 400, 'VALIDATION_ERROR');
 
-    return mapRoomResult(
-      reply,
-      await options.service.takeSeat(userId, String(params.roomId), parsed.data),
+    const result = await withRoomActionLog(
+      request,
+      'ROOM_TAKE_SEAT',
+      { userId, roomId: String(params.roomId), seatIndex: parsed.data.seatIndex },
+      () => options.service.takeSeat(userId, String(params.roomId), parsed.data),
     );
+    return mapRoomResult(reply, result);
   });
 
   app.post('/api/rooms/:roomId/seats/:seatIndex/bot', async (request, reply) => {
@@ -353,7 +446,13 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
     });
     if (!parsed.success) return publicError(reply, 400, 'VALIDATION_ERROR');
 
-    return mapRoomResult(reply, await options.service.addBot(userId, String(params.roomId), parsed.data));
+    const result = await withRoomActionLog(
+      request,
+      'ROOM_ADD_BOT',
+      { userId, roomId: String(params.roomId), seatIndex: parsed.data.seatIndex },
+      () => options.service.addBot(userId, String(params.roomId), parsed.data),
+    );
+    return mapRoomResult(reply, result);
   });
 
   app.delete('/api/rooms/:roomId/seats/:seatIndex/bot', async (request, reply) => {
@@ -371,10 +470,13 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
     });
     if (!parsed.success) return publicError(reply, 400, 'VALIDATION_ERROR');
 
-    return mapRoomResult(
-      reply,
-      await options.service.removeBot(userId, String(params.roomId), parsed.data),
+    const result = await withRoomActionLog(
+      request,
+      'ROOM_REMOVE_BOT',
+      { userId, roomId: String(params.roomId), seatIndex: parsed.data.seatIndex },
+      () => options.service.removeBot(userId, String(params.roomId), parsed.data),
     );
+    return mapRoomResult(reply, result);
   });
 
   app.delete('/api/rooms/:roomId/seat', async (request, reply) => {
@@ -389,7 +491,10 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
     const parsed = leaveSeatRequestSchema.safeParse(request.body);
     if (!parsed.success) return publicError(reply, 400, 'VALIDATION_ERROR');
 
-    return mapRoomResult(reply, await options.service.leaveSeat(userId, roomId, parsed.data));
+    const result = await withRoomActionLog(request, 'ROOM_LEAVE_SEAT', { userId, roomId }, () =>
+      options.service.leaveSeat(userId, roomId, parsed.data),
+    );
+    return mapRoomResult(reply, result);
   });
 
   app.post('/api/rooms/:roomId/ready', async (request, reply) => {
@@ -404,7 +509,10 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
     const parsed = setReadyRequestSchema.safeParse(request.body);
     if (!parsed.success) return publicError(reply, 400, 'VALIDATION_ERROR');
 
-    return mapRoomResult(reply, await options.service.setReady(userId, roomId, parsed.data));
+    const result = await withRoomActionLog(request, 'ROOM_READY', { userId, roomId }, () =>
+      options.service.setReady(userId, roomId, parsed.data),
+    );
+    return mapRoomResult(reply, result);
   });
 
   app.post('/api/rooms/:roomId/leave', async (request, reply) => {
@@ -419,7 +527,10 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
     const parsed = leaveRoomRequestSchema.safeParse(request.body);
     if (!parsed.success) return publicError(reply, 400, 'VALIDATION_ERROR');
 
-    return mapRoomResult(reply, await options.service.leaveRoom(userId, roomId, parsed.data));
+    const result = await withRoomActionLog(request, 'ROOM_LEAVE', { userId, roomId }, () =>
+      options.service.leaveRoom(userId, roomId, parsed.data),
+    );
+    return mapRoomResult(reply, result);
   });
 
   app.delete('/api/rooms/:roomId', async (request, reply) => {
@@ -434,7 +545,10 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
     const parsed = deleteRoomRequestSchema.safeParse(request.body);
     if (!parsed.success) return publicError(reply, 400, 'VALIDATION_ERROR');
 
-    return mapRoomResult(reply, await options.service.deleteRoom(userId, roomId, parsed.data));
+    const result = await withRoomActionLog(request, 'ROOM_DELETE', { userId, roomId }, () =>
+      options.service.deleteRoom(userId, roomId, parsed.data),
+    );
+    return mapRoomResult(reply, result);
   });
 
   app.post('/api/rooms/:roomId/start', async (request, reply) => {
@@ -449,7 +563,10 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
     const parsed = startMatchRequestSchema.safeParse(request.body);
     if (!parsed.success) return publicError(reply, 400, 'VALIDATION_ERROR');
 
-    return mapRoomResult(reply, await options.service.startMatch(userId, roomId, parsed.data));
+    const result = await withRoomActionLog(request, 'ROOM_START', { userId, roomId }, () =>
+      options.service.startMatch(userId, roomId, parsed.data),
+    );
+    return mapRoomResult(reply, result);
   });
 
   app.post('/api/rooms/:roomId/reconnect', async (request, reply) => {
@@ -515,7 +632,9 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
     if (!parsed.success) return inviteError(reply, 400, 'VALIDATION_ERROR');
 
     try {
-      const resolved = await options.invites.resolveInvite(parsed.data.token);
+      const resolved = await withRoomActionLog(request, 'ROOM_INVITE_RESOLVE', { userId }, () =>
+        options.invites!.resolveInvite(parsed.data.token),
+      );
       return reply.send(resolveRoomInviteResponseSchema.parse({ ok: true, ...resolved }));
     } catch (error) {
       if (error instanceof RoomInviteServiceError)
