@@ -103,6 +103,31 @@ export const lockSingletonRoomInTransaction = (tx: TxClient) =>
   lockRoomInTransaction(tx, SINGLETON_ROOM_KEY);
 export const persistSingletonRoom = (tx: TxClient, room: PersistedRoom) => persistRoom(tx, room);
 
+async function activeMatchStillOwnsUser(
+  tx: TxClient,
+  room: PersistedRoom,
+  userId: string,
+): Promise<boolean> {
+  if (!room.currentMatchId) return room.status === 'ACTIVE';
+  const match = await tx.match.findUnique({
+    where: { id: room.currentMatchId },
+    select: { status: true, seatOrder: true },
+  });
+  if (!match || match.status !== 'ACTIVE') return false;
+  const seatOrder = Array.isArray(match.seatOrder) ? match.seatOrder : [];
+  return seatOrder.includes(userId);
+}
+
+function repairStaleActiveRoom(room: PersistedRoom): PersistedRoom {
+  return {
+    ...room,
+    status: room.status === 'CLOSED' ? 'CLOSED' : 'WAITING',
+    currentMatchId: null,
+    version: room.version + 1,
+    seats: room.seats.map((seat) => ({ ...seat, ready: false })),
+  };
+}
+
 export function createRoomRepository(prisma: AppPrismaClient) {
   async function ensureLegacy(tx: TxClient) {
     await tx.room.upsert({
@@ -121,12 +146,15 @@ export function createRoomRepository(prisma: AppPrismaClient) {
       return prisma.$transaction(async (tx) => {
         const existing = await tx.roomMembership.findUnique({ where: { userId } });
         if (existing) {
-          const existingRoom = await loadRoomTx(tx, existing.roomKey);
+          let existingRoom = await loadRoomTx(tx, existing.roomKey);
           if (
             existingRoom &&
             (existingRoom.status === 'ACTIVE' || existingRoom.currentMatchId !== null)
           ) {
-            return existingRoom;
+            if (await activeMatchStillOwnsUser(tx, existingRoom, userId)) {
+              return existingRoom;
+            }
+            existingRoom = await persistRoom(tx, repairStaleActiveRoom(existingRoom));
           }
           if (existingRoom && existingRoom.status !== 'CLOSED') {
             // Room ownership is intentionally derived from the oldest HUMAN membership.

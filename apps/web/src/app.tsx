@@ -229,6 +229,8 @@ function VersionDebugPage() {
 }
 
 function FrontendTestButton() {
+  if (!import.meta.env.DEV) return null;
+
   return (
     <button
       type="button"

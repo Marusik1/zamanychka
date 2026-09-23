@@ -580,6 +580,7 @@ export function PlayableBetaPage({
   presentationControllerRef.current = presentationController;
   const [presentationRuntime, setPresentationRuntime] =
     useState<GameplayAnimationRuntimeState | null>(null);
+  const [localDiceRolling, setLocalDiceRolling] = useState(false);
   const reducedMotion = usePrefersReducedMotion();
   const compactViewport = useCompactViewport();
   const [utilityPanel, setUtilityPanel] = useState<UtilityPanel>(null);
@@ -620,6 +621,7 @@ export function PlayableBetaPage({
     setMatch({ status: 'idle' });
     setPresentationController(null);
     setPresentationRuntime(null);
+    setLocalDiceRolling(false);
     setHistoryItems([]);
   }, []);
 
@@ -1167,12 +1169,6 @@ export function PlayableBetaPage({
         reason: 'effect-cleanup',
       });
       abort.abort();
-      recordGameplayTelemetry('SNAP_TO_AUTHORITATIVE', {
-        matchId: presentationController.matchId,
-        stateVersion: presentationController.authoritativeSnapshot.stateVersion,
-        reason: 'presentation-effect-cleanup',
-      });
-      boardRef.current?.snapToAuthoritativeState(presentationController.authoritativeSnapshot);
     };
   }, [activePresentationRunKey, reducedMotion]);
 
@@ -1182,6 +1178,7 @@ export function PlayableBetaPage({
         window.clearTimeout(ackSyncTimeoutRef.current);
         ackSyncTimeoutRef.current = null;
       }
+      setLocalDiceRolling(false);
 
       const hydration = hydrationRef.current;
       if (hydration?.matchId === transition.matchId) {
@@ -1358,11 +1355,11 @@ export function PlayableBetaPage({
     presentationRuntime ??
     (presentationController ? createIdleAnimationState(presentationController.presentationSnapshot) : null);
   const boardPresentationRuntime =
-    activePresentationDieValue !== null && baseBoardPresentationRuntime
+    (activePresentationDieValue !== null || localDiceRolling) && baseBoardPresentationRuntime
       ? {
           ...baseBoardPresentationRuntime,
           dieRolling: true,
-          dieValue: activePresentationDieValue,
+          dieValue: activePresentationDieValue ?? baseBoardPresentationRuntime.dieValue,
         }
       : baseBoardPresentationRuntime;
   const boardDieValue =
@@ -1867,6 +1864,14 @@ export function PlayableBetaPage({
       expectedStateVersion: command.expectedStateVersion,
     });
     setMatch({ ...match, pending: true, error: null });
+    if (action.type === 'ROLL_DICE') {
+      setLocalDiceRolling(true);
+      recordGameplayTelemetry('LOCAL_DICE_VISUAL_START', {
+        matchId: match.matchId,
+        stateVersion: match.snapshot.stateVersion,
+        sequence: match.lastSequence,
+      });
+    }
     recordGameplayTelemetry('command-local-feedback', {
       matchId: command.matchId,
       actionId: command.actionId,
@@ -1893,6 +1898,7 @@ export function PlayableBetaPage({
       });
 
       if (!result.ok) {
+        setLocalDiceRolling(false);
         setMatch({
           ...match,
           pending: false,
@@ -1914,17 +1920,29 @@ export function PlayableBetaPage({
       }
       ackSyncTimeoutRef.current = window.setTimeout(() => {
         setMatch((current) => {
+          const controller = presentationControllerRef.current;
+          const hasPresentationWork =
+            controller?.matchId === result.matchId &&
+            (controller.queue.active !== null || controller.queue.queued.length > 0);
           if (
             current.status === 'ready' &&
             current.matchId === result.matchId &&
-            current.lastSequence < result.lastSequence
+            current.lastSequence < result.lastSequence &&
+            !hasPresentationWork
           ) {
+            recordGameplayTelemetry('ACK_EVENT_TIMEOUT_RECOVERY_SYNC', {
+              matchId: current.matchId,
+              stateVersion: current.snapshot.stateVersion,
+              sequence: current.lastSequence,
+              expectedSequence: result.lastSequence,
+            });
             void syncMatch(current.matchId, current.snapshot.stateVersion, current.lastSequence);
           }
           return current;
         });
-      }, 1200);
+      }, 5000);
     } catch {
+      setLocalDiceRolling(false);
       setMatch({ ...match, pending: false, error: 'Не удалось выполнить игровой ход.' });
     }
   }
@@ -1983,6 +2001,7 @@ export function PlayableBetaPage({
       });
 
       if (!result.ok) {
+        setLocalDiceRolling(false);
         setMatch({
           ...match,
           pending: false,
@@ -2000,6 +2019,7 @@ export function PlayableBetaPage({
           : current,
       );
     } catch {
+      setLocalDiceRolling(false);
       setMatch({ ...match, pending: false, error: 'Не удалось пропустить debug-ход.' });
     }
   }

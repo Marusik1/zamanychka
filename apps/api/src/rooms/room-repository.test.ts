@@ -188,6 +188,110 @@ describe('room repository', () => {
     });
   });
 
+  it('keeps create room blocked while the user still belongs to an active match', async () => {
+    await database.prisma.user.createMany({
+      data: [
+        { id: 'u1', firstName: 'User 1' },
+        { id: 'u2', firstName: 'User 2' },
+      ],
+    });
+
+    const room = await repository.createRoom('u1');
+    await database.prisma.match.create({
+      data: {
+        id: 'active-match-for-u1',
+        roomKey: room.roomId,
+        firstPlayerId: 'u1',
+        seatOrder: ['u1', 'u2'],
+        snapshot: {},
+        status: 'ACTIVE',
+      },
+    });
+    await repository.withLockedRoom(room.roomId, async (tx, locked) =>
+      persistRoom(tx, {
+        ...locked,
+        status: 'ACTIVE',
+        version: locked.version + 1,
+        currentMatchId: 'active-match-for-u1',
+      }),
+    );
+
+    const result = await repository.createRoom('u1');
+
+    expect(result).toMatchObject({
+      roomId: room.roomId,
+      status: 'ACTIVE',
+      currentMatchId: 'active-match-for-u1',
+    });
+    await expect(
+      database.prisma.roomMembership.count({ where: { userId: 'u1' } }),
+    ).resolves.toBe(1);
+  });
+
+  it('repairs a stale finished currentMatchId before creating a new room', async () => {
+    await database.prisma.user.createMany({
+      data: [
+        { id: 'u1', firstName: 'User 1' },
+        { id: 'u2', firstName: 'User 2' },
+      ],
+    });
+
+    const room = await repository.createRoom('u1');
+    await database.prisma.match.create({
+      data: {
+        id: 'finished-match-for-u1',
+        roomKey: room.roomId,
+        firstPlayerId: 'u1',
+        seatOrder: ['u1', 'u2'],
+        snapshot: {},
+        status: 'FINISHED',
+        finishedAt: new Date(),
+      },
+    });
+    await repository.withLockedRoom(room.roomId, async (tx, locked) =>
+      persistRoom(tx, {
+        ...locked,
+        status: 'ACTIVE',
+        version: locked.version + 1,
+        currentMatchId: 'finished-match-for-u1',
+        seats: locked.seats.map((seat) =>
+          seat.seatIndex === 0
+            ? {
+                ...seat,
+                userId: 'u1',
+                participantId: 'u1',
+                participantKind: 'HUMAN',
+                ready: true,
+              }
+            : seat,
+        ),
+      }),
+    );
+
+    const nextRoom = await repository.createRoom('u1');
+
+    expect(nextRoom.roomId).not.toBe(room.roomId);
+    expect(nextRoom).toMatchObject({
+      status: 'WAITING',
+      currentMatchId: null,
+      members: [expect.objectContaining({ userId: 'u1' })],
+    });
+    await expect(repository.loadRoom(room.roomId)).resolves.toMatchObject({
+      roomId: room.roomId,
+      status: 'CLOSED',
+      currentMatchId: null,
+      seats: expect.arrayContaining([
+        expect.objectContaining({
+          seatIndex: 0,
+          userId: null,
+          participantId: null,
+          participantKind: null,
+          ready: false,
+        }),
+      ]),
+    });
+  });
+
   it('loads a room through the transaction that owns its room-scoped lock', async () => {
     await database.prisma.user.create({
       data: { id: 'u1', firstName: 'User 1' },
