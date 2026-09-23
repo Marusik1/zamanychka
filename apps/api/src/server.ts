@@ -9,7 +9,7 @@ import { createAuthService } from './auth/auth-service.js';
 import { verifyTelegramInitData } from './auth/telegram-init-data.js';
 import { getApiBuildInfo } from './build-info.js';
 import { BotRunner } from './bots/bot-runner.js';
-import { RedisBotMatchLease } from './bots/redis-lease.js';
+import { InMemoryBotMatchLease, RedisBotMatchLease } from './bots/redis-lease.js';
 import { createBotRuntimeAdapter } from './bots/runtime-adapter.js';
 import { parseEnv } from './config/env.js';
 import { createLiveDependencies } from './health/dependency-probes.js';
@@ -92,12 +92,17 @@ const commandProcessor = createCommandProcessor({
   },
 });
 const botLeaseRedis = createRedisClient(env.REDIS_URL);
-await botLeaseRedis.connect();
+const botLease = await botLeaseRedis.connect()
+  .then(() => new RedisBotMatchLease(botLeaseRedis))
+  .catch((error: unknown) => {
+    console.error('[bot-lease-redis] disabled; falling back to in-memory lease', error);
+    return new InMemoryBotMatchLease();
+  });
 const botRuntime = createBotRuntimeAdapter({
   matchRepository,
   processCommand: (input) => commandProcessor.process(input),
 });
-botRunner = new BotRunner(botRuntime, new RedisBotMatchLease(botLeaseRedis));
+botRunner = new BotRunner(botRuntime, botLease);
 const realtime = createRealtimeRuntime({
   httpServer: app.server,
   auth: authService,
@@ -127,7 +132,7 @@ app.addHook('onClose', async () => dependencies.close());
 app.addHook('onClose', async () => clearInterval(dispatchTimer));
 app.addHook('onClose', async () => realtime.close());
 app.addHook('onClose', async () => {
-  await botLeaseRedis.quit();
+  if (botLeaseRedis.isOpen) await botLeaseRedis.quit().catch(() => undefined);
 });
 
 const shutdown = async () => {

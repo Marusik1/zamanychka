@@ -47,10 +47,20 @@ export class RedisBotMatchLease implements MatchLease {
     const token = randomUUID();
 
     const acquireStartedAt = performance.now();
-    const acquired = await this.redis.set(key, token, {
-      NX: true,
-      PX: this.ttlMs,
-    });
+    let acquired: string | null = null;
+    try {
+      acquired = await this.redis.set(key, token, {
+        NX: true,
+        PX: this.ttlMs,
+      });
+    } catch (error) {
+      logRedisTelemetry('bot-lease-acquire-failed', {
+        matchId,
+        error: error instanceof Error ? error.message : String(error),
+        latencyMs: roundMs(performance.now() - acquireStartedAt),
+      });
+      return undefined;
+    }
     logRedisTelemetry('bot-lease-acquire', {
       matchId,
       acquired: acquired === 'OK',
@@ -63,10 +73,19 @@ export class RedisBotMatchLease implements MatchLease {
       return await fn();
     } finally {
       const releaseStartedAt = performance.now();
-      await this.redis.eval(RELEASE_SCRIPT, {
-        keys: [key],
-        arguments: [token],
-      });
+      try {
+        await this.redis.eval(RELEASE_SCRIPT, {
+          keys: [key],
+          arguments: [token],
+        });
+      } catch (error) {
+        logRedisTelemetry('bot-lease-release-failed', {
+          matchId,
+          error: error instanceof Error ? error.message : String(error),
+          latencyMs: roundMs(performance.now() - releaseStartedAt),
+        });
+        return;
+      }
       logRedisTelemetry('bot-lease-release', {
         matchId,
         latencyMs: roundMs(performance.now() - releaseStartedAt),

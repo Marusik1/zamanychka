@@ -164,6 +164,8 @@ export function createRealtimeRuntime(options: {
   const ready = maybeRedis
     ? Promise.all([maybeRedis.pub.connect(), maybeRedis.sub.connect()]).then(() => {
         io.adapter(createAdapter(maybeRedis.pub, maybeRedis.sub));
+      }).catch((error: unknown) => {
+        console.error('[realtime-redis-adapter] disabled', error);
       })
     : Promise.resolve();
 
@@ -525,8 +527,10 @@ export function createRealtimeRuntime(options: {
       io.removeAllListeners();
       await new Promise<void>((resolve) => io.close(() => resolve()));
       if (maybeRedis) {
-        if (maybeRedis.pub.isOpen) await maybeRedis.pub.quit();
-        if (maybeRedis.sub.isOpen) await maybeRedis.sub.quit();
+        await Promise.allSettled([
+          maybeRedis.pub.isOpen ? maybeRedis.pub.quit() : Promise.resolve(),
+          maybeRedis.sub.isOpen ? maybeRedis.sub.quit() : Promise.resolve(),
+        ]);
       }
     },
   } satisfies RealtimeRuntime;
