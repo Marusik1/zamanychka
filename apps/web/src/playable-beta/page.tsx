@@ -769,6 +769,10 @@ export function PlayableBetaPage({
   }
 
   function applyCommittedTransition(transition: TransitionEnvelope, reason: 'realtime-event' | 'command-ack') {
+    if (transition.events.some((event) => event.type === 'diceRolled')) {
+      setLocalDiceRolling(false);
+    }
+
     setPresentationController((current) => {
       if (!current || current.matchId !== transition.matchId) {
         return current;
@@ -1378,10 +1382,10 @@ export function PlayableBetaPage({
     presentationRuntime ??
     (presentationController ? createIdleAnimationState(presentationController.presentationSnapshot) : null);
   const boardPresentationRuntime =
-    (activePresentationDieValue !== null || localDiceRolling) && baseBoardPresentationRuntime
+    baseBoardPresentationRuntime
       ? {
           ...baseBoardPresentationRuntime,
-          dieRolling: true,
+          dieRolling: localDiceRolling || baseBoardPresentationRuntime.dieRolling,
           dieValue: activePresentationDieValue ?? baseBoardPresentationRuntime.dieValue,
         }
       : baseBoardPresentationRuntime;

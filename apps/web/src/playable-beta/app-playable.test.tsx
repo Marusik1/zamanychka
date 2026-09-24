@@ -1631,6 +1631,13 @@ describe('playable beta room flow', () => {
       expect(document.querySelector('.game-die--rolling')).not.toBeNull();
       expect(screen.getByLabelText(/Кубик: 6/)).toBeVisible();
     });
+    await waitFor(
+      () => {
+        expect(document.querySelector('.game-die--rolling')).toBeNull();
+        expect(screen.getByLabelText(/Кубик: 6/)).toBeVisible();
+      },
+      { timeout: 2_000 },
+    );
   });
 
   it('shows the finished match state with a return-to-room action instead of gameplay controls', async () => {
