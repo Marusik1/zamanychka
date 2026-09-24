@@ -15,12 +15,13 @@ export const PremiumDice3D = forwardRef<
   PremiumDice3DHandle,
   {
     value: DieValue;
+    rolling?: boolean;
     className?: string;
     label?: string;
     onReady?: () => void;
     onUnavailable?: (error: unknown) => void;
   }
->(function PremiumDice3D({ value, className, label = `Кубик: ${value}`, onReady, onUnavailable }, forwardedRef) {
+>(function PremiumDice3D({ value, rolling = false, className, label = `Кубик: ${value}`, onReady, onUnavailable }, forwardedRef) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const isUnsupportedRuntime =
     typeof window === 'undefined' ||
@@ -34,6 +35,8 @@ export const PremiumDice3D = forwardRef<
     shadow: THREE.Mesh;
     resizeObserver: ResizeObserver;
     raf: number;
+    rolling: boolean;
+    rollingStartedAt: number;
     disposed: boolean;
   } | null>(null);
 
@@ -88,7 +91,7 @@ export const PremiumDice3D = forwardRef<
     scene.add(floor);
 
     const die = createPremiumDieMesh();
-    die.scale.setScalar(1.05);
+    die.scale.setScalar(0.82);
     die.quaternion.copy(committedFaceQuaternion(value));
     scene.add(die);
 
@@ -113,10 +116,29 @@ export const PremiumDice3D = forwardRef<
     resizeObserver.observe(host);
     resize();
 
-    const runtime = { scene, camera, renderer, die, shadow, resizeObserver, raf: 0, disposed: false };
+    const runtime = {
+      scene,
+      camera,
+      renderer,
+      die,
+      shadow,
+      resizeObserver,
+      raf: 0,
+      rolling,
+      rollingStartedAt: performance.now(),
+      disposed: false,
+    };
     runtimeRef.current = runtime;
     const render = () => {
       if (runtime.disposed) return;
+      if (runtime.rolling) {
+        const elapsed = (performance.now() - runtime.rollingStartedAt) / 1000;
+        die.position.set(0.08 * Math.sin(elapsed * 8.5), 0.18 + 0.12 * Math.sin(elapsed * 13), 0);
+        die.rotation.set(elapsed * Math.PI * 3.9, elapsed * Math.PI * 4.7, elapsed * Math.PI * 2.8);
+        shadow.position.x = die.position.x * 0.65;
+        shadow.scale.set(0.92 + 0.12 * Math.sin(elapsed * 10), 0.36, 1);
+        (shadow.material as THREE.MeshBasicMaterial).opacity = 0.1;
+      }
       renderer.render(scene, camera);
       runtime.raf = requestAnimationFrame(render);
     };
@@ -137,6 +159,22 @@ export const PremiumDice3D = forwardRef<
     runtimeRef.current?.die.quaternion.copy(committedFaceQuaternion(value));
   }, [value]);
 
+  useEffect(() => {
+    const runtime = runtimeRef.current;
+    if (!runtime) return;
+    if (rolling && !runtime.rolling) {
+      runtime.rollingStartedAt = performance.now();
+    }
+    runtime.rolling = rolling;
+    if (!rolling) {
+      runtime.die.position.set(0, 0, 0);
+      runtime.die.quaternion.copy(committedFaceQuaternion(value));
+      runtime.shadow.position.x = 0;
+      runtime.shadow.scale.set(1.1, 0.42, 1);
+      (runtime.shadow.material as THREE.MeshBasicMaterial).opacity = 0.16;
+    }
+  }, [rolling, value]);
+
   useImperativeHandle(forwardedRef, () => ({
     snapToValue(nextValue) {
       const runtime = runtimeRef.current;
@@ -150,6 +188,7 @@ export const PremiumDice3D = forwardRef<
       const runtime = runtimeRef.current;
       if (!runtime) return;
       const { die, shadow } = runtime;
+      runtime.rolling = false;
       const finalQuaternion = committedFaceQuaternion(nextValue);
       const spinAtCorrection = new THREE.Quaternion();
 

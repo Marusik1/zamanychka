@@ -41,6 +41,7 @@ export const GameDie = forwardRef<
       <PremiumDice3D
         ref={premiumRef}
         value={value}
+        rolling={rolling}
         label={label}
         className={rolling ? 'game-die game-die--rolling' : 'game-die'}
         onReady={() => setPremiumReady(true)}

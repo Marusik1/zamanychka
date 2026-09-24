@@ -1786,6 +1786,67 @@ describe('playable beta room flow', () => {
     expect(realtime.sendCommand).not.toHaveBeenCalled();
   });
 
+  it('uses the latest authoritative stateVersion when surrender is confirmed after state advances', async () => {
+    const api = createRoomApi({
+      getRoom: vi.fn().mockResolvedValue(activeRoom()),
+      reconnect: vi.fn().mockResolvedValue(activeRoom()),
+    });
+    const realtime = createRealtimeClient({
+      sync: vi.fn().mockResolvedValue({
+        mode: 'snapshot',
+        snapshot: activeSnapshot({ turnPhase: 'WAITING_FOR_ACTION', diceValue: 6 }),
+        watermark: { stateVersion: 0, lastSequence: 0 },
+      }),
+      sendCommand: vi.fn().mockResolvedValue({
+        ok: true,
+        matchId: 'match-1',
+        actionId: 'surrender-action-1',
+        stateVersion: 2,
+        lastSequence: 2,
+        snapshot: activeSnapshot({
+          status: 'FINISHED',
+          stateVersion: 2,
+          lastSequence: 2,
+          winnerPlayerId: 'user-2',
+          finishedAt: '2026-09-01T10:02:00.000Z',
+        }),
+        events: [],
+      }),
+    });
+    const confirmSpy = vi.spyOn(window, 'confirm').mockImplementation(() => {
+      realtime.__emitTransition?.(
+        transitionEnvelope({
+          stateVersion: 1,
+          fromSequence: 1,
+          toSequence: 1,
+          watermark: { stateVersion: 1, lastSequence: 1 },
+          snapshot: activeSnapshot({
+            stateVersion: 1,
+            lastSequence: 1,
+            turnPhase: 'WAITING_FOR_ACTION',
+            diceValue: 6,
+          }),
+        }),
+      );
+      return true;
+    });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
+
+    fireEvent.click(await screen.findByRole('button', { name: /(?:Сдаться|РЎРґР°С‚СЊСЃСЏ)/u }));
+
+    await waitFor(() =>
+      expect(realtime.sendCommand).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'SURRENDER',
+          matchId: 'match-1',
+          expectedStateVersion: 1,
+        }),
+      ),
+    );
+    expect(confirmSpy).toHaveBeenCalled();
+  });
+
   it('uses the current mobile gameplay controls without exposing the reserve tray', async () => {
     useMobileViewport();
     const api = createRoomApi({

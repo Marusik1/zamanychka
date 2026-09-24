@@ -25,6 +25,7 @@ describe('GameDie', () => {
       '4',
     );
     expect(screen.getByRole('img', { name: 'rolling four' })).toHaveClass('game-die--rolling');
+    expect(container.querySelector('.premium-die-3d')).toHaveClass('game-die--rolling');
     expect(container.querySelectorAll('.game-die__pip.is-on')).toHaveLength(4);
   });
 

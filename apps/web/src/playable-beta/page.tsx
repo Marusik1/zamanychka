@@ -553,6 +553,8 @@ export function PlayableBetaPage({
   const matchScopeRef = useRef(0);
   selectedRoomIdRef.current = selectedRoomId;
   const [match, setMatch] = useState<MatchViewState>({ status: 'idle' });
+  const matchRef = useRef<MatchViewState>({ status: 'idle' });
+  matchRef.current = match;
   const activeMatchRef = useRef<string | null>(null);
   const matchWatermarkRef = useRef<{
     matchId: string;
@@ -771,6 +773,22 @@ export function PlayableBetaPage({
   function applyCommittedTransition(transition: TransitionEnvelope, reason: 'realtime-event' | 'command-ack') {
     if (transition.events.some((event) => event.type === 'diceRolled')) {
       setLocalDiceRolling(false);
+    }
+
+    const latestMatch = matchRef.current;
+    if (
+      latestMatch.status === 'ready' &&
+      latestMatch.matchId === transition.matchId &&
+      transition.toSequence > latestMatch.lastSequence &&
+      transition.fromSequence === latestMatch.lastSequence + 1
+    ) {
+      matchRef.current = {
+        ...latestMatch,
+        snapshot: transition.snapshot,
+        lastSequence: transition.toSequence,
+        error: null,
+        pending: false,
+      };
     }
 
     setPresentationController((current) => {
@@ -1852,13 +1870,21 @@ export function PlayableBetaPage({
   }
 
   async function submitAction(action: LegalAction) {
-    if (match.status !== 'ready' || match.pending) return;
+    const initialMatch = matchRef.current;
+    if (initialMatch.status !== 'ready' || initialMatch.pending) {
+      if (action.type === 'SURRENDER') {
+        recordGameplayTelemetry('SURRENDER_BLOCKED', {
+          reason: initialMatch.status !== 'ready' ? initialMatch.status : 'pending',
+        });
+      }
+      return;
+    }
 
     boardRef.current?.unlockAudio();
     if (action.type === 'SURRENDER') {
       recordGameplayTelemetry('SURRENDER_UI_CLICK', {
-        matchId: match.matchId,
-        stateVersion: match.snapshot.stateVersion,
+        matchId: initialMatch.matchId,
+        stateVersion: initialMatch.snapshot.stateVersion,
       });
     }
 
@@ -1870,13 +1896,30 @@ export function PlayableBetaPage({
     }
 
     if (action.type === 'SURRENDER') {
+      const confirmedMatch = matchRef.current;
+      if (confirmedMatch.status !== 'ready' || confirmedMatch.pending) {
+        recordGameplayTelemetry('SURRENDER_BLOCKED', {
+          reason: confirmedMatch.status !== 'ready' ? confirmedMatch.status : 'pending-after-confirm',
+        });
+        return;
+      }
       recordGameplayTelemetry('SURRENDER_CONFIRMED', {
-        matchId: match.matchId,
-        stateVersion: match.snapshot.stateVersion,
+        matchId: confirmedMatch.matchId,
+        stateVersion: confirmedMatch.snapshot.stateVersion,
       });
     }
 
-    const command = commandFromAction(action, match.matchId, match.snapshot.stateVersion);
+    const commandMatch = action.type === 'SURRENDER' ? matchRef.current : initialMatch;
+    if (commandMatch.status !== 'ready') {
+      if (action.type === 'SURRENDER') {
+        recordGameplayTelemetry('SURRENDER_BLOCKED', {
+          reason: commandMatch.status,
+        });
+      }
+      return;
+    }
+
+    const command = commandFromAction(action, commandMatch.matchId, commandMatch.snapshot.stateVersion);
     const tappedAt = performance.now();
     recordGameplayTelemetry('COMMAND_CREATED', {
       matchId: command.matchId,
@@ -1890,13 +1933,17 @@ export function PlayableBetaPage({
       type: command.type,
       expectedStateVersion: command.expectedStateVersion,
     });
-    setMatch({ ...match, pending: true, error: null });
+    setMatch((current) =>
+      current.status === 'ready' && current.matchId === command.matchId
+        ? { ...current, pending: true, error: null }
+        : current,
+    );
     if (action.type === 'ROLL_DICE') {
       setLocalDiceRolling(true);
       recordGameplayTelemetry('LOCAL_DICE_VISUAL_START', {
-        matchId: match.matchId,
-        stateVersion: match.snapshot.stateVersion,
-        sequence: match.lastSequence,
+        matchId: commandMatch.matchId,
+        stateVersion: commandMatch.snapshot.stateVersion,
+        sequence: commandMatch.lastSequence,
       });
     }
     recordGameplayTelemetry('command-local-feedback', {
@@ -1926,13 +1973,17 @@ export function PlayableBetaPage({
 
       if (!result.ok) {
         setLocalDiceRolling(false);
-        setMatch({
-          ...match,
-          pending: false,
-          error: friendlyGameError(result.code, result.message),
-        });
+        setMatch((current) =>
+          current.status === 'ready' && current.matchId === command.matchId
+            ? {
+                ...current,
+                pending: false,
+                error: friendlyGameError(result.code, result.message),
+              }
+            : current,
+        );
         if (result.code === 'STALE_STATE_VERSION') {
-          await syncMatch(match.matchId, match.snapshot.stateVersion, match.lastSequence);
+          await syncMatch(commandMatch.matchId, commandMatch.snapshot.stateVersion, commandMatch.lastSequence);
         }
         return;
       }
@@ -1974,7 +2025,11 @@ export function PlayableBetaPage({
       }, 5000);
     } catch {
       setLocalDiceRolling(false);
-      setMatch({ ...match, pending: false, error: 'Не удалось выполнить игровой ход.' });
+      setMatch((current) =>
+        current.status === 'ready' && current.matchId === command.matchId
+          ? { ...current, pending: false, error: 'Не удалось выполнить игровой ход.' }
+          : current,
+      );
     }
   }
 
