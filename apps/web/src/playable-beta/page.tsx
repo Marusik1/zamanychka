@@ -1,5 +1,6 @@
 import { getLegalActions, type GameState, type LegalAction } from '@zamanushka/game-engine';
 import type {
+  GameCommandResult,
   MatchSnapshot,
   RoomChatMessage,
   RoomState,
@@ -767,6 +768,58 @@ export function PlayableBetaPage({
     };
   }
 
+  function applyCommittedTransition(transition: TransitionEnvelope, reason: 'realtime-event' | 'command-ack') {
+    setPresentationController((current) => {
+      if (!current || current.matchId !== transition.matchId) {
+        return current;
+      }
+
+      recordGameplayTelemetry('PRESENTATION_TRANSITION_ENQUEUE', {
+        matchId: transition.matchId,
+        eventId: transition.transitionId,
+        actionId: transition.actionId,
+        sequence: transition.toSequence,
+        stateVersion: transition.stateVersion,
+        transitionType: transition.events.map((event) => event.type).join('+'),
+        reason,
+      });
+      const accepted = acceptCommittedTransition(current, transition);
+      if (
+        accepted.kind === 'recovery_required' &&
+        matchWatermarkRef.current?.matchId !== transition.matchId
+      ) {
+        void syncMatch(
+          transition.matchId,
+          current.authoritativeSnapshot.stateVersion,
+          current.authoritativeWatermark.lastSequence,
+        );
+      }
+      return accepted.state;
+    });
+
+    setMatch((current) => applyAuthoritativeTransitionToMatch(current, transition));
+  }
+
+  function transitionFromCommandResult(result: Extract<GameCommandResult, { ok: true }>): TransitionEnvelope | null {
+    const firstEvent = result.events[0];
+    const lastEvent = result.events.at(-1);
+    if (!firstEvent || !lastEvent) return null;
+    return {
+      matchId: result.matchId,
+      transitionId: result.actionId,
+      actionId: result.actionId,
+      stateVersion: result.stateVersion,
+      fromSequence: firstEvent.sequence,
+      toSequence: result.lastSequence,
+      events: result.events,
+      watermark: {
+        stateVersion: result.stateVersion,
+        lastSequence: result.lastSequence,
+      },
+      snapshot: result.snapshot,
+    };
+  }
+
   const syncMatch = useCallback(
     async (
       matchId: string,
@@ -1186,37 +1239,7 @@ export function PlayableBetaPage({
         return;
       }
 
-      setPresentationController((current) => {
-        if (!current || current.matchId !== transition.matchId) {
-          return current;
-        }
-
-        recordGameplayTelemetry('PRESENTATION_TRANSITION_ENQUEUE', {
-          matchId: transition.matchId,
-          eventId: transition.transitionId,
-          actionId: transition.actionId,
-          sequence: transition.toSequence,
-          stateVersion: transition.stateVersion,
-          transitionType: transition.events.map((event) => event.type).join('+'),
-          reason: 'realtime-event',
-        });
-        const accepted = acceptCommittedTransition(current, transition);
-        if (
-          accepted.kind === 'recovery_required' &&
-          matchWatermarkRef.current?.matchId !== transition.matchId
-        ) {
-          void syncMatch(
-            transition.matchId,
-            current.authoritativeSnapshot.stateVersion,
-            current.authoritativeWatermark.lastSequence,
-          );
-        }
-        return accepted.state;
-      });
-
-      setMatch((current) => {
-        return applyAuthoritativeTransitionToMatch(current, transition);
-      });
+      applyCommittedTransition(transition, 'realtime-event');
     });
   }, [realtimeClient, syncMatch]);
 
@@ -1915,6 +1938,10 @@ export function PlayableBetaPage({
           ? { ...current, pending: false, error: null }
           : current,
       );
+      const ackTransition = transitionFromCommandResult(result);
+      if (ackTransition) {
+        applyCommittedTransition(ackTransition, 'command-ack');
+      }
       if (ackSyncTimeoutRef.current !== null) {
         window.clearTimeout(ackSyncTimeoutRef.current);
       }

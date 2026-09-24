@@ -1579,6 +1579,60 @@ describe('playable beta room flow', () => {
     });
   });
 
+  it('applies successful command ACK events without waiting for a socket echo', async () => {
+    const api = createRoomApi({
+      getRoom: vi.fn().mockResolvedValue(activeRoom()),
+      reconnect: vi.fn().mockResolvedValue(activeRoom()),
+    });
+    const ackSnapshot = activeSnapshot({
+      stateVersion: 1,
+      lastSequence: 1,
+      turnPhase: 'WAITING_FOR_ACTION',
+      diceValue: 6,
+    });
+    const realtime = createRealtimeClient({
+      sync: vi.fn().mockResolvedValue({
+        mode: 'snapshot',
+        snapshot: activeSnapshot(),
+        watermark: { stateVersion: 0, lastSequence: 0 },
+      }),
+      sendCommand: vi.fn().mockResolvedValue({
+        ok: true,
+        matchId: 'match-1',
+        actionId: 'roll-action-1',
+        stateVersion: 1,
+        lastSequence: 1,
+        snapshot: ackSnapshot,
+        events: [
+          {
+            matchId: 'match-1',
+            eventId: 'roll-event-1',
+            sequence: 1,
+            stateVersion: 1,
+            type: 'diceRolled',
+            payload: { playerId: 'user-1', diceValue: 6 },
+            createdAt: '2026-09-01T10:00:01.000Z',
+          },
+        ],
+        ack: {
+          actionId: 'roll-action-1',
+          stateVersion: 1,
+          lastSequence: 1,
+        },
+      }),
+    });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
+
+    const rollButton = await screen.findByRole('button', { name: /Бросить кубик/ });
+    fireEvent.click(rollButton);
+
+    await waitFor(() => {
+      expect(document.querySelector('.game-die--rolling')).not.toBeNull();
+      expect(screen.getByLabelText(/Кубик: 6/)).toBeVisible();
+    });
+  });
+
   it('shows the finished match state with a return-to-room action instead of gameplay controls', async () => {
     const api = createRoomApi({
       getRoom: vi
