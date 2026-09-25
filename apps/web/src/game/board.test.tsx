@@ -255,6 +255,29 @@ describe('GameBoard', () => {
     expect(screen.getByRole('button', { name: 'Бросить кубик' })).toBeVisible();
   });
 
+  it('does not announce a committed dice result while the 3D die is still rolling', () => {
+    render(
+      <GameBoard
+        pawns={pawns}
+        dieValue={2}
+        presentation={{
+          pawnVisuals: {},
+          hiddenPawnIds: [],
+          cellCue: null,
+          toast: null,
+          dieRolling: true,
+          dieValue: 6,
+          victoryPlayerId: null,
+          victoryReason: null,
+          currentPlayerId: 'p1',
+          interactionLocked: true,
+        }}
+      />,
+    );
+
+    expect(screen.queryByText(/Выпало:\s*6|Р’С‹РїР°Р»Рѕ:\s*6/u)).not.toBeInTheDocument();
+    expect(screen.getByText(/Кубик вращается|РљСѓР±РёРє РІСЂР°С‰Р°РµС‚СЃСЏ/u)).toBeVisible();
+  });
   it('projects participants and selectable local reserve pawns inside the mobile match frame', () => {
     const onPawnSelect = vi.fn();
     const localReservePawn: GameScreenPawnView = {

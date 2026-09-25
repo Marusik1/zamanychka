@@ -82,6 +82,7 @@ function recordTelemetry(event: string, payload: Record<string, unknown> = {}) {
 export function createRealtimeClient(): RealtimeClient {
   let socket: Socket | null = null;
   const listeners = new Set<RealtimeSubscription>();
+  const joinedMatchIds = new Set<string>();
   let disconnectCount = 0;
   let connectErrorCount = 0;
   let reconnectCount = 0;
@@ -126,7 +127,15 @@ export function createRealtimeClient(): RealtimeClient {
         reconnectCount,
         socketId: socket?.id,
         transport: socket?.io.engine.transport.name,
+        joinedMatchCount: joinedMatchIds.size,
       });
+      for (const matchId of joinedMatchIds) {
+        currentSocket().emit(
+          'match:join',
+          { matchId, realtimeProtocolVersion: REALTIME_PROTOCOL_VERSION },
+          () => undefined,
+        );
+      }
     });
     socket.io.on('reconnect_attempt', (attempt) => {
       recordTelemetry('socket-reconnect-attempt', { attempt });
@@ -217,6 +226,7 @@ export function createRealtimeClient(): RealtimeClient {
           throw new RealtimeClientError(code, `match:join failed with ${code}`, code === 'MATCH_NOT_FOUND');
         },
       );
+      joinedMatchIds.add(matchId);
     },
     async sync(request) {
       await this.ensureConnected();
@@ -266,6 +276,7 @@ export function createRealtimeClient(): RealtimeClient {
       }
       socket?.disconnect();
       socket = null;
+      joinedMatchIds.clear();
     },
   };
 }

@@ -1847,6 +1847,74 @@ describe('playable beta room flow', () => {
     expect(confirmSpy).toHaveBeenCalled();
   });
 
+  it('retries surrender once with the fresh snapshot after a stale stateVersion rejection', async () => {
+    const api = createRoomApi({
+      getRoom: vi.fn().mockResolvedValue(activeRoom()),
+      reconnect: vi.fn().mockResolvedValue(activeRoom()),
+    });
+    const freshSnapshot = activeSnapshot({
+      stateVersion: 1,
+      lastSequence: 1,
+      currentPlayerId: 'user-2',
+      turnPhase: 'WAITING_FOR_ROLL',
+      diceValue: null,
+    });
+    const realtime = createRealtimeClient({
+      sync: vi.fn().mockResolvedValue({
+        mode: 'snapshot',
+        snapshot: activeSnapshot({ turnPhase: 'WAITING_FOR_ACTION', diceValue: 6 }),
+        watermark: { stateVersion: 0, lastSequence: 0 },
+      }),
+      sendCommand: vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: false,
+          matchId: 'match-1',
+          actionId: 'stale-surrender',
+          code: 'STALE_STATE_VERSION',
+          message: 'State version is stale',
+          stateVersion: 1,
+          snapshot: freshSnapshot,
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          matchId: 'match-1',
+          actionId: 'retry-surrender',
+          stateVersion: 2,
+          lastSequence: 2,
+          snapshot: activeSnapshot({
+            status: 'FINISHED',
+            stateVersion: 2,
+            lastSequence: 2,
+            winnerPlayerId: 'user-2',
+            finishedAt: '2026-09-01T10:02:00.000Z',
+          }),
+          events: [],
+        }),
+    });
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
+
+    fireEvent.click(await screen.findByRole('button', { name: /(?:Сдаться|РЎРґР°С‚СЊСЃСЏ)/u }));
+
+    await waitFor(() => expect(realtime.sendCommand).toHaveBeenCalledTimes(2));
+    expect(realtime.sendCommand).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        type: 'SURRENDER',
+        expectedStateVersion: 0,
+      }),
+    );
+    expect(realtime.sendCommand).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        type: 'SURRENDER',
+        expectedStateVersion: 1,
+      }),
+    );
+  });
+
   it('uses the current mobile gameplay controls without exposing the reserve tray', async () => {
     useMobileViewport();
     const api = createRoomApi({

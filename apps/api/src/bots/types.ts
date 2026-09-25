@@ -53,4 +53,5 @@ export interface BotRunnerOptions {
   stallTelemetryDelayMs?: number;
   logger?: Pick<Console, 'debug' | 'warn' | 'error'>;
   random?: () => number;
+  onCommittedCommand?: (input: { matchId: string; actionId: string; type: BotCommandType }) => void | Promise<void>;
 }

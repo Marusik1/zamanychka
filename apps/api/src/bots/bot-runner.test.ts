@@ -54,6 +54,62 @@ describe('BotRunner', () => {
     );
   });
 
+  it('signals committed bot commands so realtime outbox dispatch wakes immediately', async () => {
+    let botCommandApplied = false;
+    const runtime: BotRuntimeAdapter = {
+      readTurn: vi.fn(async () =>
+        botCommandApplied
+          ? {
+              matchId: 'match-1',
+              status: 'ACTIVE',
+              stateVersion: 8,
+              phase: 'WAITING_FOR_ROLL',
+              activeParticipantId: 'human-1',
+              activeParticipantKind: 'HUMAN',
+              legalActions: [{ type: 'ROLL_DICE' as const }],
+            }
+          : {
+              matchId: 'match-1',
+              status: 'ACTIVE',
+              stateVersion: 7,
+              phase: 'WAITING_FOR_ROLL',
+              activeParticipantId: 'bot-1',
+              activeParticipantKind: 'BOT',
+              legalActions: [{ type: 'ROLL_DICE' as const }],
+            },
+      ),
+      submitCommand: vi.fn(async () => {
+        botCommandApplied = true;
+        return {
+          ok: true,
+          matchId: 'match-1',
+          stateVersion: 8,
+        };
+      }),
+    };
+    const lease: MatchLease = {
+      runExclusive: vi.fn(async (_matchId, fn) => fn()),
+    };
+    const onCommittedCommand = vi.fn();
+
+    const runner = new BotRunner(runtime, lease, {
+      minDelayMs: 1,
+      maxDelayMs: 1,
+      random: () => 0,
+      onCommittedCommand,
+    });
+
+    runner.kick('match-1');
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(onCommittedCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        matchId: 'match-1',
+        type: 'ROLL_DICE',
+      }),
+    );
+  });
+
   it('schedules delayed recovery when the lease stays busy beyond the immediate retry window', async () => {
     const runtime: BotRuntimeAdapter = {
       readTurn: vi.fn(async () => ({

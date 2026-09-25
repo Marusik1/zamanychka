@@ -1972,6 +1972,65 @@ export function PlayableBetaPage({
       });
 
       if (!result.ok) {
+        if (
+          action.type === 'SURRENDER' &&
+          result.code === 'STALE_STATE_VERSION' &&
+          result.snapshot?.status === 'ACTIVE'
+        ) {
+          recordGameplayTelemetry('SURRENDER_STALE_RETRY', {
+            matchId: command.matchId,
+            actionId: command.actionId,
+            staleStateVersion: command.expectedStateVersion,
+            freshStateVersion: result.snapshot.stateVersion,
+          });
+          matchWatermarkRef.current = {
+            matchId: command.matchId,
+            stateVersion: result.snapshot.stateVersion,
+            lastSequence: result.snapshot.lastSequence,
+          };
+          setMatch((current) =>
+            current.status === 'ready' && current.matchId === command.matchId
+              ? {
+                  ...current,
+                  snapshot: result.snapshot!,
+                  lastSequence: result.snapshot!.lastSequence,
+                  pending: true,
+                  error: null,
+                }
+              : current,
+          );
+          const retryCommand = commandFromAction(action, command.matchId, result.snapshot.stateVersion);
+          const retryResult = await realtimeClient.sendCommand(retryCommand);
+          recordGameplayTelemetry('SURRENDER_RETRY_ACK', {
+            matchId: retryCommand.matchId,
+            actionId: retryCommand.actionId,
+            ok: retryResult.ok,
+            code: retryResult.ok ? undefined : retryResult.code,
+            stateVersion: retryResult.stateVersion,
+          });
+          if (retryResult.ok) {
+            setMatch((current) =>
+              current.status === 'ready' && current.matchId === retryResult.matchId
+                ? { ...current, pending: false, error: null }
+                : current,
+            );
+            const retryTransition = transitionFromCommandResult(retryResult);
+            if (retryTransition) {
+              applyCommittedTransition(retryTransition, 'command-ack');
+            }
+            return;
+          }
+          setMatch((current) =>
+            current.status === 'ready' && current.matchId === retryCommand.matchId
+              ? {
+                  ...current,
+                  pending: false,
+                  error: friendlyGameError(retryResult.code, retryResult.message),
+                }
+              : current,
+          );
+          return;
+        }
         setLocalDiceRolling(false);
         setMatch((current) =>
           current.status === 'ready' && current.matchId === command.matchId

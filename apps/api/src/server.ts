@@ -98,11 +98,14 @@ const botLease = await botLeaseRedis.connect()
     console.error('[bot-lease-redis] disabled; falling back to in-memory lease', error);
     return new InMemoryBotMatchLease();
   });
+let dispatchCommittedBotEvents: (matchId: string) => void = () => undefined;
 const botRuntime = createBotRuntimeAdapter({
   matchRepository,
   processCommand: (input) => commandProcessor.process(input),
 });
-botRunner = new BotRunner(botRuntime, botLease);
+botRunner = new BotRunner(botRuntime, botLease, {
+  onCommittedCommand: ({ matchId }) => dispatchCommittedBotEvents(matchId),
+});
 const realtime = createRealtimeRuntime({
   httpServer: app.server,
   auth: authService,
@@ -114,6 +117,9 @@ const realtime = createRealtimeRuntime({
   allowedOrigins: env.auth.allowedOrigins,
   redisUrl: env.REDIS_URL,
 });
+dispatchCommittedBotEvents = () => {
+  void realtime.dispatchOutboxOnce();
+};
 await realtime.ready;
 console.info('[REALTIME BUILD]', {
   buildId: buildInfo.buildId,

@@ -568,7 +568,7 @@ export function App({
             activeKey: 'profile' as const,
             page: <VersionDebugPage />,
           }
-        : routeHash === '#/__debug/game-presentation'
+        : import.meta.env.DEV && routeHash === '#/__debug/game-presentation'
         ? {
             activeKey: 'rooms' as const,
             page: (

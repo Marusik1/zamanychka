@@ -731,7 +731,11 @@ export const GameBoard = forwardRef<PremiumPresentationHandle, GameBoardProps>(f
               </div>
             ) : null}
             <p>{turnPanel?.title ?? 'Ваш ход'}</p>
-            <span>{turnPanel?.dieValueText ?? `Выпало: ${effectiveDieValue}`}</span>
+            <span>
+              {effectiveDieRolling
+                ? 'Кубик вращается…'
+                : turnPanel?.dieValueText ?? 'Выпало: ' + effectiveDieValue}
+            </span>
             <GameDie
               ref={dieRef}
               value={effectiveDieValue}

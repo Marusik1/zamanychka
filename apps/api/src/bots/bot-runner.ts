@@ -38,6 +38,7 @@ export class BotRunner {
   private readonly stallTelemetryDelayMs: number;
   private readonly logger: Pick<Console, 'debug' | 'warn' | 'error'>;
   private readonly random: () => number;
+  private readonly onCommittedCommand?: BotRunnerOptions['onCommittedCommand'];
 
   constructor(
     private readonly runtime: BotRuntimeAdapter,
@@ -54,6 +55,7 @@ export class BotRunner {
     this.stallTelemetryDelayMs = options.stallTelemetryDelayMs ?? 10_000;
     this.logger = options.logger ?? console;
     this.random = options.random ?? Math.random;
+    this.onCommittedCommand = options.onCommittedCommand;
   }
 
   kick(matchId: string): void {
@@ -237,6 +239,12 @@ export class BotRunner {
         });
         return;
       }
+
+      await this.onCommittedCommand?.({
+        matchId,
+        actionId: command.actionId,
+        type: command.type,
+      });
     }
 
     this.logger.warn('[bot-runner] safety action limit reached', {
