@@ -110,7 +110,7 @@ describe('BotRunner', () => {
     );
   });
 
-  it('uses a short follow-up delay when a bot must move after its own dice roll', async () => {
+  it('waits for the visible dice presentation before a bot moves after its own dice roll', async () => {
     let readCount = 0;
     const runtime: BotRuntimeAdapter = {
       readTurn: vi.fn(async () => {
@@ -147,21 +147,19 @@ describe('BotRunner', () => {
     };
 
     const runner = new BotRunner(runtime, lease, {
-      minDelayMs: 1_000,
-      maxDelayMs: 1_000,
-      followupMinDelayMs: 100,
-      followupMaxDelayMs: 100,
+      minDelayMs: 1,
+      maxDelayMs: 1,
       random: () => 0,
     });
 
     runner.kick('match-1');
-    await vi.advanceTimersByTimeAsync(1_000);
-    expect(runtime.submitCommand).toHaveBeenCalledTimes(1);
-
-    await vi.advanceTimersByTimeAsync(99);
-    expect(runtime.submitCommand).toHaveBeenCalledTimes(1);
-
     await vi.advanceTimersByTimeAsync(1);
+    expect(runtime.submitCommand).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(908);
+    expect(runtime.submitCommand).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(2);
     expect(runtime.submitCommand).toHaveBeenCalledTimes(2);
     expect(runtime.submitCommand).toHaveBeenLastCalledWith(
       expect.objectContaining({

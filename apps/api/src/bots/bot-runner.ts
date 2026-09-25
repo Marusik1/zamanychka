@@ -4,6 +4,7 @@ import { chooseBotAction } from './bot-policy.js';
 import type { BotCommand, BotRunnerOptions, BotRuntimeAdapter, MatchLease } from './types.js';
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+const VISIBLE_DICE_PRESENTATION_MS = 810;
 
 function telemetryEnabled() {
   return process.env.GAMEPLAY_TELEMETRY === 'true';
@@ -49,8 +50,8 @@ export class BotRunner {
   ) {
     this.minDelayMs = options.minDelayMs ?? 450;
     this.maxDelayMs = options.maxDelayMs ?? 850;
-    this.followupMinDelayMs = options.followupMinDelayMs ?? 100;
-    this.followupMaxDelayMs = options.followupMaxDelayMs ?? 300;
+    this.followupMinDelayMs = options.followupMinDelayMs ?? VISIBLE_DICE_PRESENTATION_MS + 100;
+    this.followupMaxDelayMs = options.followupMaxDelayMs ?? VISIBLE_DICE_PRESENTATION_MS + 500;
     this.maxActionsPerKick = options.maxActionsPerKick ?? 8;
     this.maxLeaseRetryAttempts = options.maxLeaseRetryAttempts ?? 3;
     this.leaseRetryDelayMs = options.leaseRetryDelayMs ?? 250;
