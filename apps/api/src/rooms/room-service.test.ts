@@ -469,4 +469,46 @@ describe('room service', () => {
       error: { code: 'ROOM_ALREADY_ACTIVE', message: 'Room already has an active match' },
     });
   });
+
+  it('repairs a stale terminal current match before deleting a room', async () => {
+    await seedUsers(['user-1', 'user-2']);
+    const service = createService();
+    const room = await service.createRoom('user-1', {});
+    const joined = await service.joinRoom('user-2', room.id, {});
+    expect(joined.ok).toBe(true);
+    for (const [index, userId] of ['user-1', 'user-2'].entries()) {
+      const seated = await service.takeSeat(userId, room.id, {
+        seatIndex: index as 0 | 1,
+        expectedRoomVersion: await roomVersion(room.id),
+      });
+      expect(seated.ok).toBe(true);
+      await service.connectPresence(userId, room.id);
+      const ready = await service.setReady(userId, room.id, {
+        ready: true,
+        expectedRoomVersion: await roomVersion(room.id),
+      });
+      expect(ready.ok).toBe(true);
+    }
+    const started = await service.startMatch('user-1', room.id, {
+      expectedRoomVersion: await roomVersion(room.id),
+    });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    await database.prisma.match.update({
+      where: { id: started.matchId },
+      data: { status: 'FINISHED', finishedAt: new Date('2026-09-01T10:10:00.000Z') },
+    });
+
+    const deleted = await service.deleteRoom('user-1', room.id, {
+      expectedRoomVersion: await roomVersion(room.id),
+    });
+
+    expect(deleted.ok).toBe(true);
+    if (!deleted.ok) return;
+    expect(deleted.room.status).toBe('CLOSED');
+    await expect(repository.loadRoom(room.id)).resolves.toMatchObject({
+      status: 'CLOSED',
+      currentMatchId: null,
+    });
+  });
 });

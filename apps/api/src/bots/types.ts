@@ -45,6 +45,8 @@ export interface MatchLease {
 export interface BotRunnerOptions {
   minDelayMs?: number;
   maxDelayMs?: number;
+  followupMinDelayMs?: number;
+  followupMaxDelayMs?: number;
   maxActionsPerKick?: number;
   maxLeaseRetryAttempts?: number;
   leaseRetryDelayMs?: number;

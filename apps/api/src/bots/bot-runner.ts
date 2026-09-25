@@ -30,6 +30,8 @@ export class BotRunner {
   private readonly watchdogs = new Set<string>();
   private readonly minDelayMs: number;
   private readonly maxDelayMs: number;
+  private readonly followupMinDelayMs: number;
+  private readonly followupMaxDelayMs: number;
   private readonly maxActionsPerKick: number;
   private readonly maxLeaseRetryAttempts: number;
   private readonly leaseRetryDelayMs: number;
@@ -47,6 +49,8 @@ export class BotRunner {
   ) {
     this.minDelayMs = options.minDelayMs ?? 450;
     this.maxDelayMs = options.maxDelayMs ?? 850;
+    this.followupMinDelayMs = options.followupMinDelayMs ?? 100;
+    this.followupMaxDelayMs = options.followupMaxDelayMs ?? 300;
     this.maxActionsPerKick = options.maxActionsPerKick ?? 8;
     this.maxLeaseRetryAttempts = options.maxLeaseRetryAttempts ?? 3;
     this.leaseRetryDelayMs = options.leaseRetryDelayMs ?? 250;
@@ -165,7 +169,7 @@ export class BotRunner {
       if (!beforeDelay || beforeDelay.status !== 'ACTIVE') return;
       if (beforeDelay.activeParticipantKind !== 'BOT') return;
 
-      const thinkDelayMs = this.pickDelay();
+      const thinkDelayMs = step === 0 ? this.pickDelay() : this.pickFollowupDelay();
       logBotTelemetry('bot-turn-detected', {
         matchId,
         step,
@@ -256,5 +260,10 @@ export class BotRunner {
   private pickDelay(): number {
     const span = Math.max(0, this.maxDelayMs - this.minDelayMs);
     return this.minDelayMs + Math.floor(this.random() * (span + 1));
+  }
+
+  private pickFollowupDelay(): number {
+    const span = Math.max(0, this.followupMaxDelayMs - this.followupMinDelayMs);
+    return this.followupMinDelayMs + Math.floor(this.random() * (span + 1));
   }
 }

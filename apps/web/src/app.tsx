@@ -135,7 +135,10 @@ function IntroScrubLayer({
   onComplete: () => void;
   routeHash: string;
 }) {
-  if (import.meta.env.DEV && routeHash === '#/__debug/game-presentation') {
+  const isGameLabRoute =
+    routeHash === '#/__debug/game-lab' || routeHash === '#/__debug/game-presentation';
+
+  if (import.meta.env.DEV && isGameLabRoute) {
     return (
       <AppFrame title="Р—РђРњРђРќРЈРЁРљРђ" navigation={[]}>
         <Panel as="section">
@@ -568,7 +571,8 @@ export function App({
             activeKey: 'profile' as const,
             page: <VersionDebugPage />,
           }
-        : import.meta.env.DEV && routeHash === '#/__debug/game-presentation'
+        : import.meta.env.DEV &&
+            (routeHash === '#/__debug/game-lab' || routeHash === '#/__debug/game-presentation')
         ? {
             activeKey: 'rooms' as const,
             page: (

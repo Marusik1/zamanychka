@@ -125,6 +125,25 @@ function isRoomNotFoundError(error: unknown): boolean {
   return error instanceof Error && error.message === 'ROOM_NOT_FOUND';
 }
 
+async function activeMatchStillOwnsRoom(tx: TxClient, room: PersistedRoom): Promise<boolean> {
+  if (!room.currentMatchId) return room.status === 'ACTIVE';
+  const match = await tx.match.findUnique({
+    where: { id: room.currentMatchId },
+    select: { status: true },
+  });
+  return match?.status === 'ACTIVE';
+}
+
+function repairStaleMatchRoom(room: PersistedRoom): PersistedRoom {
+  return {
+    ...room,
+    status: room.status === 'CLOSED' ? 'CLOSED' : 'WAITING',
+    currentMatchId: null,
+    version: room.version + 1,
+    seats: room.seats.map((seat) => ({ ...seat, ready: false })),
+  };
+}
+
 function isUniqueConstraintError(error: unknown): boolean {
   return (
     typeof error === 'object' &&
@@ -494,15 +513,19 @@ export function createRoomService(options: {
           if (!hasMembership(room, actorUserId)) return roomError('NOT_ROOM_MEMBER');
           if (!isRoomHost(room, actorUserId)) return roomError('NOT_ALLOWED');
           if (room.status === 'CLOSED') return roomError('ROOM_CLOSED');
-          if (room.status === 'ACTIVE' || room.currentMatchId !== null) {
-            return roomError('ROOM_ALREADY_ACTIVE');
-          }
           if (room.version !== request.expectedRoomVersion) {
             return roomError('STALE_ROOM_VERSION');
           }
+          let roomToDelete = room;
+          if (room.status === 'ACTIVE' || room.currentMatchId !== null) {
+            if (await activeMatchStillOwnsRoom(tx, room)) {
+              return roomError('ROOM_ALREADY_ACTIVE');
+            }
+            roomToDelete = await persistRoom(tx, repairStaleMatchRoom(room));
+          }
 
-          disconnectedMemberIds = room.members.map((member) => member.userId);
-          const next = cloneRoom(room);
+          disconnectedMemberIds = roomToDelete.members.map((member) => member.userId);
+          const next = cloneRoom(roomToDelete);
           next.status = 'CLOSED';
           next.currentMatchId = null;
           next.version += 1;

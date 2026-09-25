@@ -7,6 +7,7 @@ import { PREMIUM_MOTION } from './motion-tokens.js';
 import { tween } from './tween.js';
 
 export type PremiumDice3DHandle = Readonly<{
+  beginRoll: () => void;
   throwCommitted: (value: DieValue, signal?: AbortSignal) => Promise<void>;
   snapToValue: (value: DieValue) => void;
 }>;
@@ -38,6 +39,7 @@ export const PremiumDice3D = forwardRef<
     rolling: boolean;
     rollingStartedAt: number;
     disposed: boolean;
+    settling: boolean;
   } | null>(null);
 
   useEffect(() => {
@@ -127,6 +129,7 @@ export const PremiumDice3D = forwardRef<
       rolling,
       rollingStartedAt: performance.now(),
       disposed: false,
+      settling: false,
     };
     runtimeRef.current = runtime;
     const render = () => {
@@ -156,7 +159,9 @@ export const PremiumDice3D = forwardRef<
   }, [isUnsupportedRuntime]);
 
   useEffect(() => {
-    runtimeRef.current?.die.quaternion.copy(committedFaceQuaternion(value));
+    const runtime = runtimeRef.current;
+    if (!runtime || runtime.rolling || runtime.settling) return;
+    runtime.die.quaternion.copy(committedFaceQuaternion(value));
   }, [value]);
 
   useEffect(() => {
@@ -176,9 +181,20 @@ export const PremiumDice3D = forwardRef<
   }, [rolling, value]);
 
   useImperativeHandle(forwardedRef, () => ({
+    beginRoll() {
+      const runtime = runtimeRef.current;
+      if (!runtime) return;
+      if (!runtime.rolling) {
+        runtime.rollingStartedAt = performance.now();
+      }
+      runtime.settling = false;
+      runtime.rolling = true;
+    },
     snapToValue(nextValue) {
       const runtime = runtimeRef.current;
       if (!runtime) return;
+      runtime.rolling = false;
+      runtime.settling = false;
       runtime.die.position.set(0, 0, 0);
       runtime.die.quaternion.copy(committedFaceQuaternion(nextValue));
       runtime.shadow.position.x = 0;
@@ -189,6 +205,7 @@ export const PremiumDice3D = forwardRef<
       if (!runtime) return;
       const { die, shadow } = runtime;
       runtime.rolling = false;
+      runtime.settling = true;
       const finalQuaternion = committedFaceQuaternion(nextValue);
       const spinAtCorrection = new THREE.Quaternion();
 
@@ -235,6 +252,7 @@ export const PremiumDice3D = forwardRef<
       die.position.set(0, 0, 0);
       die.scale.setScalar(0.82);
       die.quaternion.copy(finalQuaternion);
+      runtime.settling = false;
     },
   }), []);
 

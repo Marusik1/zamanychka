@@ -110,6 +110,68 @@ describe('BotRunner', () => {
     );
   });
 
+  it('uses a short follow-up delay when a bot must move after its own dice roll', async () => {
+    let readCount = 0;
+    const runtime: BotRuntimeAdapter = {
+      readTurn: vi.fn(async () => {
+        readCount += 1;
+        if (readCount <= 2) {
+          return {
+            matchId: 'match-1',
+            status: 'ACTIVE',
+            stateVersion: 7,
+            phase: 'WAITING_FOR_ROLL',
+            activeParticipantId: 'bot-1',
+            activeParticipantKind: 'BOT',
+            legalActions: [{ type: 'ROLL_DICE' as const }],
+          };
+        }
+        return {
+          matchId: 'match-1',
+          status: 'ACTIVE',
+          stateVersion: 8,
+          phase: 'WAITING_FOR_ACTION',
+          activeParticipantId: 'bot-1',
+          activeParticipantKind: 'BOT',
+          legalActions: [{ type: 'MOVE_PAWN' as const, pawnId: 'bot-pawn-1' }],
+        };
+      }),
+      submitCommand: vi.fn(async () => ({
+        ok: true,
+        matchId: 'match-1',
+        stateVersion: 8,
+      })),
+    };
+    const lease: MatchLease = {
+      runExclusive: vi.fn(async (_matchId, fn) => fn()),
+    };
+
+    const runner = new BotRunner(runtime, lease, {
+      minDelayMs: 1_000,
+      maxDelayMs: 1_000,
+      followupMinDelayMs: 100,
+      followupMaxDelayMs: 100,
+      random: () => 0,
+    });
+
+    runner.kick('match-1');
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(runtime.submitCommand).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(99);
+    expect(runtime.submitCommand).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(runtime.submitCommand).toHaveBeenCalledTimes(2);
+    expect(runtime.submitCommand).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        type: 'MOVE_PAWN',
+        expectedStateVersion: 8,
+        pawnId: 'bot-pawn-1',
+      }),
+    );
+  });
+
   it('schedules delayed recovery when the lease stays busy beyond the immediate retry window', async () => {
     const runtime: BotRuntimeAdapter = {
       readTurn: vi.fn(async () => ({

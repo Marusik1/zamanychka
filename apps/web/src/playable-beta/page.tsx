@@ -1319,6 +1319,11 @@ export function PlayableBetaPage({
   const mySeatIndex = room?.currentUser.seatIndex ?? null;
   const occupiedCount = room?.counts.seatedCount ?? 0;
   const readyCount = room?.counts.readyCount ?? 0;
+  const canDeleteCurrentRoom = Boolean(
+    room?.currentUser.canManageBots &&
+      room.status === 'WAITING' &&
+      room.currentMatchId === null,
+  );
   const soloDebugStartAvailable = Boolean(
     room?.currentUser.canStart && occupiedCount === 1 && readyCount === 1,
   );
@@ -1939,6 +1944,7 @@ export function PlayableBetaPage({
         : current,
     );
     if (action.type === 'ROLL_DICE') {
+      boardRef.current?.beginDiceRoll();
       setLocalDiceRolling(true);
       recordGameplayTelemetry('LOCAL_DICE_VISUAL_START', {
         matchId: commandMatch.matchId,
@@ -2567,6 +2573,7 @@ export function PlayableBetaPage({
       ...(room.currentUser.isMember && mySeatIndex === null ? availableSeats.slice(1).map((seat) => ({ label: `Занять место ${seat.seatIndex + 1}`, onClick: () => void mutateRoom((signal) => roomApi.takeSeat(selectedRoomId, seat.seatIndex, room.version, signal)), disabled: roomPending })) : []),
       ...(mine && room.currentUser.canStart ? [{ label: mine.ready ? 'Снять готовность' : 'Готов', onClick: () => void mutateRoom((signal) => roomApi.setReady(selectedRoomId, !mine.ready, room.version, signal)), disabled: roomPending }] : []),
       ...(mine ? [{ label: 'Покинуть место', onClick: () => void mutateRoom((signal) => roomApi.leaveSeat(selectedRoomId, room.version, signal)), disabled: roomPending }] : []),
+      ...(canDeleteCurrentRoom ? [{ label: 'Удалить комнату', onClick: () => void deleteCurrentRoom(), disabled: roomPending, destructive: true }] : []),
       ...(room.currentUser.isMember ? [{ label: 'Настройки комнаты', onClick: () => setUtilityPanel('settings') }, { label: 'Покинуть комнату', onClick: () => void leaveCurrentRoom(), disabled: roomPending, destructive: true }] : []),
     ];
 
@@ -2630,6 +2637,12 @@ export function PlayableBetaPage({
           {room?.currentUser.isMember && !room.currentMatchId ? (
             <Button variant="ghost" onClick={() => setUtilityPanel('settings')}>
               ⚙ Настройки комнаты
+            </Button>
+          ) : null}
+
+          {canDeleteCurrentRoom ? (
+            <Button variant="ghost" onClick={() => void deleteCurrentRoom()} loading={roomPending}>
+              Удалить комнату
             </Button>
           ) : null}
 

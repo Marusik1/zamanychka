@@ -11,7 +11,7 @@ describe('PremiumAnimationBridge audio timing', () => {
     vi.useFakeTimers();
     const audio = { play: vi.fn() };
     const bridge = new PremiumAnimationBridge(
-      { throwCommitted: vi.fn(), snapToValue: vi.fn() },
+      { beginRoll: vi.fn(), throwCommitted: vi.fn(), snapToValue: vi.fn() },
       { reveal: vi.fn(), clear: vi.fn() },
       audio as never,
     );
@@ -41,7 +41,7 @@ describe('PremiumAnimationBridge audio timing', () => {
     vi.useFakeTimers();
     const audio = { play: vi.fn() };
     const bridge = new PremiumAnimationBridge(
-      { throwCommitted: vi.fn(), snapToValue: vi.fn() },
+      { beginRoll: vi.fn(), throwCommitted: vi.fn(), snapToValue: vi.fn() },
       { reveal: vi.fn(), clear: vi.fn() },
       audio as never,
     );
@@ -73,7 +73,7 @@ describe('PremiumAnimationBridge audio timing', () => {
     vi.useFakeTimers();
     const audio = { play: vi.fn() };
     const bridge = new PremiumAnimationBridge(
-      { throwCommitted: vi.fn(), snapToValue: vi.fn() },
+      { beginRoll: vi.fn(), throwCommitted: vi.fn(), snapToValue: vi.fn() },
       { reveal: vi.fn(), clear: vi.fn() },
       audio as never,
     );
@@ -98,7 +98,7 @@ describe('PremiumAnimationBridge audio timing', () => {
     vi.useFakeTimers();
     const audio = { play: vi.fn() };
     const bridge = new PremiumAnimationBridge(
-      { throwCommitted: vi.fn(), snapToValue: vi.fn() },
+      { beginRoll: vi.fn(), throwCommitted: vi.fn(), snapToValue: vi.fn() },
       { reveal: vi.fn(), clear: vi.fn() },
       audio as never,
     );
@@ -119,7 +119,7 @@ describe('PremiumAnimationBridge audio timing', () => {
     vi.useFakeTimers();
     const audio = { play: vi.fn() };
     const bridge = new PremiumAnimationBridge(
-      { throwCommitted: vi.fn(), snapToValue: vi.fn() },
+      { beginRoll: vi.fn(), throwCommitted: vi.fn(), snapToValue: vi.fn() },
       { reveal: vi.fn(), clear: vi.fn() },
       audio as never,
     );

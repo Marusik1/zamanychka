@@ -405,6 +405,9 @@ export const GameBoard = forwardRef<PremiumPresentationHandle, GameBoardProps>(f
     () => ({
       ready: Boolean(dieRef.current?.ready),
       unlockAudio: () => audioRef.current.unlock(),
+      beginDiceRoll: () => {
+        dieRef.current?.beginRoll();
+      },
       syncToSnapshot(_snapshot) {},
       snapToAuthoritativeState(snapshot) {
         dieRef.current?.snapToValue((snapshot.diceValue ?? effectiveDieValue) as DieValue);

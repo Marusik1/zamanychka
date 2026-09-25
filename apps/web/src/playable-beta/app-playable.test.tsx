@@ -1304,6 +1304,32 @@ describe('playable beta room flow', () => {
     expect(screen.queryByRole('button', { name: 'Покинуть комнату' })).not.toBeInTheDocument();
   });
 
+  it('shows a direct delete room action for the owner of a waiting room', async () => {
+    const ownedRoom = roomState({
+      currentUser: {
+        ...roomState().currentUser,
+        canManageBots: true,
+      },
+    });
+    const api = createRoomApi({
+      getRoom: vi.fn().mockResolvedValue(ownedRoom),
+      reconnect: vi.fn().mockResolvedValue(ownedRoom),
+      deleteRoom: vi.fn().mockResolvedValue({ ok: true, room: { ...ownedRoom, status: 'CLOSED' } }),
+      listRooms: vi.fn().mockResolvedValue({ rooms: [], currentMembershipRoom: null }),
+    });
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api });
+
+    const deleteButton = await screen.findByRole('button', {
+      name: /\u0423\u0434\u0430\u043b\u0438\u0442\u044c \u043a\u043e\u043c\u043d\u0430\u0442\u0443/u,
+    });
+    fireEvent.click(deleteButton);
+
+    await waitFor(() => expect(api.deleteRoom).toHaveBeenCalledWith('room-1', 1, expect.any(AbortSignal)));
+    expect(window.location.hash).toBe('#/rooms');
+  });
+
   it('renders compact live chat, disables an empty send, and shows the committed post immediately', async () => {
     const message = {
       id: 'message-2',

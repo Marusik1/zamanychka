@@ -7,6 +7,7 @@ export type DieValue = 1 | 2 | 3 | 4 | 5 | 6;
 
 export type GameDieHandle = Readonly<{
   ready: boolean;
+  beginRoll: () => void;
   snapToValue: (value: DieValue) => void;
   throwCommitted: (value: DieValue, signal?: AbortSignal) => Promise<void>;
 }>;
@@ -26,6 +27,9 @@ export const GameDie = forwardRef<
     forwardedRef,
     () => ({
       ready: premiumReady,
+      beginRoll() {
+        premiumRef.current?.beginRoll();
+      },
       snapToValue(nextValue) {
         premiumRef.current?.snapToValue(nextValue);
       },
@@ -41,9 +45,9 @@ export const GameDie = forwardRef<
       <PremiumDice3D
         ref={premiumRef}
         value={value}
-        rolling={rolling}
+        rolling={false}
         label={label}
-        className={rolling ? 'game-die game-die--rolling' : 'game-die'}
+        className="game-die"
         onReady={() => setPremiumReady(true)}
         onUnavailable={() => setPremiumReady(false)}
       />

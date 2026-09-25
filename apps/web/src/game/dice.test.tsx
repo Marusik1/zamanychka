@@ -17,7 +17,8 @@ describe('GameDie', () => {
     expect(screen.getByRole('img', { name: `face ${value}` })).toBeInTheDocument();
     expect(container.querySelectorAll('.game-die__pip.is-on')).toHaveLength(expectedPips);
   });
-  it('keeps the committed face while exposing a presentation-only rolling hook', () => {
+
+  it('keeps the committed fallback face while rolling presentation is active', () => {
     const { container } = render(<GameDie value={4} label="rolling four" rolling />);
 
     expect(screen.getByRole('img', { name: 'rolling four' })).toHaveAttribute(
@@ -25,7 +26,7 @@ describe('GameDie', () => {
       '4',
     );
     expect(screen.getByRole('img', { name: 'rolling four' })).toHaveClass('game-die--rolling');
-    expect(container.querySelector('.premium-die-3d')).toHaveClass('game-die--rolling');
+    expect(container.querySelector('.premium-die-3d')).not.toHaveClass('game-die--rolling');
     expect(container.querySelectorAll('.game-die__pip.is-on')).toHaveLength(4);
   });
 
