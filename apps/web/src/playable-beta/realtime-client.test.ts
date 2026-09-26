@@ -5,6 +5,7 @@ type Handler = (...args: unknown[]) => void;
 const socketHandlers = new Map<string, Handler[]>();
 const managerHandlers = new Map<string, Handler[]>();
 const emitCalls: unknown[][] = [];
+const ioCalls: unknown[] = [];
 
 function addHandler(store: Map<string, Handler[]>, event: string, handler: Handler) {
   store.set(event, [...(store.get(event) ?? []), handler]);
@@ -17,7 +18,9 @@ function dispatch(store: Map<string, Handler[]>, event: string, ...args: unknown
 }
 
 vi.mock('socket.io-client', () => ({
-  io: vi.fn(() => ({
+  io: vi.fn((options: unknown) => {
+    ioCalls.push(options);
+    return {
     id: 'socket-1',
     connected: false,
     io: {
@@ -41,7 +44,8 @@ vi.mock('socket.io-client', () => ({
         ack({ ok: true });
       }
     }),
-  })),
+  };
+  }),
 }));
 
 describe('RealtimeClient', () => {
@@ -49,7 +53,22 @@ describe('RealtimeClient', () => {
     socketHandlers.clear();
     managerHandlers.clear();
     emitCalls.length = 0;
+    ioCalls.length = 0;
     localStorage.clear();
+  });
+
+  it('allows polling fallback when production websocket transport is unavailable', async () => {
+    const { createRealtimeClient } = await import('./realtime-client.js');
+    const client = createRealtimeClient();
+
+    await client.ensureConnected();
+
+    expect(ioCalls[0]).toMatchObject({
+      path: '/socket.io',
+      transports: ['websocket', 'polling'],
+      withCredentials: true,
+      autoConnect: false,
+    });
   });
 
   it('rejoins subscribed match rooms after socket reconnect', async () => {

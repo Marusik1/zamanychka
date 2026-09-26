@@ -107,10 +107,10 @@ describe('room invite service', () => {
     });
 
     await expect(
-      database.prisma.roomMembership.count({ where: { roomId: 'room-1', userId: 'user-2' } }),
+      database.prisma.roomMembership.count({ where: { roomKey: 'room-1', userId: 'user-2' } }),
     ).resolves.toBe(0);
     await expect(
-      database.prisma.roomSeat.count({ where: { roomId: 'room-1', userId: 'user-2' } }),
+      database.prisma.roomSeat.count({ where: { roomKey: 'room-1', userId: 'user-2' } }),
     ).resolves.toBe(0);
   });
 

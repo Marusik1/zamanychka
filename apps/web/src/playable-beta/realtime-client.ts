@@ -91,7 +91,7 @@ export function createRealtimeClient(): RealtimeClient {
     if (socket) return socket;
     socket = io({
       path: '/socket.io',
-      transports: ['websocket'],
+      transports: ['websocket', 'polling'],
       withCredentials: true,
       autoConnect: false,
     });
