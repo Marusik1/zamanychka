@@ -114,6 +114,7 @@ async function startRuntime(options?: {
     lastSequence: number;
   }) => Promise<unknown[]>;
   commandProcessor?: CommandProcessorLike;
+  botRunner?: { kick(matchId: string): void };
   cookieName?: string;
   redisUrl?: string;
 }) {
@@ -147,6 +148,7 @@ async function startRuntime(options?: {
           ack: { actionId: 'action-1', stateVersion: 1, lastSequence: 1 },
         })),
       } as unknown as Parameters<typeof createRealtimeRuntime>[0]['commandProcessor']),
+    ...(options?.botRunner ? { botRunner: options.botRunner } : {}),
     allowedOrigins: ['http://127.0.0.1'],
     ...(options?.redisUrl ? { redisUrl: options.redisUrl } : {}),
   } as unknown as Parameters<typeof createRealtimeRuntime>[0];
@@ -222,6 +224,23 @@ describe('Socket.IO realtime publication and subscriptions', () => {
     });
 
     expect(result).toEqual({ ok: true });
+    socket.disconnect();
+  });
+
+  it('wakes the bot runner when a participant joins an active match room', async () => {
+    const botRunner = { kick: vi.fn() };
+    const server = await startRuntime({ botRunner });
+    servers.push(server);
+
+    const socket = connectClient(server.url, sessionHeader('session-a').cookie);
+    await waitForEvent(socket, 'connect');
+
+    const result = await new Promise<{ ok: boolean; code?: string }>((resolve) => {
+      socket.emit('match:join', { matchId: 'match-1' }, resolve);
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(botRunner.kick).toHaveBeenCalledWith('match-1');
     socket.disconnect();
   });
 
@@ -792,6 +811,28 @@ describe('Socket.IO realtime publication and subscriptions', () => {
     expect(reconnectSync.watermark).toEqual({ stateVersion: 0, lastSequence: 0 });
     socketA.disconnect();
     reconnectedB.disconnect();
+  });
+
+  it('wakes the bot runner when a participant syncs an active match', async () => {
+    const botRunner = { kick: vi.fn() };
+    const server = await startRuntime({
+      botRunner,
+      loadCommittedTransitions: vi.fn(async () => []),
+    });
+    servers.push(server);
+
+    const socket = connectClient(server.url, sessionHeader('session-a').cookie);
+    await waitForEvent(socket, 'connect');
+    await new Promise((resolve) => socket.emit('match:join', { matchId: 'match-1' }, resolve));
+    botRunner.kick.mockClear();
+
+    const result = await new Promise<{ mode: string }>((resolve) => {
+      socket.emit('game:sync', { matchId: 'match-1', stateVersion: 0, lastSequence: 0 }, resolve);
+    });
+
+    expect(result.mode).toBe('snapshot');
+    expect(botRunner.kick).toHaveBeenCalledWith('match-1');
+    socket.disconnect();
   });
 
   it('keeps the Socket.IO server alive when sync computation fails for one request', async () => {

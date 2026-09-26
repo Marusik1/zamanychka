@@ -278,6 +278,11 @@ export function createRealtimeRuntime(options: {
     void dispatchOutboxOnce('immediate');
   };
 
+  const wakeBotRunner = (matchId: string, source: 'match:join' | 'game:sync' | 'game:command' | 'debug-skip') => {
+    logTelemetry('BOT_RUNNER_WAKE', { matchId, source });
+    options.botRunner?.kick(matchId);
+  };
+
   const emptySnapshot = {
     status: 'ABANDONED',
     stateVersion: 0,
@@ -336,6 +341,7 @@ export function createRealtimeRuntime(options: {
         }
         await socket.join(roomName(parsed.data.matchId));
         ack?.({ ok: true });
+        wakeBotRunner(parsed.data.matchId, 'match:join');
       },
     );
 
@@ -377,7 +383,7 @@ export function createRealtimeRuntime(options: {
       });
       if (result.ok) {
         dispatchOutboxSoon();
-        options.botRunner?.kick(parsed.data.matchId);
+        wakeBotRunner(parsed.data.matchId, 'game:command');
       }
       ack?.(result);
     });
@@ -418,7 +424,7 @@ export function createRealtimeRuntime(options: {
         });
         if (typeof result === 'object' && result !== null && 'ok' in result && result.ok) {
           dispatchOutboxSoon();
-          options.botRunner?.kick(parsed.data.matchId);
+          wakeBotRunner(parsed.data.matchId, 'debug-skip');
         }
         ack?.(result);
       },
@@ -452,6 +458,7 @@ export function createRealtimeRuntime(options: {
               finishedAt: match.finishedAt,
             }),
           );
+          wakeBotRunner(parsed.data.matchId, 'game:sync');
           return;
         }
 
@@ -483,6 +490,7 @@ export function createRealtimeRuntime(options: {
             },
           });
           ack?.(response);
+          wakeBotRunner(parsed.data.matchId, 'game:sync');
           return;
         }
 
@@ -495,6 +503,7 @@ export function createRealtimeRuntime(options: {
             finishedAt: match.finishedAt,
           }),
         );
+        wakeBotRunner(parsed.data.matchId, 'game:sync');
       } catch (error) {
         console.error('game:sync failed', error);
         if (!match) return;
