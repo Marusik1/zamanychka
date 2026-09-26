@@ -2,7 +2,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { cpSync, mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, type ExecFileSyncOptionsWithStringEncoding } from 'node:child_process';
 import pg from 'pg';
 
 const { Client } = pg;
@@ -109,14 +109,34 @@ function runPrismaCommand(
   args: readonly string[],
   databaseUrl = tempDatabaseUrl(),
 ) {
-  return execFileSync('cmd.exe', ['/c', PRISMA_BINARY, ...args], {
+  const options: ExecFileSyncOptionsWithStringEncoding = {
     cwd: fixtureRoot,
     env: {
       ...process.env,
       TEST_DATABASE_URL: databaseUrl,
     },
     encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  };
+  return execFileSync('cmd.exe', ['/c', PRISMA_BINARY, ...args], {
+    ...options,
   });
+}
+
+function runPrismaCommandFailure(
+  fixtureRoot: string,
+  args: readonly string[],
+  databaseUrl = tempDatabaseUrl(),
+) {
+  try {
+    runPrismaCommand(fixtureRoot, args, databaseUrl);
+  } catch (error) {
+    const failure = error as { stdout?: Buffer | string; stderr?: Buffer | string; message?: string };
+    return [failure.stdout, failure.stderr, failure.message]
+      .map((part) => (Buffer.isBuffer(part) ? part.toString('utf8') : part ?? ''))
+      .join('\n');
+  }
+  throw new Error('Expected Prisma command to fail');
 }
 
 async function withFixture<T>(includeNewMigration: boolean, run: (fixtureRoot: string) => Promise<T>) {
@@ -336,9 +356,14 @@ describe('multi-room migration', () => {
     await seedCorruptLegacyState();
 
     await withFixture(true, async (fixtureRoot) => {
-      expect(() =>
-        runPrismaCommand(fixtureRoot, ['migrate', 'deploy', '--config', 'prisma.test.config.ts']),
-      ).toThrow(/Cannot backfill RoomMembership: RoomSeat references a missing User/);
+      expect(
+        runPrismaCommandFailure(fixtureRoot, [
+          'migrate',
+          'deploy',
+          '--config',
+          'prisma.test.config.ts',
+        ]),
+      ).toMatch(/Cannot backfill RoomMembership: RoomSeat references a missing User/);
     });
   }, 60_000);
 });

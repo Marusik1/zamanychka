@@ -36,6 +36,8 @@ function logRedisTelemetry(event: string, payload: Record<string, unknown>) {
 }
 
 export class RedisBotMatchLease implements MatchLease {
+  private readonly fallback = new InMemoryBotMatchLease();
+
   constructor(
     private readonly redis: RedisLeaseClient,
     private readonly ttlMs = 15_000,
@@ -58,8 +60,9 @@ export class RedisBotMatchLease implements MatchLease {
         matchId,
         error: error instanceof Error ? error.message : String(error),
         latencyMs: roundMs(performance.now() - acquireStartedAt),
+        fallback: 'in-memory',
       });
-      return undefined;
+      return this.fallback.runExclusive(matchId, fn);
     }
     logRedisTelemetry('bot-lease-acquire', {
       matchId,

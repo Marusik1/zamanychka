@@ -7,6 +7,9 @@ import {
 } from '@zamanushka/game-engine';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 
+import { BotRunner } from '../bots/bot-runner.js';
+import { InMemoryBotMatchLease } from '../bots/redis-lease.js';
+import { createBotRuntimeAdapter } from '../bots/runtime-adapter.js';
 import { createMatchRepository } from '../match/match-repository.js';
 import { createProfileRepository } from '../profile/profile-repository.js';
 import { createProfileService } from '../profile/profile-service.js';
@@ -120,6 +123,17 @@ async function setupLobby(input: {
   }
 
   return roomId;
+}
+
+async function waitForCondition(assertion: () => Promise<boolean>, timeoutMs = 2_000) {
+  const deadline = Date.now() + timeoutMs;
+  let lastResult = false;
+  while (Date.now() < deadline) {
+    lastResult = await assertion();
+    if (lastResult) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  expect(lastResult).toBe(true);
 }
 
 function scorePosition(position: GameState['pawns'][number]['position']) {
@@ -305,6 +319,157 @@ afterAll(async () => {
 });
 
 describe('beta full-cycle gameplay', () => {
+  it('lets a room BOT execute visible-flow commands through the normal command processor', async () => {
+    await seedUsers(['user-a']);
+    const { roomService, processor, queuedRolls } = createServices();
+
+    const room = await roomService.createRoom('user-a', {});
+    const botSeat = await roomService.addBot('user-a', room.id, {
+      seatIndex: 0,
+      expectedRoomVersion: await roomVersion(room.id),
+    });
+    expect(botSeat).toMatchObject({ ok: true });
+
+    const humanSeat = await roomService.takeSeat('user-a', room.id, {
+      seatIndex: 1,
+      expectedRoomVersion: await roomVersion(room.id),
+    });
+    expect(humanSeat).toMatchObject({ ok: true });
+    await roomService.connectPresence('user-a', room.id);
+    const ready = await roomService.setReady('user-a', room.id, {
+      ready: true,
+      expectedRoomVersion: await roomVersion(room.id),
+    });
+    expect(ready).toMatchObject({ ok: true });
+
+    const started = await roomService.startMatch('user-a', room.id, {
+      expectedRoomVersion: await roomVersion(room.id),
+    });
+    expect(started).toMatchObject({ ok: true });
+    if (!started.ok) throw new Error('ROOM_BOT_START_FAILED');
+
+    const initial = await matchRepository.loadCurrentMatch(started.matchId);
+    expect(initial?.snapshot).toMatchObject({
+      currentPlayerId: expect.stringContaining('bot:'),
+      players: expect.arrayContaining([
+        expect.objectContaining({ participantKind: 'BOT' }),
+        expect.objectContaining({ playerId: 'user-a', participantKind: 'HUMAN' }),
+      ]),
+    });
+
+    queuedRolls.push(6, 1);
+    const runner = new BotRunner(
+      createBotRuntimeAdapter({
+        matchRepository,
+        processCommand: (input) => processor.process(input),
+      }),
+      new InMemoryBotMatchLease(),
+      {
+        minDelayMs: 1,
+        maxDelayMs: 1,
+        followupMinDelayMs: 1,
+        followupMaxDelayMs: 1,
+      },
+    );
+
+    runner.kick(started.matchId);
+
+    await waitForCondition(async () => {
+      const current = await matchRepository.loadCurrentMatch(started.matchId);
+      const state = current?.snapshot as GameState | undefined;
+      const botPlayer = state?.players.find((player) => player.participantKind === 'BOT');
+      const botPawn = state?.pawns.find(
+        (pawn) => botPlayer && pawn.playerId === botPlayer.playerId && pawn.position.zone !== 'OFF_BOARD',
+      );
+      return Boolean(
+        state &&
+          state.stateVersion >= 4 &&
+          state.currentPlayerId === 'user-a' &&
+          state.turnPhase === 'WAITING_FOR_ROLL' &&
+          botPawn,
+      );
+    });
+  });
+
+  it('wakes a room BOT after a HUMAN command advances the turn to the bot', async () => {
+    await seedUsers(['user-a']);
+    const { roomService, processor, queuedRolls } = createServices();
+
+    const room = await roomService.createRoom('user-a', {});
+    const humanSeat = await roomService.takeSeat('user-a', room.id, {
+      seatIndex: 0,
+      expectedRoomVersion: await roomVersion(room.id),
+    });
+    expect(humanSeat).toMatchObject({ ok: true });
+    await roomService.connectPresence('user-a', room.id);
+    const ready = await roomService.setReady('user-a', room.id, {
+      ready: true,
+      expectedRoomVersion: await roomVersion(room.id),
+    });
+    expect(ready).toMatchObject({ ok: true });
+    const botSeat = await roomService.addBot('user-a', room.id, {
+      seatIndex: 1,
+      expectedRoomVersion: await roomVersion(room.id),
+    });
+    expect(botSeat).toMatchObject({ ok: true });
+
+    const started = await roomService.startMatch('user-a', room.id, {
+      expectedRoomVersion: await roomVersion(room.id),
+    });
+    expect(started).toMatchObject({ ok: true });
+    if (!started.ok) throw new Error('ROOM_HUMAN_BOT_START_FAILED');
+
+    queuedRolls.push(1);
+    const humanRoll = await processor.process({
+      authenticatedUserId: 'user-a',
+      command: {
+        type: 'ROLL_DICE',
+        matchId: started.matchId,
+        actionId: 'human-roll-no-move',
+        expectedStateVersion: 0,
+      },
+    });
+    expect(humanRoll).toMatchObject({ ok: true });
+    if (!humanRoll.ok) throw new Error('HUMAN_ROLL_FAILED');
+    expect(humanRoll.snapshot).toMatchObject({
+      currentPlayerId: expect.stringContaining('bot:'),
+      turnPhase: 'WAITING_FOR_ROLL',
+    });
+
+    queuedRolls.push(6, 1);
+    const runner = new BotRunner(
+      createBotRuntimeAdapter({
+        matchRepository,
+        processCommand: (input) => processor.process(input),
+      }),
+      new InMemoryBotMatchLease(),
+      {
+        minDelayMs: 1,
+        maxDelayMs: 1,
+        followupMinDelayMs: 1,
+        followupMaxDelayMs: 1,
+      },
+    );
+
+    runner.kick(started.matchId);
+
+    await waitForCondition(async () => {
+      const current = await matchRepository.loadCurrentMatch(started.matchId);
+      const state = current?.snapshot as GameState | undefined;
+      const botPlayer = state?.players.find((player) => player.participantKind === 'BOT');
+      const botPawn = state?.pawns.find(
+        (pawn) => botPlayer && pawn.playerId === botPlayer.playerId && pawn.position.zone !== 'OFF_BOARD',
+      );
+      return Boolean(
+        state &&
+          state.stateVersion >= 5 &&
+          state.currentPlayerId === 'user-a' &&
+          state.turnPhase === 'WAITING_FOR_ROLL' &&
+          botPawn,
+      );
+    });
+  });
+
   it('reaches HOME_DIAGONAL_COMPLETED through real room, match, and gameplay commands, then persists results and resets only its room', async () => {
     await seedUsers(['user-a', 'user-b', 'user-c', 'user-d']);
     const { roomService, processor, queuedRolls } = createServices();

@@ -29,13 +29,14 @@ $env:TEST_DATABASE_URL='postgresql://zamanushka:zamanushka_local@127.0.0.1:5433/
 $env:DATABASE_URL='postgresql://zamanushka:zamanushka_local@127.0.0.1:5432/zamanushka'
 $env:REDIS_URL='redis://127.0.0.1:6379'
 pnpm -C apps/api test
+pnpm -C apps/api test:integration
 ```
 
 Expected result:
 
 ```text
-Test Files 30 passed
-Tests 220 passed
+Test Files 31 passed
+Tests 223 passed
 ```
 
 ## 4. Run full release gate
