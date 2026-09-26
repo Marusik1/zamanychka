@@ -5,10 +5,10 @@ WORKDIR /app
 RUN corepack enable
 
 ARG DATABASE_URL=postgresql://build:build@127.0.0.1:5432/build?schema=public
-ARG BUILD_ID=local-docker
-ARG GIT_SHA=unknown
-ARG BUILD_TIMESTAMP=unknown
-ARG RELEASE_ID=epic01-deploy-fix-20260922-01
+ARG BUILD_ID
+ARG GIT_SHA
+ARG BUILD_TIMESTAMP
+ARG RELEASE_ID
 
 ENV RELEASE_ID=$RELEASE_ID
 ENV BUILD_ID=$BUILD_ID

@@ -8,6 +8,54 @@ describe('BotRunner', () => {
     vi.useFakeTimers();
   });
 
+  it('logs an explicit stop reason when the active participant is no longer automated', async () => {
+    const runtime: BotRuntimeAdapter = {
+      readTurn: vi.fn(async () => ({
+        matchId: 'match-1',
+        status: 'ACTIVE',
+        stateVersion: 7,
+        phase: 'WAITING_FOR_ROLL',
+        activeParticipantId: 'human-1',
+        activeParticipantKind: 'HUMAN',
+        legalActions: [{ type: 'ROLL_DICE' as const }],
+      })),
+      submitCommand: vi.fn(async () => ({
+        ok: true,
+        matchId: 'match-1',
+        stateVersion: 8,
+      })),
+    };
+    const lease: MatchLease = {
+      runExclusive: vi.fn(async (_matchId, fn) => fn()),
+    };
+    const logger = {
+      debug: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    };
+
+    const runner = new BotRunner(runtime, lease, {
+      minDelayMs: 1,
+      maxDelayMs: 1,
+      random: () => 0,
+      logger,
+    });
+
+    runner.kick('match-1');
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(runtime.submitCommand).not.toHaveBeenCalled();
+    expect(logger.debug).toHaveBeenCalledWith(
+      '[bot-runner] stopped',
+      expect.objectContaining({
+        matchId: 'match-1',
+        reason: 'ACTIVE_PARTICIPANT_NOT_AUTOMATED',
+        stateVersion: 7,
+        activeParticipantKind: 'HUMAN',
+      }),
+    );
+  });
+
   it('retries a busy match lease instead of losing the bot turn wakeup', async () => {
     const runtime: BotRuntimeAdapter = {
       readTurn: vi.fn(async () => ({

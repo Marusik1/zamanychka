@@ -173,8 +173,28 @@ export class BotRunner {
     for (let step = 0; step < this.maxActionsPerKick; step += 1) {
       const beforeDelay = await this.runtime.readTurn(matchId);
 
-      if (!beforeDelay || beforeDelay.status !== 'ACTIVE') return;
-      if (!isAutomatedParticipantKind(beforeDelay.activeParticipantKind)) return;
+      if (!beforeDelay) {
+        this.logStop(matchId, 'MATCH_NOT_FOUND', { step });
+        return;
+      }
+      if (beforeDelay.status !== 'ACTIVE') {
+        this.logStop(matchId, 'MATCH_NOT_ACTIVE', {
+          step,
+          status: beforeDelay.status,
+          stateVersion: beforeDelay.stateVersion,
+        });
+        return;
+      }
+      if (!isAutomatedParticipantKind(beforeDelay.activeParticipantKind)) {
+        this.logStop(matchId, 'ACTIVE_PARTICIPANT_NOT_AUTOMATED', {
+          step,
+          stateVersion: beforeDelay.stateVersion,
+          activeParticipantId: beforeDelay.activeParticipantId,
+          activeParticipantKind: beforeDelay.activeParticipantKind,
+          phase: beforeDelay.phase,
+        });
+        return;
+      }
 
       const thinkDelayMs = step === 0 ? this.pickDelay() : this.pickFollowupDelay();
       logBotTelemetry('bot-turn-detected', {
@@ -196,16 +216,37 @@ export class BotRunner {
       });
 
       const snapshot = await this.runtime.readTurn(matchId);
-      if (!snapshot || snapshot.status !== 'ACTIVE') return;
-      if (!isAutomatedParticipantKind(snapshot.activeParticipantKind)) return;
+      if (!snapshot) {
+        this.logStop(matchId, 'MATCH_NOT_FOUND_AFTER_DELAY', { step });
+        return;
+      }
+      if (snapshot.status !== 'ACTIVE') {
+        this.logStop(matchId, 'MATCH_NOT_ACTIVE_AFTER_DELAY', {
+          step,
+          status: snapshot.status,
+          stateVersion: snapshot.stateVersion,
+        });
+        return;
+      }
+      if (!isAutomatedParticipantKind(snapshot.activeParticipantKind)) {
+        this.logStop(matchId, 'ACTIVE_PARTICIPANT_NOT_AUTOMATED_AFTER_DELAY', {
+          step,
+          stateVersion: snapshot.stateVersion,
+          activeParticipantId: snapshot.activeParticipantId,
+          activeParticipantKind: snapshot.activeParticipantKind,
+          phase: snapshot.phase,
+        });
+        return;
+      }
 
       const chosen = chooseBotAction(snapshot.legalActions, {
         random: this.random,
       });
 
       if (!chosen) {
-        this.logger.debug('[bot-runner] no legal bot action', {
+        this.logStop(matchId, 'NO_LEGAL_BOT_ACTION', {
           matchId,
+          step,
           stateVersion: snapshot.stateVersion,
           phase: snapshot.phase,
         });
@@ -272,5 +313,13 @@ export class BotRunner {
   private pickFollowupDelay(): number {
     const span = Math.max(0, this.followupMaxDelayMs - this.followupMinDelayMs);
     return this.followupMinDelayMs + Math.floor(this.random() * (span + 1));
+  }
+
+  private logStop(matchId: string, reason: string, payload: Record<string, unknown> = {}): void {
+    this.logger.debug('[bot-runner] stopped', {
+      matchId,
+      reason,
+      ...payload,
+    });
   }
 }
