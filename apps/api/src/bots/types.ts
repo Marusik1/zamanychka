@@ -1,4 +1,11 @@
 export type BotCommandType = 'ROLL_DICE' | 'ENTER_PAWN' | 'MOVE_PAWN';
+export type AutomatedParticipantKind = 'BOT' | 'DEBUG_DUMMY';
+
+export function isAutomatedParticipantKind(
+  kind: BotTurnSnapshot['activeParticipantKind'],
+): kind is AutomatedParticipantKind {
+  return kind === 'BOT' || kind === 'DEBUG_DUMMY';
+}
 
 export interface BotLegalAction {
   type: BotCommandType;
@@ -13,7 +20,7 @@ export interface BotTurnSnapshot {
   stateVersion: number;
   status: 'ACTIVE' | string;
   activeParticipantId: string | null;
-  activeParticipantKind: 'HUMAN' | 'BOT' | string | null;
+  activeParticipantKind: 'HUMAN' | AutomatedParticipantKind | string | null;
   legalActions: BotLegalAction[];
   phase?: string | null;
 }

@@ -1,7 +1,7 @@
 import { getLegalActions, type GameState, type LegalAction } from '@zamanushka/game-engine';
 import type { GameCommandRequest, GameCommandResult } from '@zamanushka/shared';
 import type { MatchRepository } from '../match/match-repository.js';
-import type { BotCommand, BotLegalAction, BotRuntimeAdapter } from './types.js';
+import { isAutomatedParticipantKind, type BotCommand, type BotLegalAction, type BotRuntimeAdapter } from './types.js';
 
 function actionProgressScore(action: LegalAction): number | undefined {
   if (action.type !== 'MOVE_PAWN') return undefined;
@@ -97,7 +97,7 @@ export function createBotRuntimeAdapter(deps: {
         };
       }
       const active = state.players.find((player) => player.playerId === activeParticipantId);
-      if (active?.participantKind !== 'BOT') {
+      if (!isAutomatedParticipantKind(active?.participantKind ?? null)) {
         return {
           ok: false,
           code: 'ACTIVE_PARTICIPANT_NOT_BOT',

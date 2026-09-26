@@ -170,6 +170,61 @@ describe('BotRunner', () => {
     );
   });
 
+  it('treats a solo debug dummy as an automated participant that must roll when roll is legal', async () => {
+    let commandApplied = false;
+    const runtime: BotRuntimeAdapter = {
+      readTurn: vi.fn(async () =>
+        commandApplied
+          ? {
+              matchId: 'match-1',
+              status: 'ACTIVE',
+              stateVersion: 8,
+              phase: 'WAITING_FOR_ROLL',
+              activeParticipantId: 'human-1',
+              activeParticipantKind: 'HUMAN',
+              legalActions: [{ type: 'ROLL_DICE' as const }],
+            }
+          : {
+              matchId: 'match-1',
+              status: 'ACTIVE',
+              stateVersion: 7,
+              phase: 'WAITING_FOR_ROLL',
+              activeParticipantId: 'debug-dummy:room-1',
+              activeParticipantKind: 'DEBUG_DUMMY',
+              legalActions: [{ type: 'ROLL_DICE' as const }],
+            },
+      ),
+      submitCommand: vi.fn(async () => {
+        commandApplied = true;
+        return {
+          ok: true,
+          matchId: 'match-1',
+          stateVersion: 8,
+        };
+      }),
+    };
+    const lease: MatchLease = {
+      runExclusive: vi.fn(async (_matchId, fn) => fn()),
+    };
+
+    const runner = new BotRunner(runtime, lease, {
+      minDelayMs: 1,
+      maxDelayMs: 1,
+      random: () => 0,
+    });
+
+    runner.kick('match-1');
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(runtime.submitCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'ROLL_DICE',
+        matchId: 'match-1',
+        expectedStateVersion: 7,
+      }),
+    );
+  });
+
   it('schedules delayed recovery when the lease stays busy beyond the immediate retry window', async () => {
     const runtime: BotRuntimeAdapter = {
       readTurn: vi.fn(async () => ({

@@ -1,7 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { chooseBotAction } from './bot-policy.js';
-import type { BotCommand, BotRunnerOptions, BotRuntimeAdapter, MatchLease } from './types.js';
+import {
+  isAutomatedParticipantKind,
+  type BotCommand,
+  type BotRunnerOptions,
+  type BotRuntimeAdapter,
+  type MatchLease,
+} from './types.js';
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 const VISIBLE_DICE_PRESENTATION_MS = 810;
@@ -48,8 +54,8 @@ export class BotRunner {
     private readonly lease: MatchLease,
     options: BotRunnerOptions = {},
   ) {
-    this.minDelayMs = options.minDelayMs ?? 450;
-    this.maxDelayMs = options.maxDelayMs ?? 850;
+    this.minDelayMs = options.minDelayMs ?? 250;
+    this.maxDelayMs = options.maxDelayMs ?? 600;
     this.followupMinDelayMs = options.followupMinDelayMs ?? VISIBLE_DICE_PRESENTATION_MS + 100;
     this.followupMaxDelayMs = options.followupMaxDelayMs ?? VISIBLE_DICE_PRESENTATION_MS + 500;
     this.maxActionsPerKick = options.maxActionsPerKick ?? 8;
@@ -105,7 +111,7 @@ export class BotRunner {
     void this.runtime
       .readTurn(matchId)
       .then((snapshot) => {
-        if (!snapshot || snapshot.status !== 'ACTIVE' || snapshot.activeParticipantKind !== 'BOT') return;
+        if (!snapshot || snapshot.status !== 'ACTIVE' || !isAutomatedParticipantKind(snapshot.activeParticipantKind)) return;
         const observed = {
           stateVersion: snapshot.stateVersion,
           participantId: snapshot.activeParticipantId,
@@ -133,7 +139,7 @@ export class BotRunner {
     observed: { stateVersion: number; participantId: string | null; phase: string | null },
   ): Promise<void> {
     const snapshot = await this.runtime.readTurn(matchId);
-    if (!snapshot || snapshot.status !== 'ACTIVE' || snapshot.activeParticipantKind !== 'BOT') return;
+    if (!snapshot || snapshot.status !== 'ACTIVE' || !isAutomatedParticipantKind(snapshot.activeParticipantKind)) return;
     if (snapshot.stateVersion !== observed.stateVersion) return;
     if (snapshot.activeParticipantId !== observed.participantId) return;
     this.kick(matchId);
@@ -144,7 +150,7 @@ export class BotRunner {
     observed: { stateVersion: number; participantId: string | null; phase: string | null },
   ): Promise<void> {
     const snapshot = await this.runtime.readTurn(matchId);
-    if (!snapshot || snapshot.status !== 'ACTIVE' || snapshot.activeParticipantKind !== 'BOT') return;
+    if (!snapshot || snapshot.status !== 'ACTIVE' || !isAutomatedParticipantKind(snapshot.activeParticipantKind)) return;
     if (snapshot.stateVersion !== observed.stateVersion) return;
     if (snapshot.activeParticipantId !== observed.participantId) return;
     logBotTelemetry('BOT_TURN_STALLED', {
@@ -168,7 +174,7 @@ export class BotRunner {
       const beforeDelay = await this.runtime.readTurn(matchId);
 
       if (!beforeDelay || beforeDelay.status !== 'ACTIVE') return;
-      if (beforeDelay.activeParticipantKind !== 'BOT') return;
+      if (!isAutomatedParticipantKind(beforeDelay.activeParticipantKind)) return;
 
       const thinkDelayMs = step === 0 ? this.pickDelay() : this.pickFollowupDelay();
       logBotTelemetry('bot-turn-detected', {
@@ -191,7 +197,7 @@ export class BotRunner {
 
       const snapshot = await this.runtime.readTurn(matchId);
       if (!snapshot || snapshot.status !== 'ACTIVE') return;
-      if (snapshot.activeParticipantKind !== 'BOT') return;
+      if (!isAutomatedParticipantKind(snapshot.activeParticipantKind)) return;
 
       const chosen = chooseBotAction(snapshot.legalActions, {
         random: this.random,
