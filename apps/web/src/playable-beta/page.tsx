@@ -775,7 +775,10 @@ export function PlayableBetaPage({
     };
   }
 
-  function applyCommittedTransition(transition: TransitionEnvelope, reason: 'realtime-event' | 'command-ack') {
+  function applyCommittedTransition(
+    transition: TransitionEnvelope,
+    reason: 'realtime-event' | 'command-ack' | 'sync-recovery',
+  ) {
     const diceEvent = transition.events.find((event) => event.type === 'diceRolled');
     if (diceEvent?.type === 'diceRolled') {
       setLastSettledDiceValue(diceEvent.payload.diceValue as DieValue);
@@ -1000,6 +1003,19 @@ export function PlayableBetaPage({
           };
 
           if (response.mode === 'events') {
+            if (!isInitialHydration) {
+              const transitions = [...response.transitions].sort(
+                (left, right) =>
+                  left.fromSequence - right.fromSequence ||
+                  left.toSequence - right.toSequence ||
+                  left.transitionId.localeCompare(right.transitionId),
+              );
+              for (const transition of transitions) {
+                applyCommittedTransition(transition, 'sync-recovery');
+              }
+              return;
+            }
+
             const latest = response.transitions.at(-1);
             if (!latest) throw new Error('SYNC_EMPTY_EVENTS');
             applySyncedState(latest.snapshot, latest.toSequence, response.transitions);

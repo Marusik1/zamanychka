@@ -1700,6 +1700,78 @@ describe('playable beta room flow', () => {
     expect(screen.queryByLabelText(/Кубик: 4/)).toBeNull();
   });
 
+  it('replays recovered sync events through the presentation queue', async () => {
+    const api = createRoomApi({
+      getRoom: vi.fn().mockResolvedValue(activeRoom()),
+      reconnect: vi.fn().mockResolvedValue(activeRoom()),
+    });
+    const recoveredRoll = transitionEnvelope({
+      transitionId: 'recovered-roll-2',
+      actionId: 'bot-roll-2',
+      stateVersion: 2,
+      fromSequence: 2,
+      toSequence: 2,
+      watermark: { stateVersion: 2, lastSequence: 2 },
+      events: [
+        {
+          matchId: 'match-1',
+          eventId: 'recovered-roll-2',
+          sequence: 2,
+          stateVersion: 2,
+          type: 'diceRolled',
+          payload: { playerId: 'user-2', diceValue: 5 },
+          createdAt: '2026-09-01T10:00:02.000Z',
+        },
+      ],
+      snapshot: activeSnapshot({
+        stateVersion: 2,
+        lastSequence: 2,
+        currentPlayerId: 'user-2',
+        turnPhase: 'WAITING_FOR_ACTION',
+        diceValue: 5,
+      }),
+    });
+    const realtime = createRealtimeClient({
+      sync: vi
+        .fn()
+        .mockResolvedValueOnce({
+          mode: 'snapshot',
+          snapshot: activeSnapshot({
+            stateVersion: 1,
+            lastSequence: 1,
+            currentPlayerId: 'user-2',
+            turnPhase: 'WAITING_FOR_ROLL',
+          }),
+          watermark: { stateVersion: 1, lastSequence: 1 },
+        })
+        .mockResolvedValueOnce({
+          mode: 'events',
+          transitions: [recoveredRoll],
+        }),
+    });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
+
+    await waitFor(() => expect(realtime.sync).toHaveBeenCalledTimes(1));
+    realtime.__emitTransition?.(
+      transitionEnvelope({
+        transitionId: 'gap-3',
+        actionId: 'gap-3',
+        stateVersion: 3,
+        fromSequence: 3,
+        toSequence: 3,
+        watermark: { stateVersion: 3, lastSequence: 3 },
+        snapshot: activeSnapshot({ stateVersion: 3, lastSequence: 3 }),
+      }),
+    );
+
+    await waitFor(() => expect(realtime.sync).toHaveBeenCalledTimes(2));
+    await waitFor(() => {
+      expect(document.querySelector('.game-die--rolling')).not.toBeNull();
+      expect(screen.getByLabelText(/Кубик: 5/)).toBeVisible();
+    });
+  });
+
   it('shows the finished match state with a return-to-room action instead of gameplay controls', async () => {
     const api = createRoomApi({
       getRoom: vi
