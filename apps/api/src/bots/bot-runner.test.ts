@@ -8,6 +8,82 @@ describe('BotRunner', () => {
     vi.useFakeTimers();
   });
 
+  it('does not lose a bot wakeup that arrives while another run is in flight', async () => {
+    let releaseFirstRead!: (value: Awaited<ReturnType<BotRuntimeAdapter['readTurn']>>) => void;
+    const firstRead = new Promise<Awaited<ReturnType<BotRuntimeAdapter['readTurn']>>>((resolve) => {
+      releaseFirstRead = resolve;
+    });
+    let readCount = 0;
+    let botCommandApplied = false;
+    const runtime: BotRuntimeAdapter = {
+      readTurn: vi.fn(async () => {
+        readCount += 1;
+        if (readCount === 1) return firstRead;
+        return botCommandApplied
+          ? {
+              matchId: 'match-1',
+              status: 'ACTIVE',
+              stateVersion: 9,
+              phase: 'WAITING_FOR_ROLL',
+              activeParticipantId: 'human-1',
+              activeParticipantKind: 'HUMAN',
+              legalActions: [{ type: 'ROLL_DICE' as const }],
+            }
+          : {
+              matchId: 'match-1',
+              status: 'ACTIVE',
+              stateVersion: 8,
+              phase: 'WAITING_FOR_ROLL',
+              activeParticipantId: 'bot-1',
+              activeParticipantKind: 'BOT',
+              legalActions: [{ type: 'ROLL_DICE' as const }],
+            };
+      }),
+      submitCommand: vi.fn(async () => {
+        botCommandApplied = true;
+        return {
+          ok: true,
+          matchId: 'match-1',
+          stateVersion: 9,
+        };
+      }),
+    };
+    const lease: MatchLease = {
+      runExclusive: vi.fn(async (_matchId, fn) => fn()),
+    };
+
+    const runner = new BotRunner(runtime, lease, {
+      minDelayMs: 1,
+      maxDelayMs: 1,
+      random: () => 0,
+    });
+
+    runner.kick('match-1');
+    await Promise.resolve();
+    runner.kick('match-1');
+
+    releaseFirstRead({
+      matchId: 'match-1',
+      status: 'ACTIVE',
+      stateVersion: 7,
+      phase: 'WAITING_FOR_ROLL',
+      activeParticipantId: 'human-1',
+      activeParticipantKind: 'HUMAN',
+      legalActions: [{ type: 'ROLL_DICE' as const }],
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(lease.runExclusive).toHaveBeenCalledTimes(2);
+    expect(runtime.submitCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'ROLL_DICE',
+        expectedStateVersion: 8,
+      }),
+    );
+  });
+
   it('logs an explicit stop reason when the active participant is no longer automated', async () => {
     const runtime: BotRuntimeAdapter = {
       readTurn: vi.fn(async () => ({
@@ -290,6 +366,151 @@ describe('BotRunner', () => {
         pawnId: 'bot-pawn-1',
       }),
     );
+  });
+
+  it('continues automatically into the extra roll after a bot rolls six and moves', async () => {
+    let readCount = 0;
+    const runtime: BotRuntimeAdapter = {
+      readTurn: vi.fn(async () => {
+        readCount += 1;
+        if (readCount <= 2) {
+          return {
+            matchId: 'match-1',
+            status: 'ACTIVE',
+            stateVersion: 7,
+            phase: 'WAITING_FOR_ROLL',
+            activeParticipantId: 'bot-1',
+            activeParticipantKind: 'BOT',
+            legalActions: [{ type: 'ROLL_DICE' as const }],
+          };
+        }
+        if (readCount <= 4) {
+          return {
+            matchId: 'match-1',
+            status: 'ACTIVE',
+            stateVersion: 8,
+            phase: 'WAITING_FOR_ACTION',
+            activeParticipantId: 'bot-1',
+            activeParticipantKind: 'BOT',
+            legalActions: [{ type: 'MOVE_PAWN' as const, pawnId: 'bot-pawn-1' }],
+          };
+        }
+        if (readCount <= 6) {
+          return {
+            matchId: 'match-1',
+            status: 'ACTIVE',
+            stateVersion: 9,
+            phase: 'WAITING_FOR_ROLL',
+            activeParticipantId: 'bot-1',
+            activeParticipantKind: 'BOT',
+            legalActions: [{ type: 'ROLL_DICE' as const }],
+          };
+        }
+        return {
+          matchId: 'match-1',
+          status: 'ACTIVE',
+          stateVersion: 10,
+          phase: 'WAITING_FOR_ROLL',
+          activeParticipantId: 'human-1',
+          activeParticipantKind: 'HUMAN',
+          legalActions: [{ type: 'ROLL_DICE' as const }],
+        };
+      }),
+      submitCommand: vi.fn(async (command) => ({
+        ok: true,
+        matchId: command.matchId,
+        stateVersion: command.type === 'ROLL_DICE' && command.expectedStateVersion === 9 ? 10 : command.expectedStateVersion + 1,
+      })),
+    };
+    const lease: MatchLease = {
+      runExclusive: vi.fn(async (_matchId, fn) => fn()),
+    };
+
+    const runner = new BotRunner(runtime, lease, {
+      minDelayMs: 1,
+      maxDelayMs: 1,
+      followupMinDelayMs: 1,
+      followupMaxDelayMs: 1,
+      random: () => 0,
+    });
+
+    runner.kick('match-1');
+    await vi.advanceTimersByTimeAsync(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(runtime.submitCommand).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        type: 'ROLL_DICE',
+        expectedStateVersion: 7,
+      }),
+    );
+    expect(runtime.submitCommand).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        type: 'MOVE_PAWN',
+        expectedStateVersion: 8,
+        pawnId: 'bot-pawn-1',
+      }),
+    );
+    expect(runtime.submitCommand).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({
+        type: 'ROLL_DICE',
+        expectedStateVersion: 9,
+      }),
+    );
+  });
+
+  it('watchdog retries when a bot command is rejected but the same bot turn remains active', async () => {
+    let attempts = 0;
+    const runtime: BotRuntimeAdapter = {
+      readTurn: vi.fn(async () => ({
+        matchId: 'match-1',
+        status: 'ACTIVE',
+        stateVersion: 8,
+        phase: 'WAITING_FOR_ROLL',
+        activeParticipantId: 'bot-1',
+        activeParticipantKind: 'BOT',
+        legalActions: [{ type: 'ROLL_DICE' as const }],
+      })),
+      submitCommand: vi.fn(async () => {
+        attempts += 1;
+        if (attempts === 1) {
+          return {
+            ok: false,
+            code: 'STALE_STATE_VERSION',
+            stateVersion: 8,
+          };
+        }
+        return {
+          ok: true,
+          matchId: 'match-1',
+          stateVersion: 9,
+        };
+      }),
+    };
+    const lease: MatchLease = {
+      runExclusive: vi.fn(async (_matchId, fn) => fn()),
+    };
+
+    const runner = new BotRunner(runtime, lease, {
+      minDelayMs: 1,
+      maxDelayMs: 1,
+      random: () => 0,
+      watchdogDelayMs: 3_000,
+      recoveryDelayMs: 30_000,
+    });
+
+    runner.kick('match-1');
+    await vi.advanceTimersByTimeAsync(1);
+    expect(runtime.submitCommand).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(3_000);
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(runtime.submitCommand).toHaveBeenCalledTimes(2);
   });
 
   it('treats a solo debug dummy as an automated participant that must roll when roll is legal', async () => {

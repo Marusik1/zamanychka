@@ -34,6 +34,7 @@ function logBotTelemetry(event: string, payload: Record<string, unknown>) {
 
 export class BotRunner {
   private readonly localInFlight = new Set<string>();
+  private readonly queuedKicks = new Set<string>();
   private readonly watchdogs = new Set<string>();
   private readonly minDelayMs: number;
   private readonly maxDelayMs: number;
@@ -74,7 +75,10 @@ export class BotRunner {
   }
 
   private kickWithRetry(matchId: string, attempt: number): void {
-    if (this.localInFlight.has(matchId)) return;
+    if (this.localInFlight.has(matchId)) {
+      this.queuedKicks.add(matchId);
+      return;
+    }
     this.localInFlight.add(matchId);
 
     void this.lease
@@ -100,6 +104,9 @@ export class BotRunner {
       })
       .finally(() => {
         this.localInFlight.delete(matchId);
+        if (this.queuedKicks.delete(matchId)) {
+          setTimeout(() => this.kickWithRetry(matchId, 0), 0);
+        }
       });
   }
 
@@ -255,6 +262,7 @@ export class BotRunner {
             action.pawnId ? `${action.type}:${action.pawnId}` : action.type,
           ),
         });
+        this.scheduleWatchdog(matchId);
         return;
       }
 
@@ -295,6 +303,7 @@ export class BotRunner {
           expectedStateVersion: command.expectedStateVersion,
           pawnId: command.pawnId,
         });
+        this.scheduleWatchdog(matchId);
         return;
       }
 
