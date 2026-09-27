@@ -1195,6 +1195,24 @@ export function PlayableBetaPage({
     });
   }
 
+  function startOptimisticDiceRollPresentation(matchId: string, actionId: string) {
+    const current = matchRef.current;
+    if (current.status !== 'ready' || current.matchId !== matchId) return;
+    setPresentationRuntime((runtime) => {
+      const base = runtime ?? createIdleAnimationState(current.snapshot);
+      return {
+        ...base,
+        dieRolling: true,
+        dieValue: (lastSettledDiceValue ?? current.snapshot.diceValue ?? base.dieValue) as DieValue,
+        interactionLocked: true,
+      };
+    });
+    recordGameplayTelemetry('command-optimistic-dice-roll-started', {
+      matchId,
+      actionId,
+    });
+  }
+
   function transitionFromCommandResult(result: Extract<GameCommandResult, { ok: true }>): TransitionEnvelope | null {
     const firstEvent = result.events[0];
     const lastEvent = result.events.at(-1);
@@ -2479,6 +2497,9 @@ export function PlayableBetaPage({
         tapToOptimisticStartMs: Math.round((performance.now() - tappedAt) * 100) / 100,
       });
     }
+    if (command.type === 'ROLL_DICE') {
+      startOptimisticDiceRollPresentation(command.matchId, command.actionId);
+    }
 
     try {
       recordGameplayTelemetry('COMMAND_SENT', {
@@ -2500,6 +2521,11 @@ export function PlayableBetaPage({
       });
 
       if (!result.ok) {
+        if (command.type === 'ROLL_DICE') {
+          setPresentationRuntime((runtime) =>
+            runtime ? { ...runtime, dieRolling: false, interactionLocked: false } : runtime,
+          );
+        }
         if (
           action.type === 'SURRENDER' &&
           result.code === 'STALE_STATE_VERSION' &&

@@ -10,7 +10,9 @@ function participantKindForBotRunner(
   if (participant.participantKind === 'BOT' || participant.participantKind === 'DEBUG_DUMMY') {
     return participant.participantKind;
   }
-  return participant.playerId.startsWith('bot:') ? 'BOT' : 'HUMAN';
+  return participant.playerId.startsWith('bot:') || participant.playerId.includes(':bot:')
+    ? 'BOT'
+    : 'HUMAN';
 }
 
 function actionProgressScore(action: LegalAction): number | undefined {
@@ -79,17 +81,25 @@ export function createBotRuntimeAdapter(deps: {
       const activeParticipant = activeParticipantId
         ? state.players.find((player) => player.playerId === activeParticipantId)
         : null;
-      const legalActions =
+      const adaptedLegalActions =
         activeParticipantId && state.status === 'ACTIVE'
           ? getLegalActions(state, activeParticipantId).map(adaptAction).filter((action): action is BotLegalAction => action !== null)
           : [];
+      const activeParticipantKind = participantKindForBotRunner(activeParticipant);
+      const legalActions =
+        state.status === 'ACTIVE' &&
+        state.turnPhase === 'WAITING_FOR_ROLL' &&
+        isAutomatedParticipantKind(activeParticipantKind) &&
+        !adaptedLegalActions.some((action) => action.type === 'ROLL_DICE')
+          ? [{ type: 'ROLL_DICE' as const }, ...adaptedLegalActions]
+          : adaptedLegalActions;
 
       return {
         matchId,
         stateVersion: state.stateVersion,
         status: state.status,
         activeParticipantId,
-        activeParticipantKind: participantKindForBotRunner(activeParticipant),
+        activeParticipantKind,
         legalActions,
         phase: state.turnPhase,
       };

@@ -1629,7 +1629,7 @@ describe('playable beta room flow', () => {
     fireEvent.click(rollButton);
 
     await waitFor(() => expect(realtime.sendCommand).toHaveBeenCalledTimes(1));
-    expect(document.querySelector('.game-die--rolling')).toBeNull();
+    expect(document.querySelector('.game-die--rolling')).not.toBeNull();
     expect(resolveCommand).not.toBeNull();
     resolveCommand!({
       ok: true,

@@ -377,6 +377,38 @@ describe('animation director', () => {
     expect(victimExitIndex).toBeGreaterThan(attackerArrivalIndex);
   });
 
+  it('describes captures by player color instead of fixture names', () => {
+    const initial = toSnapshot(60, 60);
+    const tx = transition(
+      [
+        {
+          matchId: 'match-1',
+          eventId: 'capture-toast',
+          sequence: 61,
+          stateVersion: 61,
+          type: 'pawnCaptured',
+          payload: {
+            capturedPawnId: 'yellow-seat-pawn-1',
+            capturedPlayerId: 'yellow-seat',
+            byPawnId: 'red-seat-pawn-1',
+            byPlayerId: 'red-seat',
+            atCoord: { row: 7, col: 1 },
+          },
+          createdAt: '2026-09-08T00:00:00.000Z',
+        },
+      ],
+      toSnapshot(61, 61),
+      'tx-capture-toast',
+    );
+
+    const frames = buildGameplayAnimationFrames({ transition: tx, initialSnapshot: initial, reducedMotion: false });
+    const toast = frames.find((frame) => frame.state.toast?.tone === 'capture')?.state.toast;
+
+    expect(toast?.message).toContain('Красный игрок');
+    expect(toast?.message).toContain('жёлтую пешку');
+    expect(toast?.message).not.toContain('Мария');
+  });
+
   it('keeps captured pawn on the impact cell before returning it to its reserve anchor', () => {
     const initial = toSnapshot(30, 30);
     const final = {

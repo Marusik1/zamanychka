@@ -8,7 +8,7 @@ export const ANIMATION_TIMINGS = {
   moveBaseMs: 165,
   moveExtraMs: 138,
   moveMaxMs: 900,
-  cornerSettleMs: 96,
+  cornerSettleMs: 16,
   enterMs: 400,
   captureImpactMs: 150,
   captureHoldMs: 0,
@@ -131,7 +131,7 @@ function pawnById(snapshot: MatchSnapshot, pawnId: string): MatchPawn | undefine
   return snapshot.pawns.find((pawn) => pawn.pawnId === pawnId);
 }
 
-const FIXTURE_PLAYER_NAMES = {
+const CAPTURE_PLAYER_LABEL = {
   RED: 'Мария',
   BLUE: 'Дмитрий',
   YELLOW: 'Ольга',
@@ -145,7 +145,51 @@ const CAPTURE_COLOR_LABEL = {
   GREEN: 'зелёную пешку',
 } as const;
 
+function capturePlayerLabel(color: MatchPawn['color']): string {
+  switch (color) {
+    case 'RED':
+      return 'Красный игрок';
+    case 'BLUE':
+      return 'Синий игрок';
+    case 'YELLOW':
+      return 'Жёлтый игрок';
+    case 'GREEN':
+      return 'Зелёный игрок';
+  }
+}
+
+function capturePawnLabel(color: MatchPawn['color']): string {
+  switch (color) {
+    case 'RED':
+      return 'красную пешку';
+    case 'BLUE':
+      return 'синюю пешку';
+    case 'YELLOW':
+      return 'жёлтую пешку';
+    case 'GREEN':
+      return 'зелёную пешку';
+  }
+}
+
 function captureToast(
+  snapshot: MatchSnapshot,
+  attackerPlayerId: string,
+  capturedPawnId: string,
+): NonNullable<GameplayAnimationRuntimeState['toast']> {
+  const attacker = snapshot.players.find((player) => player.playerId === attackerPlayerId);
+  const capturedPawn = snapshot.pawns.find((pawn) => pawn.pawnId === capturedPawnId);
+
+  return {
+    tone: 'capture',
+    message: `${attacker ? capturePlayerLabel(attacker.color) : 'Игрок'} сбил ${
+      capturedPawn ? capturePawnLabel(capturedPawn.color) : 'пешку соперника'
+    }`,
+  };
+}
+
+const FIXTURE_PLAYER_NAMES = CAPTURE_PLAYER_LABEL;
+
+function legacyCaptureToast(
   snapshot: MatchSnapshot,
   attackerPlayerId: string,
   capturedPawnId: string,
@@ -164,6 +208,8 @@ function captureToast(
 function boardAnchor(coord: BoardCoord): PresentationAnchor {
   return { kind: 'board', coord };
 }
+
+void legacyCaptureToast;
 
 function reserveAnchor(pawn: MatchPawn): PresentationAnchor {
   return { kind: 'reserve', color: pawn.color, slot: pawnOrdinal(pawn.pawnId) };
