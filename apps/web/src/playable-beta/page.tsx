@@ -522,6 +522,17 @@ function commandFromAction(action: LegalAction, matchId: string, expectedStateVe
   }
 }
 
+function actionLockKey(action: LegalAction): string {
+  switch (action.type) {
+    case 'ROLL_DICE':
+    case 'SURRENDER':
+      return action.type;
+    case 'ENTER_PAWN':
+    case 'MOVE_PAWN':
+      return `${action.type}:${action.pawnId}`;
+  }
+}
+
 export function PlayableBetaPage({
   variant,
   authState,
@@ -575,6 +586,11 @@ export function PlayableBetaPage({
       options: { retryStartup?: boolean };
     };
   } | null>(null);
+  const commandInFlightRef = useRef<{
+    matchId: string;
+    actionKey: string;
+    actionId: string;
+  } | null>(null);
   const boardRef = useRef<PremiumPresentationHandle | null>(null);
   const ackSyncTimeoutRef = useRef<number | null>(null);
   const opponentTurnRecoveryTimeoutRef = useRef<number | null>(null);
@@ -618,6 +634,7 @@ export function PlayableBetaPage({
     matchWatermarkRef.current = null;
     hydrationRef.current = null;
     syncInFlightRef.current = null;
+    commandInFlightRef.current = null;
     if (ackSyncTimeoutRef.current !== null) {
       window.clearTimeout(ackSyncTimeoutRef.current);
       ackSyncTimeoutRef.current = null;
@@ -2025,6 +2042,23 @@ export function PlayableBetaPage({
     }
 
     const command = commandFromAction(action, commandMatch.matchId, commandMatch.snapshot.stateVersion);
+    const actionKey = actionLockKey(action);
+    const existingCommand = commandInFlightRef.current;
+    if (existingCommand?.matchId === command.matchId) {
+      recordGameplayTelemetry('COMMAND_DUPLICATE_BLOCKED', {
+        matchId: command.matchId,
+        existingActionId: existingCommand.actionId,
+        existingActionKey: existingCommand.actionKey,
+        blockedActionKey: actionKey,
+        stateVersion: command.expectedStateVersion,
+      });
+      return;
+    }
+    commandInFlightRef.current = {
+      matchId: command.matchId,
+      actionKey,
+      actionId: command.actionId,
+    };
     const tappedAt = performance.now();
     recordGameplayTelemetry('COMMAND_CREATED', {
       matchId: command.matchId,
@@ -2184,6 +2218,10 @@ export function PlayableBetaPage({
           ? { ...current, pending: false, error: 'Не удалось выполнить игровой ход.' }
           : current,
       );
+    } finally {
+      if (commandInFlightRef.current?.actionId === command.actionId) {
+        commandInFlightRef.current = null;
+      }
     }
   }
 
