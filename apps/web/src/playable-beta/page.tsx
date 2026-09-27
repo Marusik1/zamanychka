@@ -1497,6 +1497,13 @@ export function PlayableBetaPage({
     activeDiceEvent?.type === 'diceRolled'
       ? (activeDiceEvent.payload.diceValue as DieValue)
       : null;
+  const snapshotDieValue =
+    displaySnapshot?.diceValue !== null ? (displaySnapshot?.diceValue as DieValue | undefined) : undefined;
+  const boardDieValue =
+    activePresentationDieValue ??
+    snapshotDieValue ??
+    lastSettledDiceValue ??
+    undefined;
   const baseBoardPresentationRuntime =
     presentationRuntime ??
     (presentationController ? createIdleAnimationState(presentationController.presentationSnapshot) : null);
@@ -1505,14 +1512,9 @@ export function PlayableBetaPage({
       ? {
           ...baseBoardPresentationRuntime,
           dieRolling: baseBoardPresentationRuntime.dieRolling,
-          dieValue: activePresentationDieValue ?? baseBoardPresentationRuntime.dieValue,
+          dieValue: boardDieValue ?? baseBoardPresentationRuntime.dieValue,
         }
       : baseBoardPresentationRuntime;
-  const boardDieValue =
-    activePresentationDieValue ??
-    (displaySnapshot?.diceValue !== null ? (displaySnapshot?.diceValue as DieValue | undefined) : undefined) ??
-    lastSettledDiceValue ??
-    undefined;
   const readyMatchBoardProps =
     boardDieValue !== undefined
       ? { dieValue: boardDieValue }
