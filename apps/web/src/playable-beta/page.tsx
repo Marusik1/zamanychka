@@ -2472,17 +2472,6 @@ export function PlayableBetaPage({
       type: command.type,
       expectedStateVersion: command.expectedStateVersion,
     });
-    setMatch((current) =>
-      current.status === 'ready' && current.matchId === command.matchId
-        ? { ...current, pending: true, error: null }
-        : current,
-    );
-    recordGameplayTelemetry('command-local-feedback', {
-      matchId: command.matchId,
-      actionId: command.actionId,
-      type: command.type,
-      tapToLocalFeedbackMs: Math.round((performance.now() - tappedAt) * 100) / 100,
-    });
     const optimisticTransition = createOptimisticTransition({
       match: commandMatch,
       command,
@@ -2500,6 +2489,17 @@ export function PlayableBetaPage({
     if (command.type === 'ROLL_DICE') {
       startOptimisticDiceRollPresentation(command.matchId, command.actionId);
     }
+    setMatch((current) =>
+      current.status === 'ready' && current.matchId === command.matchId
+        ? { ...current, pending: true, error: null }
+        : current,
+    );
+    recordGameplayTelemetry('command-local-feedback', {
+      matchId: command.matchId,
+      actionId: command.actionId,
+      type: command.type,
+      tapToLocalFeedbackMs: Math.round((performance.now() - tappedAt) * 100) / 100,
+    });
 
     try {
       recordGameplayTelemetry('COMMAND_SENT', {

@@ -99,7 +99,7 @@ describe('animation director', () => {
     expect(movementDurationMs(6)).toBeLessThanOrEqual(950);
   });
 
-  it('adds a short settle frame on an exact perimeter corner before continuing', () => {
+  it('does not stop on exact perimeter corners during smooth movement', () => {
     const initial = toSnapshot(1, 1);
     const tx = transition([
       {
@@ -115,15 +115,15 @@ describe('animation director', () => {
     ], toSnapshot(2, 2), 'corner-settle');
 
     const frames = buildGameplayAnimationFrames({ transition: tx, initialSnapshot: initial, reducedMotion: false });
-    const cornerFrames = frames.filter((frame) => {
+    const cornerSettleFrames = frames.filter((frame) => {
       const visual = frame.state.pawnVisuals['green-seat-pawn-1'];
       return visual?.anchor.kind === 'board' && visual.anchor.coord.row === 0 && visual.anchor.coord.col === 0;
     });
 
-    expect(cornerFrames.some((frame) => frame.durationMs === ANIMATION_TIMINGS.cornerSettleMs)).toBe(true);
+    expect(cornerSettleFrames.some((frame) => frame.durationMs === ANIMATION_TIMINGS.cornerSettleMs)).toBe(false);
   });
 
-  it('represents every committed physicalPath coordinate in order without recalculation', async () => {
+  it('uses committed physicalPath destination without visual stops on intermediate cells', async () => {
     const initial = toSnapshot(1, 1);
     const final = {
       ...toSnapshot(2, 2),
@@ -185,7 +185,7 @@ describe('animation director', () => {
             ? `${visual.anchor.coord.row}:${visual.anchor.coord.col}`
             : visual.anchor.kind,
         ),
-    ).toEqual(['7:0', '6:0', '5:0', '5:1']);
+    ).toEqual(['7:0', '5:1']);
 
     const applied: GameplayAnimationRuntimeState[] = [];
     const run = runGameplayAnimationFrames(frames, {
@@ -196,12 +196,7 @@ describe('animation director', () => {
     await vi.runAllTimersAsync();
     await run;
 
-    expect(collectPawnPositions(applied, 'green-seat-pawn-1')).toEqual([
-      '7:0',
-      '6:0',
-      '5:0',
-      '5:1',
-    ]);
+    expect(collectPawnPositions(applied, 'green-seat-pawn-1')).toEqual(['7:0', '5:1']);
   });
 
   it('keeps pawnMoved as the only spatial owner when pawnEnteredHome follows in the same transition', () => {
