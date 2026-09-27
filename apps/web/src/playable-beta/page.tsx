@@ -1082,6 +1082,15 @@ export function PlayableBetaPage({
       stateVersion: transition.snapshot.stateVersion,
       lastSequence: transition.toSequence,
     };
+    const optimistic = optimisticPresentationRef.current;
+    if (
+      optimistic &&
+      optimistic.matchId === transition.matchId &&
+      optimistic.actionId === transition.actionId
+    ) {
+      optimistic.abort.abort();
+      optimisticPresentationRef.current = null;
+    }
 
     const latestMatch = matchRef.current;
     if (
@@ -1169,7 +1178,6 @@ export function PlayableBetaPage({
       ) {
         return;
       }
-      optimisticPresentationRef.current = null;
       const ready = matchRef.current;
       if (ready.status === 'ready' && ready.matchId === transition.matchId) {
         reconcilePresentation(ready.matchId, ready.snapshot);
@@ -1518,6 +1526,7 @@ export function PlayableBetaPage({
 
   useEffect(() => {
     if (variant !== 'rooms') return;
+    if (selectedRoomId && room?.currentMatchId) return;
 
     let activeRequest: AbortController | null = null;
     const intervalId = window.setInterval(() => {
@@ -2453,6 +2462,7 @@ export function PlayableBetaPage({
         code: result.ok ? undefined : result.code,
         stateVersion: result.ok ? result.stateVersion : undefined,
         sequence: result.ok ? result.lastSequence : undefined,
+        tapToAckMs: Math.round((performance.now() - tappedAt) * 100) / 100,
       });
 
       if (!result.ok) {
