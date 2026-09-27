@@ -2444,7 +2444,6 @@ export function PlayableBetaPage({
           }}
           ref={boardRef}
           interactionDisabled={
-            match.pending ||
             Boolean(presentationController?.queue.active) ||
             (presentationController?.queue.queued.length ?? 0) > 0
           }
@@ -2457,7 +2456,7 @@ export function PlayableBetaPage({
             displaySnapshot.diceValue === 6 &&
             pawnActions.length > 0
           }
-          dieRolling={match.pending && Boolean(rollAction)}
+          dieRolling={false}
           presentation={boardPresentationRuntime ?? undefined}
           victoryPlayerId={displaySnapshot?.winnerPlayerId ?? null}
           victoryReason={displaySnapshot?.winReason ?? null}
@@ -2498,16 +2497,12 @@ export function PlayableBetaPage({
               displaySnapshot?.status === 'FINISHED' ? undefined : rollAction ? (
                 <Button
                   onClick={() => void submitAction(rollAction)}
-                  loading={match.pending}
-                  disabled={match.pending}
                 >
                   {actionLabel(rollAction)}
                 </Button>
               ) : debugDummyTurn ? (
                 <Button
                   onClick={() => void skipDebugDummyTurn()}
-                  loading={match.pending}
-                  disabled={match.pending}
                 >
                   Пропустить ход бота
                 </Button>
@@ -2517,8 +2512,6 @@ export function PlayableBetaPage({
                 <Button
                   variant="secondary"
                   onClick={() => void submitAction(surrenderAction)}
-                  loading={match.pending}
-                  disabled={match.pending}
                 >
                   {actionLabel(surrenderAction)}
                 </Button>
