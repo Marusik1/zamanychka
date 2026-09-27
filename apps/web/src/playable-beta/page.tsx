@@ -1,5 +1,15 @@
-import { getLegalActions, type GameState, type LegalAction } from '@zamanushka/game-engine';
+import {
+  getLegalActions,
+  resolvePawnCoordinate,
+  resolvePhysicalPath,
+  transition as applyGameTransition,
+  type GameCommand as EngineGameCommand,
+  type GameEvent,
+  type GameState,
+  type LegalAction,
+} from '@zamanushka/game-engine';
 import type {
+  GameEventEnvelope,
   GameCommandResult,
   MatchSnapshot,
   RoomChatMessage,
@@ -522,6 +532,179 @@ function commandFromAction(action: LegalAction, matchId: string, expectedStateVe
   }
 }
 
+function optimisticCommandFromNetworkCommand(
+  command: ReturnType<typeof commandFromAction>,
+  actorPlayerId: string,
+): EngineGameCommand {
+  switch (command.type) {
+    case 'ROLL_DICE':
+      return {
+        type: 'ROLL_DICE',
+        actorPlayerId,
+        matchId: command.matchId,
+        expectedStateVersion: command.expectedStateVersion,
+      };
+    case 'SURRENDER':
+      return {
+        type: 'SURRENDER',
+        actorPlayerId,
+        matchId: command.matchId,
+        expectedStateVersion: command.expectedStateVersion,
+      };
+    case 'ENTER_PAWN':
+      return {
+        type: 'ENTER_PAWN',
+        actorPlayerId,
+        matchId: command.matchId,
+        expectedStateVersion: command.expectedStateVersion,
+        pawnId: command.pawnId,
+      };
+    case 'MOVE_PAWN':
+      return {
+        type: 'MOVE_PAWN',
+        actorPlayerId,
+        matchId: command.matchId,
+        expectedStateVersion: command.expectedStateVersion,
+        pawnId: command.pawnId,
+      };
+  }
+}
+
+function pawnCoordinate(state: GameState, pawnId: string) {
+  const pawn = state.pawns.find((candidate) => candidate.pawnId === pawnId);
+  const player = pawn && state.players.find((candidate) => candidate.playerId === pawn.playerId);
+  if (!pawn || !player) return null;
+  return resolvePawnCoordinate(pawn.position, player);
+}
+
+function optimisticPayload(
+  event: GameEvent,
+  actorPlayerId: string,
+  before: GameState,
+  after: GameState,
+): Record<string, unknown> | null {
+  switch (event.type) {
+    case 'diceRolled':
+      return { playerId: actorPlayerId, diceValue: event.diceValue };
+    case 'extraRollGranted':
+      return { playerId: event.playerId, reason: event.reason };
+    case 'turnChanged':
+      return { fromPlayerId: event.fromPlayerId, toPlayerId: event.toPlayerId };
+    case 'pawnEntered': {
+      const toCoord = pawnCoordinate(after, event.pawnId);
+      return toCoord ? { pawnId: event.pawnId, playerId: event.playerId, toCoord } : null;
+    }
+    case 'pawnMoved': {
+      const fromCoord = pawnCoordinate(before, event.pawnId);
+      const physicalPath = resolvePhysicalPath(before, event.pawnId, before.diceValue ?? 0) ?? [];
+      const toCoord = physicalPath.at(-1) ?? pawnCoordinate(after, event.pawnId);
+      if (!fromCoord || !toCoord) return null;
+      return {
+        pawnId: event.pawnId,
+        playerId: event.playerId,
+        fromCoord,
+        toCoord,
+        physicalPath,
+        capture: null,
+      };
+    }
+    case 'pawnEnteredHome': {
+      const fromCoord = pawnCoordinate(before, event.pawnId);
+      const toCoord = pawnCoordinate(after, event.pawnId);
+      if (!fromCoord || !toCoord) return null;
+      return {
+        pawnId: event.pawnId,
+        playerId: event.playerId,
+        homeIndex: event.homeIndex,
+        fromCoord,
+        toCoord,
+      };
+    }
+    case 'pawnCaptured': {
+      const physicalPath = resolvePhysicalPath(before, event.pawnId, before.diceValue ?? 0) ?? [];
+      const atCoord = physicalPath.at(-1) ?? pawnCoordinate(after, event.pawnId);
+      if (!atCoord) return null;
+      return {
+        byPawnId: event.pawnId,
+        byPlayerId: event.playerId,
+        capturedPawnId: event.capturedPawnId,
+        capturedPlayerId: event.capturedPlayerId,
+        atCoord,
+      };
+    }
+    case 'pawnRemoved':
+      return {
+        pawnId: event.pawnId,
+        playerId: event.playerId,
+        reason: event.reason ?? 'SURRENDERED',
+      };
+    case 'playerSurrendered':
+      return { playerId: event.playerId };
+    case 'gameWon':
+      return { winnerPlayerId: event.winnerPlayerId, reason: event.reason };
+  }
+}
+
+function createOptimisticTransition(options: {
+  match: Extract<MatchViewState, { status: 'ready' }>;
+  command: ReturnType<typeof commandFromAction>;
+  actorPlayerId: string;
+}): TransitionEnvelope | null {
+  if (options.command.type !== 'ENTER_PAWN' && options.command.type !== 'MOVE_PAWN') {
+    return null;
+  }
+
+  const before = options.match.snapshot as unknown as GameState;
+  const result = applyGameTransition(
+    before,
+    optimisticCommandFromNetworkCommand(options.command, options.actorPlayerId),
+    { actorPlayerId: options.actorPlayerId },
+  );
+  if (!result.ok || result.events.length === 0) return null;
+
+  const createdAt = new Date().toISOString();
+  const stateVersion = result.state.stateVersion;
+  const fromSequence = options.match.lastSequence + 1;
+  const toSequence = options.match.lastSequence + result.events.length;
+  const events = result.events
+    .map((event, index) => {
+      const sequence = options.match.lastSequence + index + 1;
+      const payload = optimisticPayload(event, options.actorPlayerId, before, result.state);
+      if (!payload) return null;
+      return {
+        matchId: options.command.matchId,
+        eventId: `${options.command.matchId}:optimistic:${options.command.actionId}:${sequence}`,
+        sequence,
+        stateVersion,
+        type: event.type,
+        payload,
+        createdAt,
+      } as GameEventEnvelope;
+    })
+    .filter((event): event is GameEventEnvelope => event !== null);
+
+  if (events.length === 0) return null;
+
+  return {
+    matchId: options.command.matchId,
+    transitionId: `optimistic:${options.command.actionId}`,
+    actionId: options.command.actionId,
+    stateVersion,
+    fromSequence,
+    toSequence,
+    events,
+    watermark: {
+      stateVersion,
+      lastSequence: toSequence,
+    },
+    snapshot: {
+      ...options.match.snapshot,
+      ...result.state,
+      lastSequence: toSequence,
+    } as MatchSnapshot,
+  };
+}
+
 function actionLockKey(action: LegalAction): string {
   switch (action.type) {
     case 'ROLL_DICE':
@@ -591,6 +774,11 @@ export function PlayableBetaPage({
     actionKey: string;
     actionId: string;
   } | null>(null);
+  const optimisticPresentationRef = useRef<{
+    matchId: string;
+    actionId: string;
+    abort: AbortController;
+  } | null>(null);
   const boardRef = useRef<PremiumPresentationHandle | null>(null);
   const ackSyncTimeoutRef = useRef<number | null>(null);
   const opponentTurnRecoveryTimeoutRef = useRef<number | null>(null);
@@ -635,6 +823,8 @@ export function PlayableBetaPage({
     hydrationRef.current = null;
     syncInFlightRef.current = null;
     commandInFlightRef.current = null;
+    optimisticPresentationRef.current?.abort.abort();
+    optimisticPresentationRef.current = null;
     if (ackSyncTimeoutRef.current !== null) {
       window.clearTimeout(ackSyncTimeoutRef.current);
       ackSyncTimeoutRef.current = null;
@@ -796,6 +986,23 @@ export function PlayableBetaPage({
     transition: TransitionEnvelope,
     reason: 'realtime-event' | 'command-ack' | 'sync-recovery',
   ) {
+    const currentMatch = matchRef.current;
+    if (
+      currentMatch.status === 'ready' &&
+      currentMatch.matchId === transition.matchId &&
+      transition.toSequence <= currentMatch.lastSequence
+    ) {
+      recordGameplayTelemetry('PRESENTATION_TRANSITION_DUPLICATE_AFTER_LOCAL_COMMIT', {
+        matchId: transition.matchId,
+        eventId: transition.transitionId,
+        actionId: transition.actionId,
+        sequence: transition.toSequence,
+        currentSequence: currentMatch.lastSequence,
+        reason,
+      });
+      return;
+    }
+
     const diceEvent = transition.events.find((event) => event.type === 'diceRolled');
     if (diceEvent?.type === 'diceRolled') {
       setLastSettledDiceValue(diceEvent.payload.diceValue as DieValue);
@@ -846,6 +1053,133 @@ export function PlayableBetaPage({
     });
 
     setMatch((current) => applyAuthoritativeTransitionToMatch(current, transition));
+  }
+
+  function applyOptimisticAckWithoutReplay(transition: TransitionEnvelope) {
+    const diceEvent = transition.events.find((event) => event.type === 'diceRolled');
+    if (diceEvent?.type === 'diceRolled') {
+      setLastSettledDiceValue(diceEvent.payload.diceValue as DieValue);
+    }
+
+    recordGameplayTelemetry('PRESENTATION_OPTIMISTIC_ACK_APPLIED_WITHOUT_REPLAY', {
+      matchId: transition.matchId,
+      eventId: transition.transitionId,
+      actionId: transition.actionId,
+      sequence: transition.toSequence,
+      stateVersion: transition.stateVersion,
+      transitionType: transition.events.map((event) => event.type).join('+'),
+    });
+
+    setHistoryItems((items) =>
+      mergeHistoryItems(
+        items,
+        transition.events.map((event) => describeEvent(transition.snapshot, event)),
+      ),
+    );
+
+    matchWatermarkRef.current = {
+      matchId: transition.matchId,
+      stateVersion: transition.snapshot.stateVersion,
+      lastSequence: transition.toSequence,
+    };
+
+    const latestMatch = matchRef.current;
+    if (
+      latestMatch.status === 'ready' &&
+      latestMatch.matchId === transition.matchId &&
+      transition.toSequence > latestMatch.lastSequence
+    ) {
+      matchRef.current = {
+        ...latestMatch,
+        snapshot: transition.snapshot,
+        lastSequence: transition.toSequence,
+        error: null,
+        pending: false,
+      };
+    }
+
+    setMatch((current) =>
+      current.status === 'ready' &&
+      current.matchId === transition.matchId &&
+      transition.toSequence > current.lastSequence
+        ? {
+            ...current,
+            snapshot: transition.snapshot,
+            lastSequence: transition.toSequence,
+            error: null,
+            pending: false,
+          }
+        : current,
+    );
+  }
+
+  function cancelOptimisticPresentation(matchId: string, actionId: string, reason: string) {
+    const optimistic = optimisticPresentationRef.current;
+    if (!optimistic || optimistic.matchId !== matchId || optimistic.actionId !== actionId) return;
+    optimistic.abort.abort();
+    optimisticPresentationRef.current = null;
+    recordGameplayTelemetry('PRESENTATION_OPTIMISTIC_CANCEL', {
+      matchId,
+      actionId,
+      reason,
+    });
+    const current = matchRef.current;
+    if (current.status === 'ready' && current.matchId === matchId) {
+      setPresentationRuntime(createIdleAnimationState(current.snapshot));
+    }
+  }
+
+  function startOptimisticPawnPresentation(
+    transition: TransitionEnvelope,
+    initialSnapshot: MatchSnapshot,
+  ) {
+    optimisticPresentationRef.current?.abort.abort();
+    const abort = new AbortController();
+    optimisticPresentationRef.current = {
+      matchId: transition.matchId,
+      actionId: transition.actionId ?? transition.transitionId,
+      abort,
+    };
+
+    const frames = buildGameplayAnimationFrames({
+      transition,
+      initialSnapshot,
+      reducedMotion,
+    });
+    const plan = createGameplayPresentationPlan(transition);
+
+    recordGameplayTelemetry('PRESENTATION_OPTIMISTIC_START', {
+      matchId: transition.matchId,
+      eventId: transition.transitionId,
+      actionId: transition.actionId,
+      transitionType: transition.events.map((event) => event.type).join('+'),
+      estimatedDurationMs: plan.estimatedDurationMs,
+    });
+
+    void runGameplayAnimationFrames(frames, {
+      signal: abort.signal,
+      onFrame: setPresentationRuntime,
+    }).then(() => {
+      const current = optimisticPresentationRef.current;
+      if (
+        abort.signal.aborted ||
+        !current ||
+        current.matchId !== transition.matchId ||
+        current.actionId !== transition.actionId
+      ) {
+        return;
+      }
+      optimisticPresentationRef.current = null;
+      const ready = matchRef.current;
+      if (ready.status === 'ready' && ready.matchId === transition.matchId) {
+        reconcilePresentation(ready.matchId, ready.snapshot);
+      }
+      recordGameplayTelemetry('PRESENTATION_OPTIMISTIC_COMPLETE', {
+        matchId: transition.matchId,
+        eventId: transition.transitionId,
+        actionId: transition.actionId,
+      });
+    });
   }
 
   function transitionFromCommandResult(result: Extract<GameCommandResult, { ok: true }>): TransitionEnvelope | null {
@@ -2088,6 +2422,20 @@ export function PlayableBetaPage({
       type: command.type,
       tapToLocalFeedbackMs: Math.round((performance.now() - tappedAt) * 100) / 100,
     });
+    const optimisticTransition = createOptimisticTransition({
+      match: commandMatch,
+      command,
+      actorPlayerId: authState.user.id,
+    });
+    if (optimisticTransition) {
+      startOptimisticPawnPresentation(optimisticTransition, commandMatch.snapshot);
+      recordGameplayTelemetry('command-optimistic-presentation-started', {
+        matchId: command.matchId,
+        actionId: command.actionId,
+        type: command.type,
+        tapToOptimisticStartMs: Math.round((performance.now() - tappedAt) * 100) / 100,
+      });
+    }
 
     try {
       recordGameplayTelemetry('COMMAND_SENT', {
@@ -2176,6 +2524,7 @@ export function PlayableBetaPage({
               }
             : current,
         );
+        cancelOptimisticPresentation(command.matchId, command.actionId, `command-rejected:${result.code}`);
         if (result.code === 'STALE_STATE_VERSION') {
           await syncMatch(commandMatch.matchId, commandMatch.snapshot.stateVersion, commandMatch.lastSequence);
         }
@@ -2189,7 +2538,16 @@ export function PlayableBetaPage({
       );
       const ackTransition = transitionFromCommandResult(result);
       if (ackTransition) {
-        applyCommittedTransition(ackTransition, 'command-ack');
+        const optimistic = optimisticPresentationRef.current;
+        if (
+          optimistic &&
+          optimistic.matchId === ackTransition.matchId &&
+          optimistic.actionId === ackTransition.actionId
+        ) {
+          applyOptimisticAckWithoutReplay(ackTransition);
+        } else {
+          applyCommittedTransition(ackTransition, 'command-ack');
+        }
       }
       if (ackSyncTimeoutRef.current !== null) {
         window.clearTimeout(ackSyncTimeoutRef.current);
@@ -2218,6 +2576,7 @@ export function PlayableBetaPage({
         });
       }, 5000);
     } catch {
+      cancelOptimisticPresentation(command.matchId, command.actionId, 'command-error');
       setMatch((current) =>
         current.status === 'ready' && current.matchId === command.matchId
           ? { ...current, pending: false, error: 'Не удалось выполнить игровой ход.' }

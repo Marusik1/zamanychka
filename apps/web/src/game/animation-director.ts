@@ -5,14 +5,14 @@ import type { DieValue } from './dice.js';
 import type { PawnMotion } from './pawns.js';
 
 export const ANIMATION_TIMINGS = {
-  moveBaseMs: 150,
-  moveExtraMs: 126,
+  moveBaseMs: 165,
+  moveExtraMs: 138,
   moveMaxMs: 900,
-  cornerSettleMs: 80,
-  enterMs: 340,
-  captureImpactMs: 120,
+  cornerSettleMs: 96,
+  enterMs: 400,
+  captureImpactMs: 150,
   captureHoldMs: 0,
-  captureExitMs: 360,
+  captureExitMs: 420,
   homeCueMs: 340,
   diceMs: 920,
   homeCompletePulseMs: 140,

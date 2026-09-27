@@ -3,6 +3,16 @@ import type { GameCommandRequest, GameCommandResult } from '@zamanushka/shared';
 import type { MatchRepository } from '../match/match-repository.js';
 import { isAutomatedParticipantKind, type BotCommand, type BotLegalAction, type BotRuntimeAdapter } from './types.js';
 
+function participantKindForBotRunner(
+  participant: { playerId: string; participantKind?: string | null } | null | undefined,
+) {
+  if (!participant) return 'HUMAN';
+  if (participant.participantKind === 'BOT' || participant.participantKind === 'DEBUG_DUMMY') {
+    return participant.participantKind;
+  }
+  return participant.playerId.startsWith('bot:') ? 'BOT' : 'HUMAN';
+}
+
 function actionProgressScore(action: LegalAction): number | undefined {
   if (action.type !== 'MOVE_PAWN') return undefined;
   if (action.to.zone === 'HOME') return 100 + action.to.homeIndex;
@@ -79,7 +89,7 @@ export function createBotRuntimeAdapter(deps: {
         stateVersion: state.stateVersion,
         status: state.status,
         activeParticipantId,
-        activeParticipantKind: activeParticipant?.participantKind ?? 'HUMAN',
+        activeParticipantKind: participantKindForBotRunner(activeParticipant),
         legalActions,
         phase: state.turnPhase,
       };
@@ -97,7 +107,7 @@ export function createBotRuntimeAdapter(deps: {
         };
       }
       const active = state.players.find((player) => player.playerId === activeParticipantId);
-      if (!isAutomatedParticipantKind(active?.participantKind ?? null)) {
+      if (!isAutomatedParticipantKind(participantKindForBotRunner(active))) {
         return {
           ok: false,
           code: 'ACTIVE_PARTICIPANT_NOT_BOT',
