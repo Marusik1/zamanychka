@@ -1106,10 +1106,15 @@ export function PlayableBetaPage({
 
     opponentTurnRecoveryTimeoutRef.current = window.setTimeout(() => {
       const current = matchRef.current;
+      const controller = presentationControllerRef.current;
+      const hasPresentationWork =
+        controller?.matchId === scheduled.matchId &&
+        (controller.queue.active !== null || controller.queue.queued.length > 0);
       if (
         current.status !== 'ready' ||
         current.matchId !== scheduled.matchId ||
         current.pending ||
+        hasPresentationWork ||
         current.snapshot.status !== 'ACTIVE' ||
         current.snapshot.currentPlayerId !== scheduled.currentPlayerId ||
         current.snapshot.stateVersion !== scheduled.stateVersion ||
@@ -1125,7 +1130,7 @@ export function PlayableBetaPage({
         currentPlayerId: scheduled.currentPlayerId,
       });
       void syncMatch(scheduled.matchId, scheduled.stateVersion, scheduled.lastSequence);
-    }, 2500);
+    }, 5000);
 
     return () => {
       if (opponentTurnRecoveryTimeoutRef.current !== null) {
