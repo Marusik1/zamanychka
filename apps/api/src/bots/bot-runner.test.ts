@@ -218,6 +218,80 @@ describe('BotRunner', () => {
     );
   });
 
+  it('enters a pawn after rolling a six when no bot pawns are on the board', async () => {
+    let readCount = 0;
+    const runtime: BotRuntimeAdapter = {
+      readTurn: vi.fn(async () => {
+        readCount += 1;
+        if (readCount <= 2) {
+          return {
+            matchId: 'match-1',
+            status: 'ACTIVE',
+            stateVersion: 7,
+            phase: 'WAITING_FOR_ROLL',
+            activeParticipantId: 'bot-1',
+            activeParticipantKind: 'BOT',
+            legalActions: [{ type: 'ROLL_DICE' as const }],
+          };
+        }
+        if (readCount <= 4) {
+          return {
+            matchId: 'match-1',
+            status: 'ACTIVE',
+            stateVersion: 8,
+            phase: 'WAITING_FOR_ACTION',
+            activeParticipantId: 'bot-1',
+            activeParticipantKind: 'BOT',
+            legalActions: [{ type: 'ENTER_PAWN' as const, pawnId: 'bot-pawn-1' }],
+          };
+        }
+        return {
+          matchId: 'match-1',
+          status: 'ACTIVE',
+          stateVersion: 9,
+          phase: 'WAITING_FOR_ROLL',
+          activeParticipantId: 'human-1',
+          activeParticipantKind: 'HUMAN',
+          legalActions: [{ type: 'ROLL_DICE' as const }],
+        };
+      }),
+      submitCommand: vi.fn(async (command) => ({
+        ok: true,
+        matchId: command.matchId,
+        stateVersion: command.type === 'ROLL_DICE' ? 8 : 9,
+      })),
+    };
+    const lease: MatchLease = {
+      runExclusive: vi.fn(async (_matchId, fn) => fn()),
+    };
+
+    const runner = new BotRunner(runtime, lease, {
+      minDelayMs: 1,
+      maxDelayMs: 1,
+      followupMinDelayMs: 910,
+      followupMaxDelayMs: 910,
+      random: () => 0,
+    });
+
+    runner.kick('match-1');
+    await vi.advanceTimersByTimeAsync(1);
+    expect(runtime.submitCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'ROLL_DICE',
+        expectedStateVersion: 7,
+      }),
+    );
+
+    await vi.advanceTimersByTimeAsync(910);
+    expect(runtime.submitCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'ENTER_PAWN',
+        expectedStateVersion: 8,
+        pawnId: 'bot-pawn-1',
+      }),
+    );
+  });
+
   it('treats a solo debug dummy as an automated participant that must roll when roll is legal', async () => {
     let commandApplied = false;
     const runtime: BotRuntimeAdapter = {

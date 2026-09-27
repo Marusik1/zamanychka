@@ -249,6 +249,11 @@ export class BotRunner {
           step,
           stateVersion: snapshot.stateVersion,
           phase: snapshot.phase,
+          activeParticipantId: snapshot.activeParticipantId,
+          legalActionCount: snapshot.legalActions.length,
+          legalActionTypes: snapshot.legalActions.map((action) =>
+            action.pawnId ? `${action.type}:${action.pawnId}` : action.type,
+          ),
         });
         return;
       }
@@ -288,6 +293,7 @@ export class BotRunner {
           type: command.type,
           code: result.code,
           expectedStateVersion: command.expectedStateVersion,
+          pawnId: command.pawnId,
         });
         return;
       }
