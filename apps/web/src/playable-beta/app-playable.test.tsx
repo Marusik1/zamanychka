@@ -1591,6 +1591,7 @@ describe('playable beta room flow', () => {
     fireEvent.click(rollButton);
 
     await waitFor(() => expect(realtime.sendCommand).toHaveBeenCalledTimes(1));
+    expect(document.querySelector('.game-die--rolling')).toBeNull();
     expect(resolveCommand).not.toBeNull();
     resolveCommand!({
       ok: true,
@@ -1664,6 +1665,39 @@ describe('playable beta room flow', () => {
       },
       { timeout: 2_000 },
     );
+
+    realtime.__emitTransition?.(
+      transitionEnvelope({
+        transitionId: 'turn-event-2',
+        actionId: 'move-action-2',
+        stateVersion: 2,
+        fromSequence: 2,
+        toSequence: 2,
+        watermark: { stateVersion: 2, lastSequence: 2 },
+        events: [
+          {
+            matchId: 'match-1',
+            eventId: 'turn-event-2',
+            sequence: 2,
+            stateVersion: 2,
+            type: 'turnChanged',
+            payload: { fromPlayerId: 'user-1', toPlayerId: 'user-2', turnNumber: 2 },
+            createdAt: '2026-09-01T10:00:02.000Z',
+          },
+        ],
+        snapshot: activeSnapshot({
+          stateVersion: 2,
+          lastSequence: 2,
+          currentPlayerId: 'user-2',
+          turnNumber: 2,
+          turnPhase: 'WAITING_FOR_ROLL',
+          diceValue: null,
+        }),
+      }),
+    );
+
+    await waitFor(() => expect(screen.getByLabelText(/Кубик: 6/)).toBeVisible());
+    expect(screen.queryByLabelText(/Кубик: 4/)).toBeNull();
   });
 
   it('shows the finished match state with a return-to-room action instead of gameplay controls', async () => {

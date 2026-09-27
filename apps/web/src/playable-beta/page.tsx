@@ -577,13 +577,14 @@ export function PlayableBetaPage({
   } | null>(null);
   const boardRef = useRef<PremiumPresentationHandle | null>(null);
   const ackSyncTimeoutRef = useRef<number | null>(null);
+  const opponentTurnRecoveryTimeoutRef = useRef<number | null>(null);
   const [presentationController, setPresentationController] =
     useState<PresentationControllerState | null>(null);
   const presentationControllerRef = useRef<PresentationControllerState | null>(null);
   presentationControllerRef.current = presentationController;
   const [presentationRuntime, setPresentationRuntime] =
     useState<GameplayAnimationRuntimeState | null>(null);
-  const [localDiceRolling, setLocalDiceRolling] = useState(false);
+  const [lastSettledDiceValue, setLastSettledDiceValue] = useState<DieValue | null>(null);
   const reducedMotion = usePrefersReducedMotion();
   const compactViewport = useCompactViewport();
   const [utilityPanel, setUtilityPanel] = useState<UtilityPanel>(null);
@@ -621,10 +622,14 @@ export function PlayableBetaPage({
       window.clearTimeout(ackSyncTimeoutRef.current);
       ackSyncTimeoutRef.current = null;
     }
+    if (opponentTurnRecoveryTimeoutRef.current !== null) {
+      window.clearTimeout(opponentTurnRecoveryTimeoutRef.current);
+      opponentTurnRecoveryTimeoutRef.current = null;
+    }
     setMatch({ status: 'idle' });
     setPresentationController(null);
     setPresentationRuntime(null);
-    setLocalDiceRolling(false);
+    setLastSettledDiceValue(null);
     setHistoryItems([]);
   }, []);
 
@@ -771,8 +776,9 @@ export function PlayableBetaPage({
   }
 
   function applyCommittedTransition(transition: TransitionEnvelope, reason: 'realtime-event' | 'command-ack') {
-    if (transition.events.some((event) => event.type === 'diceRolled')) {
-      setLocalDiceRolling(false);
+    const diceEvent = transition.events.find((event) => event.type === 'diceRolled');
+    if (diceEvent?.type === 'diceRolled') {
+      setLastSettledDiceValue(diceEvent.payload.diceValue as DieValue);
     }
 
     const latestMatch = matchRef.current;
@@ -955,6 +961,15 @@ export function PlayableBetaPage({
 
             setPresentationController(nextController);
             setPresentationRuntime(createIdleAnimationState(nextController.presentationSnapshot));
+            const latestDiceTransition = [...syncedHistoryTransitions, ...replayTransitions]
+              .flatMap((transition) => transition.events)
+              .filter((event) => event.type === 'diceRolled')
+              .at(-1);
+            if (latestDiceTransition?.type === 'diceRolled') {
+              setLastSettledDiceValue(latestDiceTransition.payload.diceValue as DieValue);
+            } else if (authoritativeSnapshot.diceValue !== null) {
+              setLastSettledDiceValue(authoritativeSnapshot.diceValue as DieValue);
+            }
             setHistoryItems((current) =>
               mergeHistoryItems(
                 current,
@@ -1031,6 +1046,73 @@ export function PlayableBetaPage({
     },
     [realtimeClient],
   );
+
+  useEffect(() => {
+    if (opponentTurnRecoveryTimeoutRef.current !== null) {
+      window.clearTimeout(opponentTurnRecoveryTimeoutRef.current);
+      opponentTurnRecoveryTimeoutRef.current = null;
+    }
+
+    if (
+      match.status !== 'ready' ||
+      match.pending ||
+      match.snapshot.status !== 'ACTIVE' ||
+      match.snapshot.currentPlayerId === null ||
+      match.snapshot.currentPlayerId === authState.user.id ||
+      match.snapshot.turnPhase !== 'WAITING_FOR_ROLL'
+    ) {
+      return;
+    }
+
+    const scheduled = {
+      matchId: match.matchId,
+      stateVersion: match.snapshot.stateVersion,
+      lastSequence: match.lastSequence,
+      currentPlayerId: match.snapshot.currentPlayerId,
+    };
+
+    opponentTurnRecoveryTimeoutRef.current = window.setTimeout(() => {
+      const current = matchRef.current;
+      if (
+        current.status !== 'ready' ||
+        current.matchId !== scheduled.matchId ||
+        current.pending ||
+        current.snapshot.status !== 'ACTIVE' ||
+        current.snapshot.currentPlayerId !== scheduled.currentPlayerId ||
+        current.snapshot.stateVersion !== scheduled.stateVersion ||
+        current.lastSequence !== scheduled.lastSequence
+      ) {
+        return;
+      }
+
+      recordGameplayTelemetry('OPPONENT_TURN_RECOVERY_SYNC', {
+        matchId: scheduled.matchId,
+        stateVersion: scheduled.stateVersion,
+        sequence: scheduled.lastSequence,
+        currentPlayerId: scheduled.currentPlayerId,
+      });
+      void syncMatch(scheduled.matchId, scheduled.stateVersion, scheduled.lastSequence);
+    }, 2500);
+
+    return () => {
+      if (opponentTurnRecoveryTimeoutRef.current !== null) {
+        window.clearTimeout(opponentTurnRecoveryTimeoutRef.current);
+        opponentTurnRecoveryTimeoutRef.current = null;
+      }
+    };
+  }, [
+    authState.user.id,
+    match.status,
+    match.status === 'ready' ? match.matchId : null,
+    match.status === 'ready' ? match.pending : null,
+    match.status === 'ready' ? match.lastSequence : null,
+    match.status === 'ready' ? match.snapshot.status : null,
+    match.status === 'ready' ? match.snapshot.stateVersion : null,
+    match.status === 'ready' ? match.snapshot.currentPlayerId : null,
+    match.status === 'ready' ? match.snapshot.turnPhase : null,
+    syncMatch,
+  ]);
+
   useEffect(() => {
     if (variant !== 'rooms') return;
 
@@ -1253,8 +1335,6 @@ export function PlayableBetaPage({
         window.clearTimeout(ackSyncTimeoutRef.current);
         ackSyncTimeoutRef.current = null;
       }
-      setLocalDiceRolling(false);
-
       const hydration = hydrationRef.current;
       if (hydration?.matchId === transition.matchId) {
         hydration.buffer.push(transition);
@@ -1408,13 +1488,15 @@ export function PlayableBetaPage({
     baseBoardPresentationRuntime
       ? {
           ...baseBoardPresentationRuntime,
-          dieRolling: localDiceRolling || baseBoardPresentationRuntime.dieRolling,
+          dieRolling: baseBoardPresentationRuntime.dieRolling,
           dieValue: activePresentationDieValue ?? baseBoardPresentationRuntime.dieValue,
         }
       : baseBoardPresentationRuntime;
   const boardDieValue =
     activePresentationDieValue ??
-    (displaySnapshot?.diceValue !== null ? (displaySnapshot?.diceValue as DieValue | undefined) : undefined);
+    (displaySnapshot?.diceValue !== null ? (displaySnapshot?.diceValue as DieValue | undefined) : undefined) ??
+    lastSettledDiceValue ??
+    undefined;
   const readyMatchBoardProps =
     boardDieValue !== undefined
       ? { dieValue: boardDieValue }
@@ -1943,15 +2025,6 @@ export function PlayableBetaPage({
         ? { ...current, pending: true, error: null }
         : current,
     );
-    if (action.type === 'ROLL_DICE') {
-      boardRef.current?.beginDiceRoll();
-      setLocalDiceRolling(true);
-      recordGameplayTelemetry('LOCAL_DICE_VISUAL_START', {
-        matchId: commandMatch.matchId,
-        stateVersion: commandMatch.snapshot.stateVersion,
-        sequence: commandMatch.lastSequence,
-      });
-    }
     recordGameplayTelemetry('command-local-feedback', {
       matchId: command.matchId,
       actionId: command.actionId,
@@ -2037,7 +2110,6 @@ export function PlayableBetaPage({
           );
           return;
         }
-        setLocalDiceRolling(false);
         setMatch((current) =>
           current.status === 'ready' && current.matchId === command.matchId
             ? {
@@ -2089,7 +2161,6 @@ export function PlayableBetaPage({
         });
       }, 5000);
     } catch {
-      setLocalDiceRolling(false);
       setMatch((current) =>
         current.status === 'ready' && current.matchId === command.matchId
           ? { ...current, pending: false, error: 'Не удалось выполнить игровой ход.' }
@@ -2152,7 +2223,6 @@ export function PlayableBetaPage({
       });
 
       if (!result.ok) {
-        setLocalDiceRolling(false);
         setMatch({
           ...match,
           pending: false,
@@ -2170,7 +2240,6 @@ export function PlayableBetaPage({
           : current,
       );
     } catch {
-      setLocalDiceRolling(false);
       setMatch({ ...match, pending: false, error: 'Не удалось пропустить debug-ход.' });
     }
   }
