@@ -782,6 +782,7 @@ export function PlayableBetaPage({
   const boardRef = useRef<PremiumPresentationHandle | null>(null);
   const ackSyncTimeoutRef = useRef<number | null>(null);
   const opponentTurnRecoveryTimeoutRef = useRef<number | null>(null);
+  const syncRecoveryTimeoutRef = useRef<number | null>(null);
   const [presentationController, setPresentationController] =
     useState<PresentationControllerState | null>(null);
   const presentationControllerRef = useRef<PresentationControllerState | null>(null);
@@ -832,6 +833,10 @@ export function PlayableBetaPage({
     if (opponentTurnRecoveryTimeoutRef.current !== null) {
       window.clearTimeout(opponentTurnRecoveryTimeoutRef.current);
       opponentTurnRecoveryTimeoutRef.current = null;
+    }
+    if (syncRecoveryTimeoutRef.current !== null) {
+      window.clearTimeout(syncRecoveryTimeoutRef.current);
+      syncRecoveryTimeoutRef.current = null;
     }
     setMatch({ status: 'idle' });
     setPresentationController(null);
@@ -1400,6 +1405,31 @@ export function PlayableBetaPage({
             retryable: error instanceof RealtimeClientError ? error.retryable : false,
             error,
           });
+          const existingMatch = matchRef.current;
+          if (existingMatch.status === 'ready' && existingMatch.matchId === matchId) {
+            const message = matchErrorMessage(error);
+            setMatch((current) =>
+              current.status === 'ready' && current.matchId === matchId
+                ? { ...current, pending: false, error: message }
+                : current,
+            );
+            recordGameplayTelemetry('MATCH_SYNC_RECOVERY_FAILED_NON_FATAL', {
+              matchId,
+              stateVersion,
+              lastSequence,
+              errorCode: error instanceof RealtimeClientError ? error.code : 'SYNC_FAILED',
+            });
+            if (syncRecoveryTimeoutRef.current !== null) {
+              window.clearTimeout(syncRecoveryTimeoutRef.current);
+            }
+            syncRecoveryTimeoutRef.current = window.setTimeout(() => {
+              syncRecoveryTimeoutRef.current = null;
+              const current = matchRef.current;
+              if (current.status !== 'ready' || current.matchId !== matchId) return;
+              void syncMatch(current.matchId, current.snapshot.stateVersion, current.lastSequence);
+            }, 3_000);
+            return;
+          }
           setMatch({ status: 'error', message: matchErrorMessage(error) });
         }
       }
@@ -1583,6 +1613,10 @@ export function PlayableBetaPage({
       if (ackSyncTimeoutRef.current !== null) {
         window.clearTimeout(ackSyncTimeoutRef.current);
         ackSyncTimeoutRef.current = null;
+      }
+      if (syncRecoveryTimeoutRef.current !== null) {
+        window.clearTimeout(syncRecoveryTimeoutRef.current);
+        syncRecoveryTimeoutRef.current = null;
       }
       setMatch((current) =>
         current.status === 'ready' && current.snapshot.status === 'FINISHED'

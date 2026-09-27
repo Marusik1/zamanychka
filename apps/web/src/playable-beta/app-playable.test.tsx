@@ -1094,6 +1094,44 @@ describe('playable beta room flow', () => {
     expect(realtime.sync).toHaveBeenCalledTimes(2);
   });
 
+  it('keeps the current match open when a recovery sync temporarily fails', async () => {
+    const api = createRoomApi({
+      getRoom: vi.fn().mockResolvedValue(activeRoom({ currentMatchId: 'match-race' })),
+      reconnect: vi.fn().mockResolvedValue(activeRoom({ currentMatchId: 'match-race' })),
+    });
+    const syncFailure = new RealtimeClientError('SYNC_FAILED', 'temporary sync outage');
+    const realtime = createRealtimeClient({
+      sync: vi
+        .fn()
+        .mockResolvedValueOnce({
+          mode: 'snapshot',
+          snapshot: activeSnapshot({ stateVersion: 1, lastSequence: 1 }),
+          watermark: { stateVersion: 1, lastSequence: 1 },
+        })
+        .mockRejectedValue(syncFailure),
+    });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
+
+    await waitFor(() => expect(document.querySelector('.game-board-scene')).not.toBeNull(), { timeout: 3_000 });
+    realtime.__emitTransition?.(
+      transitionEnvelope({
+        matchId: 'match-race',
+        transitionId: 'transition-3',
+        stateVersion: 3,
+        fromSequence: 3,
+        toSequence: 3,
+        watermark: { stateVersion: 3, lastSequence: 3 },
+        snapshot: activeSnapshot({ stateVersion: 3, lastSequence: 3 }),
+      }),
+    );
+
+    await waitFor(() => expect(realtime.sync).toHaveBeenCalledTimes(2), { timeout: 3_000 });
+
+    expect(document.querySelector('.game-board-scene')).not.toBeNull();
+    expect(screen.queryByText('РњР°С‚С‡ РІСЂРµРјРµРЅРЅРѕ РЅРµРґРѕСЃС‚СѓРїРµРЅ')).toBeNull();
+  });
+
   it('keeps authoritative resync single-flight when several sequence gaps arrive', async () => {
     const resync = deferred<{
       mode: 'snapshot';
