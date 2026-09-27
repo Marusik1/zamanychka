@@ -36,6 +36,7 @@ export class BotRunner {
   private readonly localInFlight = new Set<string>();
   private readonly queuedKicks = new Set<string>();
   private readonly watchdogs = new Set<string>();
+  private readonly recoveryWakeups = new Set<string>();
   private readonly minDelayMs: number;
   private readonly maxDelayMs: number;
   private readonly followupMinDelayMs: number;
@@ -111,7 +112,12 @@ export class BotRunner {
   }
 
   private scheduleRecovery(matchId: string): void {
-    setTimeout(() => this.kick(matchId), this.recoveryDelayMs);
+    if (this.recoveryWakeups.has(matchId)) return;
+    this.recoveryWakeups.add(matchId);
+    setTimeout(() => {
+      this.recoveryWakeups.delete(matchId);
+      this.kick(matchId);
+    }, this.recoveryDelayMs);
   }
 
   private scheduleWatchdog(matchId: string): void {
@@ -177,6 +183,7 @@ export class BotRunner {
   }
 
   private async runLoop(matchId: string): Promise<void> {
+    let previousCommandType: BotCommand['type'] | null = null;
     for (let step = 0; step < this.maxActionsPerKick; step += 1) {
       const beforeDelay = await this.runtime.readTurn(matchId);
 
@@ -203,7 +210,12 @@ export class BotRunner {
         return;
       }
 
-      const thinkDelayMs = step === 0 ? this.pickDelay() : this.pickFollowupDelay();
+      const thinkDelayMs =
+        step === 0
+          ? this.pickDelay()
+          : previousCommandType === 'ROLL_DICE'
+            ? this.pickFollowupDelay()
+            : this.pickDelay();
       logBotTelemetry('bot-turn-detected', {
         matchId,
         step,
@@ -306,12 +318,14 @@ export class BotRunner {
         this.scheduleWatchdog(matchId);
         return;
       }
+      previousCommandType = command.type;
 
       await this.onCommittedCommand?.({
         matchId,
         actionId: command.actionId,
         type: command.type,
       });
+      this.scheduleRecovery(matchId);
     }
 
     this.logger.warn('[bot-runner] safety action limit reached', {

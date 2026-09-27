@@ -368,6 +368,189 @@ describe('BotRunner', () => {
     );
   });
 
+  it('continues into another roll after entering a pawn on six', async () => {
+    let readCount = 0;
+    const runtime: BotRuntimeAdapter = {
+      readTurn: vi.fn(async () => {
+        readCount += 1;
+        if (readCount <= 2) {
+          return {
+            matchId: 'match-1',
+            status: 'ACTIVE',
+            stateVersion: 7,
+            phase: 'WAITING_FOR_ROLL',
+            activeParticipantId: 'bot-1',
+            activeParticipantKind: 'BOT',
+            legalActions: [{ type: 'ROLL_DICE' as const }],
+          };
+        }
+        if (readCount <= 4) {
+          return {
+            matchId: 'match-1',
+            status: 'ACTIVE',
+            stateVersion: 8,
+            phase: 'WAITING_FOR_ACTION',
+            activeParticipantId: 'bot-1',
+            activeParticipantKind: 'BOT',
+            legalActions: [{ type: 'ENTER_PAWN' as const, pawnId: 'bot-pawn-1' }],
+          };
+        }
+        if (readCount <= 6) {
+          return {
+            matchId: 'match-1',
+            status: 'ACTIVE',
+            stateVersion: 9,
+            phase: 'WAITING_FOR_ROLL',
+            activeParticipantId: 'bot-1',
+            activeParticipantKind: 'BOT',
+            legalActions: [{ type: 'ROLL_DICE' as const }],
+          };
+        }
+        return {
+          matchId: 'match-1',
+          status: 'ACTIVE',
+          stateVersion: 10,
+          phase: 'WAITING_FOR_ROLL',
+          activeParticipantId: 'human-1',
+          activeParticipantKind: 'HUMAN',
+          legalActions: [{ type: 'ROLL_DICE' as const }],
+        };
+      }),
+      submitCommand: vi.fn(async (command) => ({
+        ok: true,
+        matchId: command.matchId,
+        stateVersion: command.expectedStateVersion + 1,
+      })),
+    };
+    const lease: MatchLease = {
+      runExclusive: vi.fn(async (_matchId, fn) => fn()),
+    };
+
+    const runner = new BotRunner(runtime, lease, {
+      minDelayMs: 1,
+      maxDelayMs: 1,
+      followupMinDelayMs: 1,
+      followupMaxDelayMs: 1,
+      random: () => 0,
+    });
+
+    runner.kick('match-1');
+    await vi.advanceTimersByTimeAsync(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(runtime.submitCommand).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        type: 'ROLL_DICE',
+        expectedStateVersion: 7,
+      }),
+    );
+    expect(runtime.submitCommand).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        type: 'ENTER_PAWN',
+        expectedStateVersion: 8,
+        pawnId: 'bot-pawn-1',
+      }),
+    );
+    expect(runtime.submitCommand).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({
+        type: 'ROLL_DICE',
+        expectedStateVersion: 9,
+      }),
+    );
+  });
+
+  it('recovery wake continues a bot extra roll if the immediate loop stops after entering on six', async () => {
+    let phase: 'ENTER' | 'EXTRA_ROLL' | 'HUMAN' = 'ENTER';
+    let runCount = 0;
+    const runtime: BotRuntimeAdapter = {
+      readTurn: vi.fn(async () => {
+        if (phase === 'ENTER') {
+          return {
+            matchId: 'match-1',
+            status: 'ACTIVE',
+            stateVersion: 9,
+            phase: 'WAITING_FOR_ACTION',
+            activeParticipantId: 'bot-1',
+            activeParticipantKind: 'BOT',
+            legalActions: [{ type: 'ENTER_PAWN' as const, pawnId: 'bot-pawn-1' }],
+          };
+        }
+        if (phase === 'EXTRA_ROLL') {
+          return {
+            matchId: 'match-1',
+            status: 'ACTIVE',
+            stateVersion: 10,
+            phase: 'WAITING_FOR_ROLL',
+            activeParticipantId: 'bot-1',
+            activeParticipantKind: 'BOT',
+            legalActions: [{ type: 'ROLL_DICE' as const }],
+          };
+        }
+        return {
+          matchId: 'match-1',
+          status: 'ACTIVE',
+          stateVersion: 11,
+          phase: 'WAITING_FOR_ROLL',
+          activeParticipantId: 'human-1',
+          activeParticipantKind: 'HUMAN',
+          legalActions: [{ type: 'ROLL_DICE' as const }],
+        };
+      }),
+      submitCommand: vi.fn(async (command) => {
+        if (command.type === 'ENTER_PAWN') {
+          phase = 'EXTRA_ROLL';
+          return { ok: true, matchId: command.matchId, stateVersion: 10 };
+        }
+        phase = 'HUMAN';
+        return { ok: true, matchId: command.matchId, stateVersion: 11 };
+      }),
+    };
+    const lease: MatchLease = {
+      runExclusive: vi.fn(async (_matchId, fn) => {
+        runCount += 1;
+        if (runCount === 1) {
+          await fn();
+          return 'executed' as const;
+        }
+        return fn();
+      }),
+    };
+
+    const runner = new BotRunner(runtime, lease, {
+      minDelayMs: 1,
+      maxDelayMs: 1,
+      followupMinDelayMs: 60_000,
+      followupMaxDelayMs: 60_000,
+      recoveryDelayMs: 100,
+      random: () => 0,
+    });
+
+    runner.kick('match-1');
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(runtime.submitCommand).toHaveBeenCalledTimes(1);
+    expect(runtime.submitCommand).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        type: 'ENTER_PAWN',
+        expectedStateVersion: 9,
+      }),
+    );
+
+    await vi.advanceTimersByTimeAsync(100);
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(runtime.submitCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'ROLL_DICE',
+        expectedStateVersion: 10,
+      }),
+    );
+  });
+
   it('continues automatically into the extra roll after a bot rolls six and moves', async () => {
     let readCount = 0;
     const runtime: BotRuntimeAdapter = {
