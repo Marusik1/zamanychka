@@ -814,7 +814,7 @@ describe('playable beta room flow', () => {
 
     renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
 
-    expect(await screen.findByText(/MATCH_ACCESS_DENIED/)).toBeVisible();
+    expect(await screen.findByText(/MATCH_ACCESS_DENIED/, {}, { timeout: 2_000 })).toBeVisible();
     expect(screen.queryByText(new RegExp(`\\u0420\\u00A0\\u0421\\u045A|MATCH_JOIN_FAILED`))).not.toBeInTheDocument();
   });
 

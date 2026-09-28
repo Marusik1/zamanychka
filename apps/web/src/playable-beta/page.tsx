@@ -1718,6 +1718,44 @@ export function PlayableBetaPage({
       queuedCount: presentationController.queue.queued.length,
     });
 
+    let completed = false;
+    const completePresentation = (reason: 'animations-complete' | 'watchdog-timeout') => {
+      if (completed || abort.signal.aborted) return;
+      completed = true;
+      if (reason === 'watchdog-timeout') {
+        recordGameplayTelemetry('PRESENTATION_COMPLETE_WATCHDOG', {
+          matchId: active.matchId,
+          eventId: active.transitionId,
+          actionId: active.actionId,
+          sequence: active.toSequence,
+          stateVersion: active.stateVersion,
+          transitionType: active.events.map((event) => event.type).join('+'),
+          estimatedDurationMs: plan.estimatedDurationMs,
+        });
+      }
+      setPresentationController((current) => {
+        if (!current) return current;
+        const completion = completeActivePresentation(current, token);
+        if (completion.kind === 'completed') {
+          recordGameplayTelemetry('PRESENTATION_COMPLETE', {
+            matchId: active.matchId,
+            eventId: active.transitionId,
+            actionId: active.actionId,
+            sequence: active.toSequence,
+            stateVersion: active.stateVersion,
+            transitionType: active.events.map((event) => event.type).join('+'),
+            reason,
+          });
+        }
+        return completion.kind === 'completed' ? completion.state : current;
+      });
+    };
+    const watchdogDelayMs = Math.max(1_200, plan.estimatedDurationMs + 700);
+    const watchdogId = window.setTimeout(
+      () => completePresentation('watchdog-timeout'),
+      watchdogDelayMs,
+    );
+
     void Promise.all([
       runGameplayAnimationFrames(frames, {
         signal: abort.signal,
@@ -1732,25 +1770,25 @@ export function PlayableBetaPage({
         abort.signal,
       ),
     ]).then(() => {
+      window.clearTimeout(watchdogId);
+      completePresentation('animations-complete');
+    }).catch((error) => {
+      window.clearTimeout(watchdogId);
       if (abort.signal.aborted) return;
-      setPresentationController((current) => {
-        if (!current) return current;
-        const completion = completeActivePresentation(current, token);
-        if (completion.kind === 'completed') {
-          recordGameplayTelemetry('PRESENTATION_COMPLETE', {
-            matchId: active.matchId,
-            eventId: active.transitionId,
-            actionId: active.actionId,
-            sequence: active.toSequence,
-            stateVersion: active.stateVersion,
-            transitionType: active.events.map((event) => event.type).join('+'),
-          });
-        }
-        return completion.kind === 'completed' ? completion.state : current;
+      recordGameplayTelemetry('PRESENTATION_COMPLETE_FALLBACK_AFTER_ERROR', {
+        matchId: active.matchId,
+        eventId: active.transitionId,
+        actionId: active.actionId,
+        sequence: active.toSequence,
+        stateVersion: active.stateVersion,
+        transitionType: active.events.map((event) => event.type).join('+'),
+        error: error instanceof Error ? error.message : String(error),
       });
+      completePresentation('watchdog-timeout');
     });
 
     return () => {
+      window.clearTimeout(watchdogId);
       recordGameplayTelemetry('PRESENTATION_CANCEL', {
         matchId: active.matchId,
         eventId: active.transitionId,
