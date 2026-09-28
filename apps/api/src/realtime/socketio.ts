@@ -69,7 +69,7 @@ function roomName(matchId: string) {
 }
 
 function telemetryEnabled() {
-  return process.env.GAMEPLAY_TELEMETRY === 'true';
+  return process.env.GAMEPLAY_TELEMETRY === 'true' || process.env.GAMEPLAY_DEBUG === 'true';
 }
 
 function byteLength(value: unknown) {
@@ -316,10 +316,16 @@ export function createRealtimeRuntime(options: {
         ack?: (result: { ok: true } | { ok: false; code: string }) => void,
       ) => {
         const parsed = matchSubscriptionRequestSchema.safeParse(input);
+        const joinedAt = performance.now();
         if (!parsed.success) {
           ack?.({ ok: false, code: 'VALIDATION_ERROR' });
           return;
         }
+        logTelemetry('MATCH_JOIN_RECEIVED', {
+          socketId: socket.id,
+          matchId: parsed.data.matchId,
+          userId: (socket.data as SocketData).userId,
+        });
         if (
           parsed.data.realtimeProtocolVersion &&
           parsed.data.realtimeProtocolVersion !== REALTIME_PROTOCOL_VERSION
@@ -341,6 +347,12 @@ export function createRealtimeRuntime(options: {
         }
         await socket.join(roomName(parsed.data.matchId));
         ack?.({ ok: true });
+        logTelemetry('MATCH_JOIN_ACK', {
+          socketId: socket.id,
+          matchId: parsed.data.matchId,
+          userId: (socket.data as SocketData).userId,
+          elapsedMs: Math.round((performance.now() - joinedAt) * 100) / 100,
+        });
         wakeBotRunner(parsed.data.matchId, 'match:join');
       },
     );
@@ -432,10 +444,17 @@ export function createRealtimeRuntime(options: {
 
     socket.on('game:sync', async (input: unknown, ack?: (result: unknown) => void) => {
       const parsed = gameSyncRequestSchema.safeParse(input);
+      const syncStartedAt = performance.now();
       if (!parsed.success) {
         ack?.(snapshotSyncResponse({ snapshot: emptySnapshot, stateVersion: 0, lastSequence: 0 }));
         return;
       }
+      logTelemetry('GAME_SYNC_RECEIVED', {
+        socketId: socket.id,
+        matchId: parsed.data.matchId,
+        stateVersion: parsed.data.stateVersion,
+        lastSequence: parsed.data.lastSequence,
+      });
 
       let match: Awaited<ReturnType<MatchRepository['loadCurrentMatch']>> | null = null;
 
@@ -490,19 +509,36 @@ export function createRealtimeRuntime(options: {
             },
           });
           ack?.(response);
+          logTelemetry('GAME_SYNC_ACK', {
+            socketId: socket.id,
+            matchId: parsed.data.matchId,
+            mode: response.mode,
+            stateVersion: response.watermark.stateVersion,
+            lastSequence: response.watermark.lastSequence,
+            transitionCount: transitions.length,
+            elapsedMs: Math.round((performance.now() - syncStartedAt) * 100) / 100,
+          });
           wakeBotRunner(parsed.data.matchId, 'game:sync');
           return;
         }
 
-        ack?.(
-          snapshotSyncResponse({
+        const response = snapshotSyncResponse({
             snapshot: match.snapshot,
             stateVersion: match.stateVersion ?? 0,
             lastSequence: match.lastSequence ?? 0,
             startedAt: match.createdAt,
             finishedAt: match.finishedAt,
-          }),
-        );
+          });
+        ack?.(response);
+        logTelemetry('GAME_SYNC_ACK', {
+          socketId: socket.id,
+          matchId: parsed.data.matchId,
+          mode: response.mode,
+          stateVersion: response.watermark.stateVersion,
+          lastSequence: response.watermark.lastSequence,
+          transitionCount: 0,
+          elapsedMs: Math.round((performance.now() - syncStartedAt) * 100) / 100,
+        });
         wakeBotRunner(parsed.data.matchId, 'game:sync');
       } catch (error) {
         console.error('game:sync failed', error);

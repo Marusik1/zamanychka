@@ -124,7 +124,7 @@ function mapEngineFailure(
 }
 
 function telemetryEnabled() {
-  return process.env.GAMEPLAY_TELEMETRY === 'true';
+  return process.env.GAMEPLAY_TELEMETRY === 'true' || process.env.GAMEPLAY_DEBUG === 'true';
 }
 
 function roundMs(value: number) {
@@ -197,6 +197,12 @@ export function createCommandProcessor(options: {
         async (tx, match, timing) => {
           const txStartedAt = performance.now();
           lockWaitMs = timing.lockWaitMs;
+          logCommandTelemetry('DB_TRANSACTION_START', {
+            matchId: command.matchId,
+            actionId: command.actionId,
+            type: command.type,
+            dbLockWaitMs: lockWaitMs,
+          });
           const validationStartedAt = performance.now();
           if (!match) return failure(command, 'MATCH_NOT_FOUND', 'Match was not found', 0);
           const prior = await options.repository.findProcessedAction(tx, {
@@ -271,6 +277,14 @@ export function createCommandProcessor(options: {
             );
 
           const persistenceStartedAt = performance.now();
+          logCommandTelemetry('ENGINE_COMPLETED', {
+            matchId: command.matchId,
+            actionId: command.actionId,
+            type: command.type,
+            stateVersion: engineResult.state.stateVersion,
+            eventCount: engineResult.events.length,
+            engineMs,
+          });
           const events = journal.envelopes({
             matchId: command.matchId,
             stateVersion: engineResult.state.stateVersion,
@@ -413,6 +427,16 @@ export function createCommandProcessor(options: {
               toSequence: lastSequence,
               events,
             }),
+          });
+          logCommandTelemetry('OUTBOX_CREATED', {
+            matchId: command.matchId,
+            actionId: command.actionId,
+            type: command.type,
+            stateVersion: engineResult.state.stateVersion,
+            fromSequence: firstSequence,
+            toSequence: lastSequence,
+            eventCount,
+            persistenceMs: roundMs(performance.now() - persistenceStartedAt),
           });
           if (engineResult.state.status === 'FINISHED') {
             logCommandTelemetry('MATCH_COMPLETION_START', {

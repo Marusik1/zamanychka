@@ -13,7 +13,10 @@ declare global {
 
 export function gameplayTelemetryEnabled() {
   if (typeof window === 'undefined') return false;
-  return window.localStorage.getItem('zamanushka:gameplayTelemetry') === 'true';
+  return (
+    window.localStorage.getItem('zamanushka:gameplayTelemetry') === 'true' ||
+    import.meta.env.VITE_GAMEPLAY_DEBUG === 'true'
+  );
 }
 
 export function recordGameplayTelemetry(event: string, payload: Record<string, unknown> = {}) {

@@ -792,6 +792,7 @@ export function PlayableBetaPage({
     useState<PresentationControllerState | null>(null);
   const presentationControllerRef = useRef<PresentationControllerState | null>(null);
   presentationControllerRef.current = presentationController;
+  const presentationControllerCreateCountsRef = useRef(new Map<string, number>());
   const [presentationRuntime, setPresentationRuntime] =
     useState<GameplayAnimationRuntimeState | null>(null);
   const [lastSettledDiceValue, setLastSettledDiceValue] = useState<DieValue | null>(null);
@@ -806,6 +807,7 @@ export function PlayableBetaPage({
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const [lastSeenChatMessageId, setLastSeenChatMessageId] = useState<string | null>(null);
   const chatInitializedRoomIdRef = useRef<string | null>(null);
+  const gameBoardBranchSignatureRef = useRef<Readonly<Record<string, unknown>> | null>(null);
   const [historyItems, setHistoryItems] = useState<readonly MatchHistoryItem[]>([]);
 
   const isCurrentRoomScope = useCallback(
@@ -944,9 +946,12 @@ export function PlayableBetaPage({
       if (current && current.matchId === matchId) {
         return reconcileAuthoritativeSnapshot(current, matchId, snapshot);
       }
+      const createCount = (presentationControllerCreateCountsRef.current.get(matchId) ?? 0) + 1;
+      presentationControllerCreateCountsRef.current.set(matchId, createCount);
       recordGameplayTelemetry('PRESENTATION_CONTROLLER_CREATE', {
         matchId,
         stateVersion: snapshot.stateVersion,
+        createCount,
         reason: 'reconcile-presentation',
       });
       return createPresentationController(matchId, snapshot);
@@ -998,7 +1003,7 @@ export function PlayableBetaPage({
     source: 'realtime-event' | 'command-ack' | 'sync-recovery',
   ) {
     const optimistic = optimisticPresentationRef.current;
-    const skipPresentationReplay =
+    const cancelOptimisticBeforeCommittedReplay =
       source === 'command-ack' &&
       optimistic !== null &&
       optimistic.matchId === transition.matchId &&
@@ -1084,7 +1089,7 @@ export function PlayableBetaPage({
       }
     }
 
-    if (skipPresentationReplay) {
+    if (cancelOptimisticBeforeCommittedReplay) {
       optimistic.abort.abort();
       optimisticPresentationRef.current = null;
       recordGameplayTelemetry('PRESENTATION_OPTIMISTIC_ACK_APPLIED_WITHOUT_REPLAY', {
@@ -1095,37 +1100,63 @@ export function PlayableBetaPage({
         stateVersion: transition.stateVersion,
         transitionType: transition.events.map((event) => event.type).join('+'),
       });
-    } else {
-      setPresentationController((current) => {
-        if (!current || current.matchId !== transition.matchId) {
+    }
+    setPresentationController((current) => {
+      let baseController = current;
+      if (!baseController || baseController.matchId !== transition.matchId) {
+        if (currentMatch.status !== 'ready' || currentMatch.matchId !== transition.matchId) {
           return current;
         }
-
-        recordGameplayTelemetry('PRESENTATION_TRANSITION_ENQUEUE', {
+        const createCount = (presentationControllerCreateCountsRef.current.get(transition.matchId) ?? 0) + 1;
+        presentationControllerCreateCountsRef.current.set(transition.matchId, createCount);
+        recordGameplayTelemetry('PRESENTATION_CONTROLLER_CREATE', {
           matchId: transition.matchId,
-          eventId: transition.transitionId,
-          actionId: transition.actionId,
-          sequence: transition.toSequence,
-          stateVersion: transition.stateVersion,
-          transitionType: transition.events.map((event) => event.type).join('+'),
-          reason: source,
+          stateVersion: currentMatch.snapshot.stateVersion,
+          lastSequence: currentMatch.lastSequence,
+          createCount,
+          reason: 'committed-transition-ingest',
         });
-        const accepted = acceptCommittedTransition(current, transition);
-        if (
-          accepted.kind === 'recovery_required' &&
-          matchWatermarkRef.current?.matchId !== transition.matchId
-        ) {
-          void syncMatch(
-            transition.matchId,
-            current.authoritativeSnapshot.stateVersion,
-            current.authoritativeWatermark.lastSequence,
-          );
-        }
-        return accepted.state;
-      });
-    }
+        baseController = createPresentationController(transition.matchId, currentMatch.snapshot);
+      }
 
-    setMatch((current) => applyAuthoritativeTransitionToMatch(current, transition));
+      recordGameplayTelemetry('PRESENTATION_TRANSITION_ENQUEUE', {
+        matchId: transition.matchId,
+        eventId: transition.transitionId,
+        actionId: transition.actionId,
+        sequence: transition.toSequence,
+        stateVersion: transition.stateVersion,
+        transitionType: transition.events.map((event) => event.type).join('+'),
+        reason: source,
+      });
+      const accepted = acceptCommittedTransition(baseController, transition);
+      if (
+        accepted.kind === 'recovery_required' &&
+        matchWatermarkRef.current?.matchId !== transition.matchId
+      ) {
+        void syncMatch(
+          transition.matchId,
+          baseController.authoritativeSnapshot.stateVersion,
+          baseController.authoritativeWatermark.lastSequence,
+        );
+      }
+      return accepted.state;
+    });
+
+    setMatch((current) => {
+      const next = applyAuthoritativeTransitionToMatch(current, transition);
+      if (next !== current && next.status === 'ready') {
+        recordGameplayTelemetry('CLIENT_STATE_APPLIED', {
+          source,
+          matchId: transition.matchId,
+          actionId: transition.actionId,
+          transitionId: transition.transitionId,
+          stateVersion: next.snapshot.stateVersion,
+          lastSequence: next.lastSequence,
+          pending: next.pending,
+        });
+      }
+      return next;
+    });
   }
 
   function cancelOptimisticPresentation(matchId: string, actionId: string, reason: string) {
@@ -1320,13 +1351,31 @@ export function PlayableBetaPage({
               break;
             }
 
-            recordGameplayTelemetry('PRESENTATION_CONTROLLER_CREATE', {
-              matchId,
-              stateVersion: snapshot.stateVersion,
-              lastSequence: syncedLastSequence,
-              reason: isInitialHydration ? 'initial-sync' : 'sync',
-            });
-            let nextController = createPresentationController(matchId, snapshot);
+            const existingController =
+              presentationControllerRef.current?.matchId === matchId
+                ? presentationControllerRef.current
+                : null;
+            let nextController = existingController
+              ? reconcileAuthoritativeSnapshot(existingController, matchId, snapshot)
+              : createPresentationController(matchId, snapshot);
+            if (existingController) {
+              recordGameplayTelemetry('PRESENTATION_CONTROLLER_RECONCILE', {
+                matchId,
+                stateVersion: snapshot.stateVersion,
+                lastSequence: syncedLastSequence,
+                reason: isInitialHydration ? 'initial-sync' : 'sync',
+              });
+            } else {
+              const createCount = (presentationControllerCreateCountsRef.current.get(matchId) ?? 0) + 1;
+              presentationControllerCreateCountsRef.current.set(matchId, createCount);
+              recordGameplayTelemetry('PRESENTATION_CONTROLLER_CREATE', {
+                matchId,
+                stateVersion: snapshot.stateVersion,
+                lastSequence: syncedLastSequence,
+                createCount,
+                reason: isInitialHydration ? 'initial-sync' : 'sync',
+              });
+            }
             for (const transition of replayTransitions) {
               recordGameplayTelemetry('PRESENTATION_TRANSITION_ENQUEUE', {
                 matchId: transition.matchId,
@@ -1378,6 +1427,15 @@ export function PlayableBetaPage({
               lastSequence: authoritativeLastSequence,
               error: null,
               pending: false,
+            });
+            recordGameplayTelemetry('CLIENT_STATE_APPLIED', {
+              source: isInitialHydration ? 'initial-sync' : 'sync',
+              matchId,
+              stateVersion: authoritativeSnapshot.stateVersion,
+              lastSequence: authoritativeLastSequence,
+              pending: false,
+              bufferedTransitionCount: bufferedTransitions.length,
+              replayedTransitionCount: replayTransitions.length,
             });
 
             if (needsResync) {
@@ -1947,6 +2005,39 @@ export function PlayableBetaPage({
     ? statusCopy(displaySnapshot, authState.user.id, nonSurrenderActions.length)
     : null;
   const showFinishedMatch = displaySnapshot?.status === 'FINISHED';
+  const gameBoardBranchSignature = {
+    routeHash,
+    selectedRoomId,
+    roomId: room?.id ?? null,
+    roomStatus: room?.status ?? null,
+    roomCurrentMatchId: room?.currentMatchId ?? null,
+    matchStatus: match.status,
+    matchId: match.status === 'ready' ? match.matchId : null,
+    matchPending: match.status === 'ready' ? match.pending : null,
+    displaySnapshotStatus: displaySnapshot?.status ?? null,
+    displaySnapshotStateVersion: displaySnapshot?.stateVersion ?? null,
+    displaySnapshotLastSequence: displaySnapshot?.lastSequence ?? null,
+    hasGameScreen: Boolean(gameScreen),
+    showFinishedMatch,
+    willRenderGameBoard: Boolean(room && match.status === 'ready' && gameScreen),
+  };
+  useEffect(() => {
+    const previous = gameBoardBranchSignatureRef.current;
+    const changed = !previous
+      ? gameBoardBranchSignature
+      : Object.fromEntries(
+          Object.entries(gameBoardBranchSignature).filter(([key, next]) => previous[key] !== next),
+        );
+    if (Object.keys(changed).length > 0) {
+      recordGameplayTelemetry('GAMEBOARD_BRANCH_RENDER_STATE', {
+        component: 'PlayableBetaPage',
+        reason: 'parent conditional render inputs changed',
+        changed,
+        props: gameBoardBranchSignature,
+      });
+    }
+    gameBoardBranchSignatureRef.current = gameBoardBranchSignature;
+  });
   const activeDiceEvent = presentationController?.queue.active?.events.find(
     (event) => event.type === 'diceRolled',
   );
@@ -2921,6 +3012,9 @@ export function PlayableBetaPage({
             displaySnapshot.diceValue === 6 &&
             pawnActions.length > 0
           }
+          lifecycleReason={`route=${routeHash};room=${room?.id ?? 'none'};match=${match.matchId};state=${
+            displaySnapshot?.stateVersion ?? 'none'
+          };seq=${displaySnapshot?.lastSequence ?? 'none'}`}
           dieRolling={false}
           presentation={boardPresentationRuntime ?? undefined}
           victoryPlayerId={displaySnapshot?.winnerPlayerId ?? null}

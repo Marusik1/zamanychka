@@ -281,6 +281,15 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+function enableGameplayTelemetry() {
+  window.localStorage.setItem('zamanushka:gameplayTelemetry', 'true');
+  window.__zGameplayTelemetry = [];
+}
+
+function telemetryCount(event: string, predicate: (entry: Record<string, unknown>) => boolean = () => true) {
+  return (window.__zGameplayTelemetry ?? []).filter((entry) => entry.event === event && predicate(entry)).length;
+}
+
 function renderAuthenticated(
   hash = '#/rooms',
   options?: { roomApi?: RoomApi; realtime?: RealtimeClient; profileApi?: ProfileApi },
@@ -317,6 +326,8 @@ function useMobileViewport() {
 
 afterEach(() => {
   window.location.hash = '';
+  window.localStorage.removeItem('zamanushka:gameplayTelemetry');
+  window.__zGameplayTelemetry = [];
   vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -932,6 +943,217 @@ describe('playable beta room flow', () => {
       expect(document.querySelector('.game-board-scene__overlay-pawn [data-pawn-id="user-1-pawn-1"]')).not.toBeNull();
       expect(document.querySelector('.game-pawn--motion-entering')).not.toBeNull();
     });
+  });
+
+  it('keeps the active GameBoard, dice and presentation controller mounted through a realtime dice roll', async () => {
+    enableGameplayTelemetry();
+    const api = createRoomApi({
+      getRoom: vi.fn().mockResolvedValue(activeRoom({ currentMatchId: 'match-lifecycle' })),
+      reconnect: vi.fn().mockResolvedValue(activeRoom({ currentMatchId: 'match-lifecycle' })),
+    });
+    const realtime = createRealtimeClient({
+      sync: vi.fn().mockResolvedValue({
+        mode: 'snapshot',
+        snapshot: activeSnapshot({ stateVersion: 0, lastSequence: 0 }),
+        watermark: { stateVersion: 0, lastSequence: 0 },
+      }),
+    });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
+
+    await waitFor(() => {
+      expect(telemetryCount('GAMEBOARD_MOUNT')).toBe(1);
+      expect(telemetryCount('DICE_MOUNT')).toBe(1);
+      expect(telemetryCount('PRESENTATION_CONTROLLER_CREATE')).toBe(1);
+    });
+
+    realtime.__emitTransition?.(
+      transitionEnvelope({
+        matchId: 'match-lifecycle',
+        transitionId: 'dice-lifecycle-1',
+        stateVersion: 1,
+        fromSequence: 1,
+        toSequence: 1,
+        events: [
+          {
+            matchId: 'match-lifecycle',
+            eventId: 'dice-lifecycle-event-1',
+            sequence: 1,
+            stateVersion: 1,
+            type: 'diceRolled',
+            payload: { playerId: 'user-1', diceValue: 6 },
+            createdAt: '2026-09-01T10:00:01.000Z',
+          },
+        ],
+        watermark: { stateVersion: 1, lastSequence: 1 },
+        snapshot: activeSnapshot({
+          stateVersion: 1,
+          lastSequence: 1,
+          turnPhase: 'WAITING_FOR_ACTION',
+          diceValue: 6,
+        }),
+      }),
+    );
+
+    await waitFor(() => {
+      expect(telemetryCount('CLIENT_STATE_APPLIED', (entry) => entry.transitionId === 'dice-lifecycle-1')).toBe(1);
+      expect(
+        telemetryCount(
+          'DICE_RENDER_PROPS_CHANGED',
+          (entry) => (entry.props as { value?: number } | undefined)?.value === 6,
+        ),
+      ).toBeGreaterThan(0);
+    });
+
+    expect(telemetryCount('GAMEBOARD_MOUNT')).toBe(1);
+    expect(telemetryCount('GAMEBOARD_UNMOUNT')).toBe(0);
+    expect(telemetryCount('DICE_MOUNT')).toBe(1);
+    expect(telemetryCount('DICE_UNMOUNT')).toBe(0);
+    expect(telemetryCount('PRESENTATION_CONTROLLER_CREATE')).toBe(1);
+  });
+
+  it('keeps board pawn renderer identity stable when a pawn becomes actionable and then moves', async () => {
+    enableGameplayTelemetry();
+    const initialSnapshot = activeSnapshot({
+      stateVersion: 0,
+      lastSequence: 0,
+      turnPhase: 'WAITING_FOR_ROLL',
+      diceValue: null,
+      pawns: activeSnapshot().pawns.map((pawn) =>
+        pawn.pawnId === 'user-1-pawn-1'
+          ? { ...pawn, position: { zone: 'PERIMETER', progress: 0 } }
+          : pawn,
+      ),
+    });
+    const api = createRoomApi({
+      getRoom: vi.fn().mockResolvedValue(activeRoom({ currentMatchId: 'match-pawn-lifecycle' })),
+      reconnect: vi.fn().mockResolvedValue(activeRoom({ currentMatchId: 'match-pawn-lifecycle' })),
+    });
+    const realtime = createRealtimeClient({
+      sync: vi.fn().mockResolvedValue({
+        mode: 'snapshot',
+        snapshot: initialSnapshot,
+        watermark: { stateVersion: 0, lastSequence: 0 },
+      }),
+    });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
+
+    await waitFor(() => {
+      expect(
+        telemetryCount(
+          'PAWN_RENDERER_MOUNT',
+          (entry) =>
+            (entry.props as { pawnId?: string; size?: string } | undefined)?.pawnId === 'user-1-pawn-1' &&
+            (entry.props as { pawnId?: string; size?: string } | undefined)?.size === 'board',
+        ),
+      ).toBe(1);
+    });
+    const initialPawnMounts = telemetryCount(
+      'PAWN_RENDERER_MOUNT',
+      (entry) =>
+        (entry.props as { pawnId?: string; size?: string } | undefined)?.pawnId === 'user-1-pawn-1' &&
+        (entry.props as { pawnId?: string; size?: string } | undefined)?.size === 'board',
+    );
+
+    realtime.__emitTransition?.(
+      transitionEnvelope({
+        matchId: 'match-pawn-lifecycle',
+        transitionId: 'dice-pawn-lifecycle-1',
+        stateVersion: 1,
+        fromSequence: 1,
+        toSequence: 1,
+        events: [
+          {
+            matchId: 'match-pawn-lifecycle',
+            eventId: 'dice-pawn-lifecycle-event-1',
+            sequence: 1,
+            stateVersion: 1,
+            type: 'diceRolled',
+            payload: { playerId: 'user-1', diceValue: 2 },
+            createdAt: '2026-09-01T10:00:01.000Z',
+          },
+        ],
+        watermark: { stateVersion: 1, lastSequence: 1 },
+        snapshot: {
+          ...initialSnapshot,
+          stateVersion: 1,
+          lastSequence: 1,
+          turnPhase: 'WAITING_FOR_ACTION',
+          diceValue: 2,
+        },
+      }),
+    );
+
+    await waitFor(() => {
+      expect(telemetryCount('CLIENT_STATE_APPLIED', (entry) => entry.transitionId === 'dice-pawn-lifecycle-1')).toBe(1);
+    });
+
+    realtime.__emitTransition?.(
+      transitionEnvelope({
+        matchId: 'match-pawn-lifecycle',
+        transitionId: 'move-pawn-lifecycle-1',
+        stateVersion: 2,
+        fromSequence: 2,
+        toSequence: 2,
+        events: [
+          {
+            matchId: 'match-pawn-lifecycle',
+            eventId: 'move-pawn-lifecycle-event-1',
+            sequence: 2,
+            stateVersion: 2,
+            type: 'pawnMoved',
+            payload: {
+              pawnId: 'user-1-pawn-1',
+              playerId: 'user-1',
+              fromCoord: { row: 0, col: 0 },
+              toCoord: { row: 0, col: 2 },
+              physicalPath: [
+                { row: 0, col: 1 },
+                { row: 0, col: 2 },
+              ],
+              capture: null,
+            },
+            createdAt: '2026-09-01T10:00:02.000Z',
+          },
+        ],
+        watermark: { stateVersion: 2, lastSequence: 2 },
+        snapshot: {
+          ...initialSnapshot,
+          stateVersion: 2,
+          lastSequence: 2,
+          turnPhase: 'WAITING_FOR_ROLL',
+          diceValue: null,
+          currentPlayerId: 'user-2',
+          pawns: initialSnapshot.pawns.map((pawn) =>
+            pawn.pawnId === 'user-1-pawn-1'
+              ? { ...pawn, position: { zone: 'PERIMETER', progress: 2 } }
+              : pawn,
+          ),
+        },
+      }),
+    );
+
+    await waitFor(() => {
+      expect(telemetryCount('CLIENT_STATE_APPLIED', (entry) => entry.transitionId === 'move-pawn-lifecycle-1')).toBe(1);
+    });
+
+    expect(
+      telemetryCount(
+        'PAWN_RENDERER_MOUNT',
+        (entry) =>
+          (entry.props as { pawnId?: string; size?: string } | undefined)?.pawnId === 'user-1-pawn-1' &&
+          (entry.props as { pawnId?: string; size?: string } | undefined)?.size === 'board',
+      ),
+    ).toBe(initialPawnMounts);
+    expect(
+      telemetryCount(
+        'PAWN_RENDERER_UNMOUNT',
+        (entry) =>
+          (entry.props as { pawnId?: string; size?: string } | undefined)?.pawnId === 'user-1-pawn-1' &&
+          (entry.props as { pawnId?: string; size?: string } | undefined)?.size === 'board',
+      ),
+    ).toBe(0);
   });
 
   it('applies a realtime event that arrives while initial sync is in flight after the synced snapshot', async () => {

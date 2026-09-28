@@ -1,6 +1,7 @@
-import { useId, type ReactNode } from 'react';
+import { useEffect, useId, useRef, type ReactNode } from 'react';
 
 import type { GameScreenPawnView } from './domain.js';
+import { recordGameplayTelemetry } from './gameplay-telemetry.js';
 
 type PawnTone = 'red' | 'blue' | 'green' | 'yellow';
 
@@ -94,6 +95,68 @@ export function GamePawn({
   const palette = pawnPalette[tone];
   const instanceId = safeToken(useId());
   const id = `${safeToken(pawn.pawnId)}-${instanceId}`;
+  const renderSignatureRef = useRef<Readonly<Record<string, unknown>> | null>(null);
+
+  useEffect(() => {
+    const props = {
+      pawnId: pawn.pawnId,
+      playerId: pawn.playerId,
+      color: pawn.color,
+      zone: pawn.position.zone,
+      coordKey: pawn.coordKey ?? null,
+      motion,
+      size,
+    };
+    recordGameplayTelemetry('PAWN_RENDERER_MOUNT', {
+      component: 'GamePawn',
+      reason: 'React mounted pawn renderer; check parent key/type and pawn size/layer',
+      props,
+      pawnId: pawn.pawnId,
+      playerId: pawn.playerId,
+      color: pawn.color,
+      zone: pawn.position.zone,
+      motion,
+      size,
+    });
+    return () => {
+      recordGameplayTelemetry('PAWN_RENDERER_UNMOUNT', {
+        component: 'GamePawn',
+        reason: 'React unmounted pawn renderer; check parent key/type and pawn size/layer',
+        props,
+        pawnId: pawn.pawnId,
+        playerId: pawn.playerId,
+        color: pawn.color,
+        zone: pawn.position.zone,
+        motion,
+        size,
+      });
+    };
+  }, []);
+
+  useEffect(() => {
+    const nextSignature = {
+      pawnId: pawn.pawnId,
+      playerId: pawn.playerId,
+      color: pawn.color,
+      zone: pawn.position.zone,
+      coordKey: pawn.coordKey ?? null,
+      motion,
+      size,
+    };
+    const previous = renderSignatureRef.current;
+    const changed = !previous
+      ? nextSignature
+      : Object.fromEntries(Object.entries(nextSignature).filter(([key, next]) => previous[key] !== next));
+    if (Object.keys(changed).length > 0) {
+      recordGameplayTelemetry('PAWN_RENDERER_PROPS_CHANGED', {
+        component: 'GamePawn',
+        reason: 'props update without remount',
+        changed,
+        props: nextSignature,
+      });
+    }
+    renderSignatureRef.current = nextSignature;
+  });
 
   return (
     <div

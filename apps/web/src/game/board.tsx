@@ -17,6 +17,7 @@ import type {
 import { GameAvatar } from './avatar.js';
 import type { GameScreenPawnView, GameScreenPlayerView } from './domain.js';
 import { GameDie, type DieValue, type GameDieHandle } from './dice.js';
+import { recordGameplayTelemetry } from './gameplay-telemetry.js';
 import { GamePawn, type PawnMotion } from './pawns.js';
 import {
   PremiumAnimationBridge,
@@ -66,6 +67,17 @@ interface GameBoardProps {
   interactionDisabled?: boolean;
   mobileLayout?: boolean;
   showMobilePawnTray?: boolean;
+  lifecycleReason?: string;
+}
+
+function diffSignature(
+  previous: Readonly<Record<string, unknown>> | null,
+  next: Readonly<Record<string, unknown>>,
+) {
+  if (!previous) return next;
+  return Object.fromEntries(
+    Object.entries(next).filter(([key, value]) => previous[key] !== value),
+  );
 }
 
 interface BoardCell {
@@ -336,6 +348,7 @@ export const GameBoard = forwardRef<PremiumPresentationHandle, GameBoardProps>(f
   interactionDisabled = false,
   mobileLayout = false,
   showMobilePawnTray = false,
+  lifecycleReason = 'unknown',
 }: GameBoardProps, forwardedRef) {
   const cells = createBoardCells();
   const hiddenPawnIds = new Set(presentation?.hiddenPawnIds ?? []);
@@ -371,6 +384,7 @@ export const GameBoard = forwardRef<PremiumPresentationHandle, GameBoardProps>(f
   const audioRef = useRef(new PremiumGameAudio());
   const [toast, setToast] = useState<BoardToast | null>(null);
   const actionablePawnIdSet = useMemo(() => new Set(actionablePawnIds), [actionablePawnIds]);
+  const renderSignatureRef = useRef<Readonly<Record<string, unknown>> | null>(null);
 
   useEffect(() => {
     if (!presentation?.toast) return;
@@ -447,18 +461,13 @@ export const GameBoard = forwardRef<PremiumPresentationHandle, GameBoardProps>(f
     size: 'reserve' | 'panel' | 'board' | 'tray',
   ) {
     const actionable = actionablePawnIdSet.has(pawn.pawnId) && Boolean(onPawnSelect);
-    const content = (
-      <GamePawn key={`${pawn.pawnId}-${size}`} pawn={pawn} motion={motion} size={size} />
-    );
-
-    if (!actionable) return content;
-
     return (
       <button
-        key={`${pawn.pawnId}-${size}`}
+        key={pawn.pawnId}
         type="button"
         className="game-board-scene__pawn-button"
         onClick={(event) => {
+          if (!actionable || interactionDisabled) return;
           // The authoritative transition can replace this button immediately.
           // Do not leave a disappearing pawn control focused on mobile WebViews:
           // their focus-preservation scroll otherwise shifts the gameplay viewport.
@@ -466,12 +475,77 @@ export const GameBoard = forwardRef<PremiumPresentationHandle, GameBoardProps>(f
           onPawnSelect?.(pawn.pawnId);
         }}
         aria-label={pawnActionLabels[pawn.pawnId] ?? `Пешка ${pawn.pawnId}`}
-        disabled={interactionDisabled}
+        disabled={!actionable || interactionDisabled}
+        data-actionable={actionable || undefined}
       >
-        {content}
+        <GamePawn pawn={pawn} motion={motion} size={size} />
       </button>
     );
   }
+
+  useEffect(() => {
+    const signature = {
+      lifecycleReason,
+      pawnCount: pawns.length,
+      activePawnCount: activePawns.length,
+      reservePawnCount: reservePawns.length,
+      removedPawnCount: removedPawns.length,
+      playerCount: players.length,
+      dieValue: effectiveDieValue,
+      dieRolling: effectiveDieRolling,
+      currentPlayerId: effectiveCurrentPlayerId,
+      selectedPawnId: selectedPawnId ?? null,
+      actionablePawnCount: actionablePawnIds.length,
+      interactionDisabled,
+      mobileLayout,
+      showMobilePawnTray,
+      presentationActive: Boolean(presentation),
+      presentationPawnVisualCount: Object.keys(presentation?.pawnVisuals ?? {}).length,
+    };
+    recordGameplayTelemetry('GAMEBOARD_MOUNT', {
+      component: 'GameBoard',
+      reason: lifecycleReason,
+      props: signature,
+    });
+    return () => {
+      recordGameplayTelemetry('GAMEBOARD_UNMOUNT', {
+        component: 'GameBoard',
+        reason: lifecycleReason,
+        props: signature,
+      });
+    };
+  }, []);
+
+  useEffect(() => {
+    const nextSignature = {
+      lifecycleReason,
+      pawnCount: pawns.length,
+      activePawnCount: activePawns.length,
+      reservePawnCount: reservePawns.length,
+      removedPawnCount: removedPawns.length,
+      playerCount: players.length,
+      dieValue: effectiveDieValue,
+      dieRolling: effectiveDieRolling,
+      currentPlayerId: effectiveCurrentPlayerId,
+      selectedPawnId: selectedPawnId ?? null,
+      actionablePawnCount: actionablePawnIds.length,
+      interactionDisabled,
+      mobileLayout,
+      showMobilePawnTray,
+      presentationActive: Boolean(presentation),
+      presentationPawnVisualCount: Object.keys(presentation?.pawnVisuals ?? {}).length,
+    };
+    const changed = diffSignature(renderSignatureRef.current, nextSignature);
+    if (Object.keys(changed).length > 0) {
+      recordGameplayTelemetry('GAMEBOARD_RENDER_PROPS_CHANGED', {
+        component: 'GameBoard',
+        reason: lifecycleReason,
+        changed,
+        props: nextSignature,
+      });
+    }
+    renderSignatureRef.current = nextSignature;
+  });
 
   return (
     <section

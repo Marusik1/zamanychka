@@ -64,7 +64,10 @@ function ackPromise<T>(emit: (ack: (value: unknown) => void) => void, parser: (v
 
 function telemetryEnabled() {
   if (typeof window === 'undefined') return false;
-  return window.localStorage.getItem('zamanushka:gameplayTelemetry') === 'true';
+  return (
+    window.localStorage.getItem('zamanushka:gameplayTelemetry') === 'true' ||
+    import.meta.env.VITE_GAMEPLAY_DEBUG === 'true'
+  );
 }
 
 function recordTelemetry(event: string, payload: Record<string, unknown> = {}) {
@@ -86,6 +89,7 @@ export function createRealtimeClient(): RealtimeClient {
   let disconnectCount = 0;
   let connectErrorCount = 0;
   let reconnectCount = 0;
+  let lastReceivedSequence = 0;
 
   function currentSocket() {
     if (socket) return socket;
@@ -153,9 +157,11 @@ export function createRealtimeClient(): RealtimeClient {
         stateVersion: parsed.data.stateVersion,
         fromSequence: parsed.data.fromSequence,
         toSequence: parsed.data.toSequence,
+        previousReceivedSequence: lastReceivedSequence,
         eventCount: parsed.data.events.length,
         listenerCount: listeners.size,
       });
+      lastReceivedSequence = Math.max(lastReceivedSequence, parsed.data.toSequence);
       listeners.forEach((listener) => listener(parsed.data));
       recordTelemetry('game-event-dispatched-to-listeners', {
         matchId: parsed.data.matchId,
@@ -199,6 +205,8 @@ export function createRealtimeClient(): RealtimeClient {
     },
     async joinMatch(matchId) {
       await this.ensureConnected();
+      const joinedAt = performance.now();
+      recordTelemetry('match-join-sent', { matchId, socketId: currentSocket().id });
       const request: MatchSubscriptionRequest = { matchId };
       await ackPromise(
         (ack) =>
@@ -214,6 +222,11 @@ export function createRealtimeClient(): RealtimeClient {
             'ok' in value &&
             (value as { ok: boolean }).ok === true
           ) {
+            recordTelemetry('match-join-ack', {
+              matchId,
+              socketId: currentSocket().id,
+              joinRoundTripMs: Math.round((performance.now() - joinedAt) * 100) / 100,
+            });
             return undefined;
           }
           const code =
@@ -230,9 +243,21 @@ export function createRealtimeClient(): RealtimeClient {
     },
     async sync(request) {
       await this.ensureConnected();
+      const syncStartedAt = performance.now();
+      recordTelemetry('game-sync-sent', request);
       return ackPromise(
         (ack) => currentSocket().emit('game:sync', request, ack),
-        (value) => gameSyncResponseSchema.parse(value),
+        (value) => {
+          const parsed = gameSyncResponseSchema.parse(value);
+          recordTelemetry('game-sync-ack', {
+            matchId: request.matchId,
+            mode: parsed.mode,
+            stateVersion: parsed.watermark.stateVersion,
+            lastSequence: parsed.watermark.lastSequence,
+            syncRoundTripMs: Math.round((performance.now() - syncStartedAt) * 100) / 100,
+          });
+          return parsed;
+        },
       );
     },
     async sendCommand(command) {
