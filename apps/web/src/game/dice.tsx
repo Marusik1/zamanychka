@@ -27,9 +27,7 @@ export const GameDie = forwardRef<
     forwardedRef,
     () => ({
       ready: premiumReady,
-      beginRoll() {
-        premiumRef.current?.beginRoll();
-      },
+      beginRoll() {},
       snapToValue(nextValue) {
         premiumRef.current?.snapToValue(nextValue);
       },
@@ -45,7 +43,6 @@ export const GameDie = forwardRef<
       <PremiumDice3D
         ref={premiumRef}
         value={value}
-        rolling={false}
         label={label}
         className="game-die"
         onReady={() => setPremiumReady(true)}

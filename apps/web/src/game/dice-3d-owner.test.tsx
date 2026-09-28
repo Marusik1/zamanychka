@@ -37,10 +37,10 @@ describe('GameDie 3D orientation ownership', () => {
     expect(mocks.premiumDice3D).toHaveBeenCalledWith(
       expect.objectContaining({
         value: 4,
-        rolling: false,
       }),
       undefined,
     );
+    expect(mocks.premiumDice3D.mock.calls.at(-1)?.[0]).not.toHaveProperty('rolling');
     expect(mocks.premiumDieV2).toHaveBeenCalledWith(
       expect.objectContaining({
         value: 4,
@@ -50,12 +50,12 @@ describe('GameDie 3D orientation ownership', () => {
     );
   });
 
-  it('exposes an imperative beginRoll for instant real 3D feedback', () => {
+  it('keeps beginRoll away from the real 3D die so committed throw remains the only 3D owner', () => {
     const ref = createRef<ElementRef<typeof GameDie>>();
     render(<GameDie ref={ref} value={4} />);
 
     ref.current?.beginRoll();
 
-    expect(mocks.beginRoll).toHaveBeenCalledOnce();
+    expect(mocks.beginRoll).not.toHaveBeenCalled();
   });
 });
