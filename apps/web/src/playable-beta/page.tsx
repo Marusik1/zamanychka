@@ -755,6 +755,11 @@ export function PlayableBetaPage({
     stateVersion: number;
     lastSequence: number;
   } | null>(null);
+  const committedTransitionIngestionRef = useRef<{
+    matchId: string;
+    transitionIds: Set<string>;
+    lastSequence: number;
+  } | null>(null);
   const hydrationRef = useRef<{
     matchId: string;
     scope: number;
@@ -821,6 +826,7 @@ export function PlayableBetaPage({
     matchScopeRef.current += 1;
     activeMatchRef.current = null;
     matchWatermarkRef.current = null;
+    committedTransitionIngestionRef.current = null;
     hydrationRef.current = null;
     syncInFlightRef.current = null;
     commandInFlightRef.current = null;
@@ -987,10 +993,36 @@ export function PlayableBetaPage({
     };
   }
 
-  function applyCommittedTransition(
+  function ingestCommittedTransition(
     transition: TransitionEnvelope,
-    reason: 'realtime-event' | 'command-ack' | 'sync-recovery',
+    source: 'realtime-event' | 'command-ack' | 'sync-recovery',
   ) {
+    const optimistic = optimisticPresentationRef.current;
+    const skipPresentationReplay =
+      source === 'command-ack' &&
+      optimistic !== null &&
+      optimistic.matchId === transition.matchId &&
+      optimistic.actionId === transition.actionId;
+
+    const committedTransitionIngestion = committedTransitionIngestionRef.current;
+    if (committedTransitionIngestion?.matchId === transition.matchId) {
+      const duplicateByTransitionId =
+        committedTransitionIngestion.transitionIds.has(transition.transitionId);
+      const duplicateBySequence =
+        transition.toSequence <= committedTransitionIngestion.lastSequence;
+      if (duplicateByTransitionId || duplicateBySequence) {
+        recordGameplayTelemetry('PRESENTATION_TRANSITION_DUPLICATE_AFTER_LOCAL_COMMIT', {
+          matchId: transition.matchId,
+          eventId: transition.transitionId,
+          actionId: transition.actionId,
+          sequence: transition.toSequence,
+          currentSequence: committedTransitionIngestion.lastSequence,
+          reason: source,
+        });
+        return;
+      }
+    }
+
     const currentMatch = matchRef.current;
     if (
       currentMatch.status === 'ready' &&
@@ -1003,7 +1035,7 @@ export function PlayableBetaPage({
         actionId: transition.actionId,
         sequence: transition.toSequence,
         currentSequence: currentMatch.lastSequence,
-        reason,
+        reason: source,
       });
       return;
     }
@@ -1029,102 +1061,71 @@ export function PlayableBetaPage({
       };
     }
 
-    setPresentationController((current) => {
-      if (!current || current.matchId !== transition.matchId) {
-        return current;
+    const latestCommittedTransitionIngestion = committedTransitionIngestionRef.current;
+    const lastKnownCommittedSequence =
+      latestCommittedTransitionIngestion?.matchId === transition.matchId
+        ? latestCommittedTransitionIngestion.lastSequence
+        : latestMatch.status === 'ready' && latestMatch.matchId === transition.matchId
+          ? latestMatch.lastSequence
+          : null;
+    if (lastKnownCommittedSequence === null || transition.fromSequence === lastKnownCommittedSequence + 1) {
+      if (latestCommittedTransitionIngestion?.matchId === transition.matchId) {
+        latestCommittedTransitionIngestion.transitionIds.add(transition.transitionId);
+        latestCommittedTransitionIngestion.lastSequence = Math.max(
+          latestCommittedTransitionIngestion.lastSequence,
+          transition.toSequence,
+        );
+      } else {
+        committedTransitionIngestionRef.current = {
+          matchId: transition.matchId,
+          transitionIds: new Set([transition.transitionId]),
+          lastSequence: transition.toSequence,
+        };
       }
+    }
 
-      recordGameplayTelemetry('PRESENTATION_TRANSITION_ENQUEUE', {
+    if (skipPresentationReplay) {
+      optimistic.abort.abort();
+      optimisticPresentationRef.current = null;
+      recordGameplayTelemetry('PRESENTATION_OPTIMISTIC_ACK_APPLIED_WITHOUT_REPLAY', {
         matchId: transition.matchId,
         eventId: transition.transitionId,
         actionId: transition.actionId,
         sequence: transition.toSequence,
         stateVersion: transition.stateVersion,
         transitionType: transition.events.map((event) => event.type).join('+'),
-        reason,
       });
-      const accepted = acceptCommittedTransition(current, transition);
-      if (
-        accepted.kind === 'recovery_required' &&
-        matchWatermarkRef.current?.matchId !== transition.matchId
-      ) {
-        void syncMatch(
-          transition.matchId,
-          current.authoritativeSnapshot.stateVersion,
-          current.authoritativeWatermark.lastSequence,
-        );
-      }
-      return accepted.state;
-    });
+    } else {
+      setPresentationController((current) => {
+        if (!current || current.matchId !== transition.matchId) {
+          return current;
+        }
+
+        recordGameplayTelemetry('PRESENTATION_TRANSITION_ENQUEUE', {
+          matchId: transition.matchId,
+          eventId: transition.transitionId,
+          actionId: transition.actionId,
+          sequence: transition.toSequence,
+          stateVersion: transition.stateVersion,
+          transitionType: transition.events.map((event) => event.type).join('+'),
+          reason: source,
+        });
+        const accepted = acceptCommittedTransition(current, transition);
+        if (
+          accepted.kind === 'recovery_required' &&
+          matchWatermarkRef.current?.matchId !== transition.matchId
+        ) {
+          void syncMatch(
+            transition.matchId,
+            current.authoritativeSnapshot.stateVersion,
+            current.authoritativeWatermark.lastSequence,
+          );
+        }
+        return accepted.state;
+      });
+    }
 
     setMatch((current) => applyAuthoritativeTransitionToMatch(current, transition));
-  }
-
-  function applyOptimisticAckWithoutReplay(transition: TransitionEnvelope) {
-    const diceEvent = transition.events.find((event) => event.type === 'diceRolled');
-    if (diceEvent?.type === 'diceRolled') {
-      setLastSettledDiceValue(diceEvent.payload.diceValue as DieValue);
-    }
-
-    recordGameplayTelemetry('PRESENTATION_OPTIMISTIC_ACK_APPLIED_WITHOUT_REPLAY', {
-      matchId: transition.matchId,
-      eventId: transition.transitionId,
-      actionId: transition.actionId,
-      sequence: transition.toSequence,
-      stateVersion: transition.stateVersion,
-      transitionType: transition.events.map((event) => event.type).join('+'),
-    });
-
-    setHistoryItems((items) =>
-      mergeHistoryItems(
-        items,
-        transition.events.map((event) => describeEvent(transition.snapshot, event)),
-      ),
-    );
-
-    matchWatermarkRef.current = {
-      matchId: transition.matchId,
-      stateVersion: transition.snapshot.stateVersion,
-      lastSequence: transition.toSequence,
-    };
-    const optimistic = optimisticPresentationRef.current;
-    if (
-      optimistic &&
-      optimistic.matchId === transition.matchId &&
-      optimistic.actionId === transition.actionId
-    ) {
-      optimistic.abort.abort();
-      optimisticPresentationRef.current = null;
-    }
-
-    const latestMatch = matchRef.current;
-    if (
-      latestMatch.status === 'ready' &&
-      latestMatch.matchId === transition.matchId &&
-      transition.toSequence > latestMatch.lastSequence
-    ) {
-      matchRef.current = {
-        ...latestMatch,
-        snapshot: transition.snapshot,
-        lastSequence: transition.toSequence,
-        error: null,
-        pending: false,
-      };
-    }
-
-    setMatch((current) =>
-      current.status === 'ready' &&
-      current.matchId === transition.matchId &&
-      transition.toSequence > current.lastSequence
-        ? {
-            ...current,
-            snapshot: transition.snapshot,
-            lastSequence: transition.toSequence,
-            error: null,
-            pending: false,
-          }
-        : current,
-    );
   }
 
   function cancelOptimisticPresentation(matchId: string, actionId: string, reason: string) {
@@ -1393,7 +1394,7 @@ export function PlayableBetaPage({
                   left.transitionId.localeCompare(right.transitionId),
               );
               for (const transition of transitions) {
-                applyCommittedTransition(transition, 'sync-recovery');
+                ingestCommittedTransition(transition, 'sync-recovery');
               }
               return;
             }
@@ -1625,6 +1626,7 @@ export function PlayableBetaPage({
       }
       activeMatchRef.current = null;
       matchWatermarkRef.current = null;
+      committedTransitionIngestionRef.current = null;
       hydrationRef.current = null;
       setPresentationController(null);
       setPresentationRuntime(null);
@@ -1774,7 +1776,7 @@ export function PlayableBetaPage({
         return;
       }
 
-      applyCommittedTransition(transition, 'realtime-event');
+      ingestCommittedTransition(transition, 'realtime-event');
     });
   }, [realtimeClient, syncMatch]);
 
@@ -2570,7 +2572,7 @@ export function PlayableBetaPage({
             );
             const retryTransition = transitionFromCommandResult(retryResult);
             if (retryTransition) {
-              applyCommittedTransition(retryTransition, 'command-ack');
+              ingestCommittedTransition(retryTransition, 'command-ack');
             }
             return;
           }
@@ -2608,16 +2610,7 @@ export function PlayableBetaPage({
       );
       const ackTransition = transitionFromCommandResult(result);
       if (ackTransition) {
-        const optimistic = optimisticPresentationRef.current;
-        if (
-          optimistic &&
-          optimistic.matchId === ackTransition.matchId &&
-          optimistic.actionId === ackTransition.actionId
-        ) {
-          applyOptimisticAckWithoutReplay(ackTransition);
-        } else {
-          applyCommittedTransition(ackTransition, 'command-ack');
-        }
+        ingestCommittedTransition(ackTransition, 'command-ack');
       }
       if (ackSyncTimeoutRef.current !== null) {
         window.clearTimeout(ackSyncTimeoutRef.current);

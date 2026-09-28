@@ -1706,6 +1706,33 @@ describe('playable beta room flow', () => {
 
     realtime.__emitTransition?.(
       transitionEnvelope({
+        transitionId: 'roll-action-1',
+        actionId: 'roll-action-1',
+        stateVersion: 1,
+        fromSequence: 1,
+        toSequence: 1,
+        watermark: { stateVersion: 1, lastSequence: 1 },
+        events: [
+          {
+            matchId: 'match-1',
+            eventId: 'roll-event-1',
+            sequence: 1,
+            stateVersion: 1,
+            type: 'diceRolled',
+            payload: { playerId: 'user-1', diceValue: 6 },
+            createdAt: '2026-09-01T10:00:01.000Z',
+          },
+        ],
+        snapshot: ackSnapshot,
+      }),
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(document.querySelector('.game-die--rolling')).toBeNull();
+    expect(screen.getByLabelText(/Кубик: 6/)).toBeVisible();
+
+    realtime.__emitTransition?.(
+      transitionEnvelope({
         transitionId: 'turn-event-2',
         actionId: 'move-action-2',
         stateVersion: 2,
@@ -1736,6 +1763,109 @@ describe('playable beta room flow', () => {
 
     await waitFor(() => expect(screen.getByLabelText(/Кубик: 6/)).toBeVisible());
     expect(screen.queryByLabelText(/Кубик: 4/)).toBeNull();
+  });
+
+  it('deduplicates a later command ACK when the socket transition already drove presentation', async () => {
+    const api = createRoomApi({
+      getRoom: vi.fn().mockResolvedValue(activeRoom()),
+      reconnect: vi.fn().mockResolvedValue(activeRoom()),
+    });
+    const ackSnapshot = activeSnapshot({
+      stateVersion: 1,
+      lastSequence: 1,
+      turnPhase: 'WAITING_FOR_ACTION',
+      diceValue: 6,
+    });
+    let resolveCommand:
+      | ((value: Awaited<ReturnType<NonNullable<RealtimeClient['sendCommand']>>>) => void)
+      | null = null;
+    const realtime = createRealtimeClient({
+      sync: vi.fn().mockResolvedValue({
+        mode: 'snapshot',
+        snapshot: activeSnapshot(),
+        watermark: { stateVersion: 0, lastSequence: 0 },
+      }),
+      sendCommand: vi.fn(
+        () =>
+          new Promise<Awaited<ReturnType<NonNullable<RealtimeClient['sendCommand']>>>>((resolve) => {
+            resolveCommand = resolve;
+          }),
+      ),
+    });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
+
+    const rollButton = await screen.findByRole('button', { name: /Бросить кубик/ });
+    fireEvent.click(rollButton);
+
+    await waitFor(() => expect(realtime.sendCommand).toHaveBeenCalledTimes(1));
+    const command = vi.mocked(realtime.sendCommand).mock.calls[0]?.[0];
+    expect(command?.type).toBe('ROLL_DICE');
+    expect(resolveCommand).not.toBeNull();
+
+    realtime.__emitTransition?.(
+      transitionEnvelope({
+        transitionId: command?.actionId ?? 'roll-action-1',
+        actionId: command?.actionId ?? 'roll-action-1',
+        stateVersion: 1,
+        fromSequence: 1,
+        toSequence: 1,
+        watermark: { stateVersion: 1, lastSequence: 1 },
+        events: [
+          {
+            matchId: 'match-1',
+            eventId: 'roll-event-1',
+            sequence: 1,
+            stateVersion: 1,
+            type: 'diceRolled',
+            payload: { playerId: 'user-1', diceValue: 6 },
+            createdAt: '2026-09-01T10:00:01.000Z',
+          },
+        ],
+        snapshot: ackSnapshot,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(document.querySelector('.game-die--rolling')).not.toBeNull();
+      expect(screen.getByLabelText(/Кубик: 6/)).toBeVisible();
+    });
+    await waitFor(
+      () => {
+        expect(document.querySelector('.game-die--rolling')).toBeNull();
+        expect(screen.getByLabelText(/Кубик: 6/)).toBeVisible();
+      },
+      { timeout: 2_000 },
+    );
+
+    resolveCommand!({
+      ok: true,
+      matchId: 'match-1',
+      actionId: command?.actionId ?? 'roll-action-1',
+      stateVersion: 1,
+      lastSequence: 1,
+      snapshot: ackSnapshot,
+      events: [
+        {
+          matchId: 'match-1',
+          eventId: 'roll-event-1',
+          sequence: 1,
+          stateVersion: 1,
+          type: 'diceRolled',
+          payload: { playerId: 'user-1', diceValue: 6 },
+          createdAt: '2026-09-01T10:00:01.000Z',
+        },
+      ],
+      ack: {
+        actionId: command?.actionId ?? 'roll-action-1',
+        stateVersion: 1,
+        lastSequence: 1,
+      },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(document.querySelector('.game-die--rolling')).toBeNull();
+    expect(screen.getByLabelText(/Кубик: 6/)).toBeVisible();
   });
 
   it('replays recovered sync events through the presentation queue', async () => {
