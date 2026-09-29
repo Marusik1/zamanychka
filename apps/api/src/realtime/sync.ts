@@ -82,14 +82,18 @@ export function createGameSyncService(options: {
       });
     }
 
-    const rows = await options.prisma.outboxRow.findMany({
+    const candidateRows = await options.prisma.outboxRow.findMany({
       where: {
         matchId: request.matchId,
-        resultingStateVersion: { gt: request.stateVersion, lte: match.stateVersion },
+        resultingStateVersion: { lte: match.stateVersion },
       },
       orderBy: { resultingStateVersion: 'asc' },
     });
     const snapshotState = match.snapshot as Prisma.InputJsonObject;
+    const rows = candidateRows.filter((row) => {
+      const payload = row.payload as OutboxTransitionPayload;
+      return (payload.toSequence ?? 0) > request.lastSequence;
+    });
     const transitions = rows.map((row, index) => {
       const payload = row.payload as OutboxTransitionPayload;
       return roomlessTransitionEnvelope({

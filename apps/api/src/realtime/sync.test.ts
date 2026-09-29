@@ -110,6 +110,69 @@ describe('game sync recovery', () => {
     }
   });
 
+  it('recovers a missed committed transition by sequence even when stateVersion is already current', async () => {
+    const { service, prisma, match } = createService();
+    const committedRows = [
+      {
+        resultingStateVersion: 2,
+        payload: {
+          transitionId: 'move-after-roll',
+          stateVersion: 2,
+          fromSequence: 3,
+          toSequence: 3,
+          events: [
+            {
+              matchId: match.id,
+              eventId: `${match.id}:3`,
+              sequence: 3,
+              stateVersion: 2,
+              type: 'pawnMoved',
+              payload: {
+                pawnId: 'user-2-pawn-0',
+                playerId: 'user-2',
+                fromCoord: { row: 0, col: 0 },
+                toCoord: { row: 0, col: 4 },
+                physicalPath: [
+                  { row: 0, col: 1 },
+                  { row: 0, col: 2 },
+                  { row: 0, col: 3 },
+                  { row: 0, col: 4 },
+                ],
+                capture: null,
+              },
+              createdAt: '2026-08-25T00:00:00.000Z',
+            },
+          ],
+        },
+      },
+    ];
+    prisma.outboxRow.findMany = vi.fn(async (args: unknown) => {
+      const where = (args as { where?: { resultingStateVersion?: { gt?: number; lte?: number } } })
+        .where;
+      const lowerBound = where?.resultingStateVersion?.gt ?? -Infinity;
+      const upperBound = where?.resultingStateVersion?.lte ?? Infinity;
+      return committedRows.filter(
+        (row) => row.resultingStateVersion > lowerBound && row.resultingStateVersion <= upperBound,
+      );
+    });
+
+    const response = await service.sync({ matchId: match.id, stateVersion: 2, lastSequence: 2 });
+
+    expect(response).toMatchObject({
+      mode: 'events',
+      watermark: { stateVersion: 2, lastSequence: 3 },
+    });
+    if (response.mode === 'events') {
+      expect(response.transitions).toHaveLength(1);
+      expect(response.transitions[0]?.transitionId).toBe('move-after-roll');
+    }
+    expect(prisma.outboxRow.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ matchId: match.id }),
+      }),
+    );
+  });
+
   it('falls back to the authoritative snapshot when the requested range is unsafe or missing', async () => {
     const { service, match } = createService();
     const response = await service.sync({ matchId: match.id, stateVersion: 9, lastSequence: 10 });
