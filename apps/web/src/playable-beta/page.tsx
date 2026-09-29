@@ -1541,7 +1541,8 @@ export function PlayableBetaPage({
       match.snapshot.status !== 'ACTIVE' ||
       match.snapshot.currentPlayerId === null ||
       match.snapshot.currentPlayerId === authState.user.id ||
-      match.snapshot.turnPhase !== 'WAITING_FOR_ROLL'
+      (match.snapshot.turnPhase !== 'WAITING_FOR_ROLL' &&
+        match.snapshot.turnPhase !== 'WAITING_FOR_ACTION')
     ) {
       return;
     }
@@ -1579,7 +1580,7 @@ export function PlayableBetaPage({
         currentPlayerId: scheduled.currentPlayerId,
       });
       void syncMatch(scheduled.matchId, scheduled.stateVersion, scheduled.lastSequence);
-    }, 5000);
+    }, 2000);
 
     return () => {
       if (opponentTurnRecoveryTimeoutRef.current !== null) {

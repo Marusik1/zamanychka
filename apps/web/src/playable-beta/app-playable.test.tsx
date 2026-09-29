@@ -1039,6 +1039,185 @@ describe('playable beta room flow', () => {
     );
   });
 
+  it('keeps the remote board current through a dice-to-pawn transition chain without refresh', async () => {
+    const initialSnapshot = activeSnapshot({
+      stateVersion: 0,
+      lastSequence: 0,
+      turnPhase: 'WAITING_FOR_ROLL',
+      currentPlayerId: 'user-2',
+      diceValue: null,
+      pawns: activeSnapshot().pawns.map((pawn) =>
+        pawn.pawnId === 'user-2-pawn-1'
+          ? { ...pawn, position: { zone: 'PERIMETER', progress: 0 } }
+          : pawn,
+      ),
+    });
+    const rolledSnapshot = {
+      ...initialSnapshot,
+      stateVersion: 1,
+      lastSequence: 1,
+      turnPhase: 'WAITING_FOR_ACTION',
+      diceValue: 5,
+    } as MatchSnapshot;
+    const movedSnapshot = {
+      ...rolledSnapshot,
+      stateVersion: 2,
+      lastSequence: 2,
+      turnPhase: 'WAITING_FOR_ROLL',
+      currentPlayerId: 'user-1',
+      diceValue: null,
+      pawns: rolledSnapshot.pawns.map((pawn) =>
+        pawn.pawnId === 'user-2-pawn-1'
+          ? { ...pawn, position: { zone: 'PERIMETER', progress: 5 } }
+          : pawn,
+      ),
+    } as MatchSnapshot;
+    const api = createRoomApi({
+      getRoom: vi.fn().mockResolvedValue(activeRoom({ currentMatchId: 'match-chain' })),
+      reconnect: vi.fn().mockResolvedValue(activeRoom({ currentMatchId: 'match-chain' })),
+    });
+    const realtime = createRealtimeClient({
+      sync: vi.fn().mockResolvedValue({
+        mode: 'snapshot',
+        snapshot: initialSnapshot,
+        watermark: { stateVersion: 0, lastSequence: 0 },
+      }),
+    });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
+
+    expect(await screen.findByRole('heading', { name: /Матч/ })).toBeVisible();
+
+    realtime.__emitTransition?.(
+      transitionEnvelope({
+        matchId: 'match-chain',
+        transitionId: 'remote-dice-chain-1',
+        stateVersion: 1,
+        fromSequence: 1,
+        toSequence: 1,
+        events: [
+          {
+            matchId: 'match-chain',
+            eventId: 'remote-dice-chain-event-1',
+            sequence: 1,
+            stateVersion: 1,
+            type: 'diceRolled',
+            payload: { playerId: 'user-2', diceValue: 5 },
+            createdAt: '2026-09-01T10:00:02.000Z',
+          },
+        ],
+        watermark: { stateVersion: 1, lastSequence: 1 },
+        snapshot: rolledSnapshot,
+      }),
+    );
+    realtime.__emitTransition?.(
+      transitionEnvelope({
+        matchId: 'match-chain',
+        transitionId: 'remote-move-chain-1',
+        stateVersion: 2,
+        fromSequence: 2,
+        toSequence: 2,
+        events: [
+          {
+            matchId: 'match-chain',
+            eventId: 'remote-move-chain-event-1',
+            sequence: 2,
+            stateVersion: 2,
+            type: 'pawnMoved',
+            payload: {
+              pawnId: 'user-2-pawn-1',
+              playerId: 'user-2',
+              fromCoord: { row: 7, col: 7 },
+              toCoord: { row: 7, col: 2 },
+              physicalPath: [
+                { row: 7, col: 6 },
+                { row: 7, col: 5 },
+                { row: 7, col: 4 },
+                { row: 7, col: 3 },
+                { row: 7, col: 2 },
+              ],
+              capture: null,
+            },
+            createdAt: '2026-09-01T10:00:03.000Z',
+          },
+        ],
+        watermark: { stateVersion: 2, lastSequence: 2 },
+        snapshot: movedSnapshot,
+      }),
+    );
+
+    await waitFor(
+      () => {
+        const pawnSlot = document.querySelector<HTMLElement>('[data-board-pawn="user-2-pawn-1"]');
+        expect(pawnSlot).not.toBeNull();
+        expect(pawnSlot?.style.left).toBe('31.25%');
+        expect(pawnSlot?.style.top).toBe('93.75%');
+      },
+      { timeout: 3_500 },
+    );
+  });
+
+  it('recovers a missed opponent pawn action while waiting for the opponent action', async () => {
+    const waitingForOpponentAction = activeSnapshot({
+      stateVersion: 1,
+      lastSequence: 1,
+      turnPhase: 'WAITING_FOR_ACTION',
+      currentPlayerId: 'user-2',
+      diceValue: 5,
+      pawns: activeSnapshot().pawns.map((pawn) =>
+        pawn.pawnId === 'user-2-pawn-1'
+          ? { ...pawn, position: { zone: 'PERIMETER', progress: 0 } }
+          : pawn,
+      ),
+    });
+    const recoveredAfterMove = {
+      ...waitingForOpponentAction,
+      stateVersion: 2,
+      lastSequence: 2,
+      turnPhase: 'WAITING_FOR_ROLL',
+      currentPlayerId: 'user-1',
+      diceValue: null,
+      pawns: waitingForOpponentAction.pawns.map((pawn) =>
+        pawn.pawnId === 'user-2-pawn-1'
+          ? { ...pawn, position: { zone: 'PERIMETER', progress: 5 } }
+          : pawn,
+      ),
+    } as MatchSnapshot;
+    const api = createRoomApi({
+      getRoom: vi.fn().mockResolvedValue(activeRoom({ currentMatchId: 'match-missed-action' })),
+      reconnect: vi.fn().mockResolvedValue(activeRoom({ currentMatchId: 'match-missed-action' })),
+    });
+    const sync = vi
+      .fn()
+      .mockResolvedValueOnce({
+        mode: 'snapshot',
+        snapshot: waitingForOpponentAction,
+        watermark: { stateVersion: 1, lastSequence: 1 },
+      })
+      .mockResolvedValueOnce({
+        mode: 'snapshot',
+        snapshot: recoveredAfterMove,
+        watermark: { stateVersion: 2, lastSequence: 2 },
+      });
+    const realtime = createRealtimeClient({ sync });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
+
+    expect(await screen.findByRole('heading', { name: /Матч/ })).toBeVisible();
+    await waitFor(() => expect(sync).toHaveBeenCalledTimes(1));
+
+    await waitFor(() => expect(sync).toHaveBeenCalledTimes(2), { timeout: 3_500 });
+    await waitFor(
+      () => {
+        const pawnSlot = document.querySelector<HTMLElement>('[data-board-pawn="user-2-pawn-1"]');
+        expect(pawnSlot).not.toBeNull();
+        expect(pawnSlot?.style.left).toBe('31.25%');
+        expect(pawnSlot?.style.top).toBe('93.75%');
+      },
+      { timeout: 3_500 },
+    );
+  }, 8_000);
+
   it('keeps the active GameBoard, dice and presentation controller mounted through a realtime dice roll', async () => {
     enableGameplayTelemetry();
     const api = createRoomApi({
