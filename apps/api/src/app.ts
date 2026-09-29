@@ -117,6 +117,9 @@ export function buildApp({
         developmentAuthEnabled:
           auth.config.mode === 'development' ||
           (auth.config.mode === 'telegram' && auth.config.browserTestUsers !== undefined),
+        browserTestAuthEnabled:
+          auth.config.mode === 'development' ||
+          (auth.config.mode === 'telegram' && auth.config.browserTestUsers !== undefined),
         allowedOrigins: auth.config.allowedOrigins,
         cookie: auth.config.cookie,
         sessionTtlSeconds: auth.config.sessionTtlSeconds,
@@ -128,6 +131,9 @@ export function buildApp({
           ...(rooms.invites ? { invites: rooms.invites } : {}),
           auth: auth.service,
           cookieName: auth.config.cookie.name,
+          browserTestAuthEnabled:
+            auth.config.mode === 'development' ||
+            (auth.config.mode === 'telegram' && auth.config.browserTestUsers !== undefined),
           allowedOrigins: auth.config.allowedOrigins,
         });
       if (profile)

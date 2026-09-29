@@ -1,6 +1,7 @@
 import type { AuthUser, DevAuthCapability } from '@zamanushka/shared';
 
 import { AuthApiError, type AuthApi } from './api.js';
+import { rememberBrowserTestDevUserKey } from './browser-test-auth.js';
 
 export type AuthState =
   | { status: 'BOOTSTRAPPING' }
@@ -22,6 +23,7 @@ export async function bootstrapAuth(
   transition?: (state: AuthState) => void,
   browserTestDevUserKey?: string,
 ): Promise<AuthState> {
+  rememberBrowserTestDevUserKey(browserTestDevUserKey);
   try {
     const me = await api.me(signal);
     signal?.throwIfAborted();

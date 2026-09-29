@@ -148,6 +148,15 @@ export function createAuthService(options: {
         current,
       );
     },
+    async developmentUser(key: string) {
+      const configured = options.devUsers?.find((u) => u.devUserKey === key);
+      if (!configured) throw new AuthServiceError('VALIDATION_ERROR');
+      const user = await options.repository.upsertDevelopmentUser(configured);
+      return {
+        user: view(user, 'DEVELOPMENT'),
+        rulesOnboardingSeenAt: toSeenAtIso(user),
+      };
+    },
     async me(token?: string) {
       if (!token) throw new AuthServiceError('AUTH_REQUIRED');
       const session = await options.repository.resolveActiveSession(hashSessionToken(token), now());

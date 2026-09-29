@@ -130,7 +130,10 @@ describe('authentication bootstrap', () => {
     expect(fetcher).toHaveBeenNthCalledWith(3, '/api/auth/dev', {
       method: 'POST',
       credentials: 'include',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        'x-zamanushka-dev-user-key': 'player1',
+      },
       body: JSON.stringify({ devUserKey: 'player1' }),
     });
   });
@@ -163,7 +166,10 @@ describe('authentication bootstrap', () => {
     expect(fetcher).toHaveBeenCalledWith('/api/auth/dev', {
       method: 'POST',
       credentials: 'include',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        'x-zamanushka-dev-user-key': 'two',
+      },
       body: JSON.stringify({ devUserKey: 'two' }),
     });
   });

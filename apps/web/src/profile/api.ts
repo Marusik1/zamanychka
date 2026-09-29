@@ -6,6 +6,7 @@ import {
   type ProfileResponseDto,
   type PublicErrorCode,
 } from '@zamanushka/shared';
+import { browserTestAuthHeaders } from '../auth/browser-test-auth.js';
 
 type Fetcher = typeof fetch;
 
@@ -43,7 +44,12 @@ async function parse<T>(response: Response, schema: Parser<T>): Promise<T> {
 }
 
 function getOptions(signal?: AbortSignal): RequestInit {
-  return { credentials: 'include', ...(signal ? { signal } : {}) };
+  const headers = browserTestAuthHeaders();
+  return {
+    credentials: 'include',
+    ...(Object.keys(headers).length > 0 ? { headers } : {}),
+    ...(signal ? { signal } : {}),
+  };
 }
 
 export interface ProfileApi {

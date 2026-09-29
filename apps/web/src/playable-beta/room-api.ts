@@ -23,6 +23,7 @@ import {
   type RoomSeatIndex,
   type StartMatchResult,
 } from '@zamanushka/shared';
+import { browserTestAuthHeaders } from '../auth/browser-test-auth.js';
 
 import { frontendBuildInfo } from '../build-info.js';
 
@@ -149,24 +150,31 @@ async function request<T>(
 }
 
 function getOptions(signal?: AbortSignal): RequestInit {
-  return { credentials: 'include', ...(signal ? { signal } : {}) };
+  const headers = browserTestAuthHeaders();
+  return {
+    credentials: 'include',
+    ...(Object.keys(headers).length > 0 ? { headers } : {}),
+    ...(signal ? { signal } : {}),
+  };
 }
 
 function post(body: unknown, signal?: AbortSignal): RequestInit {
+  const testHeaders = browserTestAuthHeaders();
   return {
     method: 'POST',
     credentials: 'include',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...testHeaders },
     body: JSON.stringify(body),
     ...(signal ? { signal } : {}),
   };
 }
 
 function del(body: unknown, signal?: AbortSignal): RequestInit {
+  const testHeaders = browserTestAuthHeaders();
   return {
     method: 'DELETE',
     credentials: 'include',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...testHeaders },
     body: JSON.stringify(body),
     ...(signal ? { signal } : {}),
   };

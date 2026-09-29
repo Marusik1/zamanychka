@@ -12,6 +12,7 @@ import {
   type PublicErrorCode,
   type RulesOnboardingSeenResponse,
 } from '@zamanushka/shared';
+import { browserTestAuthHeaders, rememberBrowserTestDevUserKey } from './browser-test-auth.js';
 type Fetcher = typeof fetch;
 interface Parser<T> {
   safeParse(value: unknown): { success: true; data: T } | { success: false };
@@ -45,14 +46,20 @@ async function parse<T>(response: Response, schema: Parser<T>): Promise<T> {
 }
 
 function getOptions(signal?: AbortSignal): RequestInit {
-  return { credentials: 'include', ...(signal ? { signal } : {}) };
+  const headers = browserTestAuthHeaders();
+  return {
+    credentials: 'include',
+    ...(Object.keys(headers).length > 0 ? { headers } : {}),
+    ...(signal ? { signal } : {}),
+  };
 }
 
 function post(body?: unknown, signal?: AbortSignal): RequestInit {
+  const testHeaders = browserTestAuthHeaders();
   return {
     method: 'POST',
     credentials: 'include',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...testHeaders },
     ...(signal ? { signal } : {}),
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   };
@@ -82,6 +89,7 @@ export function createAuthApi(fetcher: Fetcher = fetch): AuthApi {
       return parse(await fetcher('/api/auth/dev', getOptions(signal)), devAuthCapabilitySchema);
     },
     async loginDevelopment(devUserKey, signal) {
+      rememberBrowserTestDevUserKey(devUserKey);
       return parse(await fetcher('/api/auth/dev', post({ devUserKey }, signal)), authSuccessSchema);
     },
     async markRulesOnboardingSeen(signal) {

@@ -37,6 +37,7 @@ export interface RoomRoutesOptions {
   invites?: RoomInviteService;
   auth: AuthService;
   cookieName: string;
+  browserTestAuthEnabled?: boolean;
   allowedOrigins: string[];
 }
 
@@ -223,8 +224,13 @@ async function actorId(
   reply: FastifyReply,
   auth: AuthService,
   cookieName: string,
+  browserTestAuthEnabled = false,
 ) {
   try {
+    const devUserKey = request.headers['x-zamanushka-dev-user-key'];
+    if (browserTestAuthEnabled && typeof devUserKey === 'string' && devUserKey.length > 0) {
+      return (await auth.developmentUser(devUserKey)).user.id;
+    }
     const result = await auth.me(request.cookies[cookieName]);
     return result.user.id;
   } catch {
@@ -261,6 +267,16 @@ function mapRoomResult(
   return roomError(reply, roomStatus(result.error.code), result.error.code);
 }
 
+function currentActorId(request: FastifyRequest, reply: FastifyReply, options: RoomRoutesOptions) {
+  return actorId(
+    request,
+    reply,
+    options.auth,
+    options.cookieName,
+    options.browserTestAuthEnabled,
+  );
+}
+
 function inviteStatus(code: RoomInviteErrorCode) {
   switch (code) {
     case 'INVITE_NOT_FOUND':
@@ -290,7 +306,7 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
   });
 
   app.get('/api/rooms', async (request, reply) => {
-    const userId = await actorId(request, reply, options.auth, options.cookieName);
+    const userId = await currentActorId(request, reply, options);
     if (!userId) return;
     return reply.send(await options.service.listRooms(userId));
   });
@@ -300,7 +316,7 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
       return;
     }
 
-    const userId = await actorId(request, reply, options.auth, options.cookieName);
+    const userId = await currentActorId(request, reply, options);
     if (!userId) return;
 
     const parsed = createRoomRequestSchema.safeParse(request.body);
@@ -322,7 +338,7 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
   });
 
   app.get('/api/rooms/:roomId', async (request, reply) => {
-    const userId = await actorId(request, reply, options.auth, options.cookieName);
+    const userId = await currentActorId(request, reply, options);
     if (!userId) return;
 
     const roomId = String((request.params as { roomId: string }).roomId);
@@ -340,7 +356,7 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
   app.get('/api/rooms/:roomId/chat', async (request, reply) => {
     if (!options.chat) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: messages.NOT_FOUND } });
 
-    const userId = await actorId(request, reply, options.auth, options.cookieName);
+    const userId = await currentActorId(request, reply, options);
     if (!userId) return;
 
     const roomId = String((request.params as { roomId: string }).roomId);
@@ -363,7 +379,7 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
       return;
     }
 
-    const userId = await actorId(request, reply, options.auth, options.cookieName);
+    const userId = await currentActorId(request, reply, options);
     if (!userId) return;
 
     const roomId = String((request.params as { roomId: string }).roomId);
@@ -382,7 +398,7 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
       return;
     }
 
-    const userId = await actorId(request, reply, options.auth, options.cookieName);
+    const userId = await currentActorId(request, reply, options);
     if (!userId) return;
 
     const roomId = String((request.params as { roomId: string }).roomId);
@@ -412,7 +428,7 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
       return;
     }
 
-    const userId = await actorId(request, reply, options.auth, options.cookieName);
+    const userId = await currentActorId(request, reply, options);
     if (!userId) return;
 
     const params = request.params as { roomId: string; seatIndex: string };
@@ -436,7 +452,7 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
       return;
     }
 
-    const userId = await actorId(request, reply, options.auth, options.cookieName);
+    const userId = await currentActorId(request, reply, options);
     if (!userId) return;
 
     const params = request.params as { roomId: string; seatIndex: string };
@@ -460,7 +476,7 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
       return;
     }
 
-    const userId = await actorId(request, reply, options.auth, options.cookieName);
+    const userId = await currentActorId(request, reply, options);
     if (!userId) return;
 
     const params = request.params as { roomId: string; seatIndex: string };
@@ -484,7 +500,7 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
       return;
     }
 
-    const userId = await actorId(request, reply, options.auth, options.cookieName);
+    const userId = await currentActorId(request, reply, options);
     if (!userId) return;
 
     const roomId = String((request.params as { roomId: string }).roomId);
@@ -502,7 +518,7 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
       return;
     }
 
-    const userId = await actorId(request, reply, options.auth, options.cookieName);
+    const userId = await currentActorId(request, reply, options);
     if (!userId) return;
 
     const roomId = String((request.params as { roomId: string }).roomId);
@@ -520,7 +536,7 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
       return;
     }
 
-    const userId = await actorId(request, reply, options.auth, options.cookieName);
+    const userId = await currentActorId(request, reply, options);
     if (!userId) return;
 
     const roomId = String((request.params as { roomId: string }).roomId);
@@ -538,7 +554,7 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
       return;
     }
 
-    const userId = await actorId(request, reply, options.auth, options.cookieName);
+    const userId = await currentActorId(request, reply, options);
     if (!userId) return;
 
     const roomId = String((request.params as { roomId: string }).roomId);
@@ -556,7 +572,7 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
       return;
     }
 
-    const userId = await actorId(request, reply, options.auth, options.cookieName);
+    const userId = await currentActorId(request, reply, options);
     if (!userId) return;
 
     const roomId = String((request.params as { roomId: string }).roomId);
@@ -583,7 +599,7 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
       return;
     }
 
-    const userId = await actorId(request, reply, options.auth, options.cookieName);
+    const userId = await currentActorId(request, reply, options);
     if (!userId) {
       logRoomEntry(request, 'room-reconnect-auth-required', { roomId });
       return;
@@ -624,7 +640,7 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
       return;
     }
 
-    const userId = await actorId(request, reply, options.auth, options.cookieName);
+    const userId = await currentActorId(request, reply, options);
     if (!userId) return;
     void userId;
 
@@ -649,7 +665,7 @@ export function registerRoomRoutes(app: FastifyInstance, options: RoomRoutesOpti
       return;
     }
 
-    const userId = await actorId(request, reply, options.auth, options.cookieName);
+    const userId = await currentActorId(request, reply, options);
     if (!userId) return;
 
     const roomId = String((request.params as { roomId: string }).roomId);

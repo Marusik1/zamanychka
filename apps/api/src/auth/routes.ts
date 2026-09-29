@@ -20,6 +20,7 @@ export interface AuthRoutesOptions {
   allowedOrigins: string[];
   cookie: CookiePolicy;
   sessionTtlSeconds: number;
+  browserTestAuthEnabled?: boolean;
 }
 const messages: Record<PublicErrorCode, string> = {
   VALIDATION_ERROR: 'Request validation failed',
@@ -118,6 +119,14 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOpti
   if (options.mode === 'telegram') app.post('/api/auth/telegram', login('telegram'));
   app.get('/api/me', async (request, reply) => {
     try {
+      const devUserKey = request.headers['x-zamanushka-dev-user-key'];
+      if (
+        options.browserTestAuthEnabled &&
+        typeof devUserKey === 'string' &&
+        devUserKey.length > 0
+      ) {
+        return await options.service.developmentUser(devUserKey);
+      }
       return await options.service.me(request.cookies[options.cookie.name]);
     } catch (thrown) {
       return map(reply, thrown);

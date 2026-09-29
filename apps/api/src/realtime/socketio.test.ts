@@ -10,6 +10,7 @@ import { createRealtimeRuntime } from './socketio.js';
 
 interface AuthServiceLike {
   me(token?: string): Promise<{ user: { id: string } }>;
+  developmentUser?(devUserKey: string): Promise<{ user: { id: string } }>;
 }
 
 interface MatchRepositoryLike {
@@ -115,6 +116,7 @@ async function startRuntime(options?: {
   }) => Promise<unknown[]>;
   commandProcessor?: CommandProcessorLike;
   botRunner?: { kick(matchId: string): void };
+  browserTestAuthEnabled?: boolean;
   cookieName?: string;
   redisUrl?: string;
 }) {
@@ -149,6 +151,9 @@ async function startRuntime(options?: {
         })),
       } as unknown as Parameters<typeof createRealtimeRuntime>[0]['commandProcessor']),
     ...(options?.botRunner ? { botRunner: options.botRunner } : {}),
+    ...(options?.browserTestAuthEnabled
+      ? { browserTestAuthEnabled: options.browserTestAuthEnabled }
+      : {}),
     allowedOrigins: ['http://127.0.0.1'],
     ...(options?.redisUrl ? { redisUrl: options.redisUrl } : {}),
   } as unknown as Parameters<typeof createRealtimeRuntime>[0];
@@ -168,8 +173,11 @@ async function startRuntime(options?: {
   };
 }
 
-function connectClient(url: string, cookie?: string) {
-  const options = cookie ? { extraHeaders: { cookie } } : {};
+function connectClient(url: string, cookie?: string, auth?: Record<string, string>) {
+  const options = {
+    ...(cookie ? { extraHeaders: { cookie } } : {}),
+    ...(auth ? { auth } : {}),
+  };
   return createClient(url, {
     transports: ['websocket'],
     forceNew: true,
@@ -251,6 +259,34 @@ describe('Socket.IO realtime publication and subscriptions', () => {
     const socket = connectClient(server.url);
     const error = await waitForEvent<Error>(socket as never, 'connect_error');
     expect(error.message).toBe('AUTH_REQUIRED');
+    socket.disconnect();
+  });
+
+  it('uses browser-test socket auth per tab instead of the shared cookie', async () => {
+    const server = await startRuntime({
+      browserTestAuthEnabled: true,
+      auth: {
+        ...createAuthService(),
+        async developmentUser(devUserKey: string) {
+          if (devUserKey === 'one') return { user: { id: 'user-a' } };
+          if (devUserKey === 'two') return { user: { id: 'user-b' } };
+          throw new Error('AUTH_REQUIRED');
+        },
+      },
+    });
+    servers.push(server);
+
+    const socket = connectClient(
+      server.url,
+      sessionHeader('session-b').cookie,
+      { devUserKey: 'one' },
+    );
+    await waitForEvent(socket, 'connect');
+    const result = await new Promise<{ ok: boolean; code?: string }>((resolve) => {
+      socket.emit('match:join', { matchId: 'match-1' }, resolve);
+    });
+
+    expect(result).toEqual({ ok: true });
     socket.disconnect();
   });
 

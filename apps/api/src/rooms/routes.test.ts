@@ -245,6 +245,41 @@ describe('room routes', () => {
     expect(service.listRooms).toHaveBeenCalledWith('configured-user');
   });
 
+  it('uses browser-test auth header per tab instead of the shared cookie', async () => {
+    const service = roomService();
+    const auth = {
+      me: vi.fn(async () => ({ user: { ...user, id: 'cookie-user' } })),
+      developmentUser: vi.fn(async (devUserKey: string) => {
+        if (devUserKey === 'one') return { user: { ...user, id: 'header-user' } };
+        throw new Error('AUTH_REQUIRED');
+      }),
+    } as unknown as AuthService;
+    const instance = Fastify();
+    apps.push(instance);
+    await instance.register(cookie);
+    registerRoomRoutes(instance, {
+      service,
+      chat: roomChatService(),
+      invites: roomInviteService(),
+      auth,
+      cookieName: 'zamanushka-session',
+      browserTestAuthEnabled: true,
+      allowedOrigins: ['http://localhost:3000', 'https://app.test'],
+    });
+
+    await instance.inject({
+      method: 'GET',
+      url: '/api/rooms',
+      headers: {
+        cookie: 'zamanushka-session=two',
+        'x-zamanushka-dev-user-key': 'one',
+      },
+    });
+
+    expect(service.listRooms).toHaveBeenCalledWith('header-user');
+    expect(auth.me).not.toHaveBeenCalled();
+  });
+
   it('wires the room-scoped lifecycle and leaves legacy singleton routes unavailable', async () => {
     const service = roomService();
     const instance = await app(service);

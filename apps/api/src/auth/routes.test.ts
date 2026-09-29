@@ -18,6 +18,10 @@ const service = {
     users: [{ devUserKey: 'one', displayName: 'One' }],
   }),
   loginDevelopment: async () => result,
+  developmentUser: async () => ({
+    user: result.user,
+    rulesOnboardingSeenAt: result.rulesOnboardingSeenAt,
+  }),
   loginTelegram: async () => ({
     ...result,
     user: { ...result.user, authProvider: 'TELEGRAM' as const },

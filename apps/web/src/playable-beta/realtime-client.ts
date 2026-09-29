@@ -11,6 +11,7 @@ import {
   type MatchSubscriptionRequest,
   type TransitionEnvelope,
 } from '@zamanushka/shared';
+import { browserTestSocketAuth } from '../auth/browser-test-auth.js';
 
 export type RealtimeSubscription = (transition: TransitionEnvelope) => void;
 
@@ -93,10 +94,12 @@ export function createRealtimeClient(): RealtimeClient {
 
   function currentSocket() {
     if (socket) return socket;
+    const devAuth = browserTestSocketAuth();
     socket = io({
       path: '/socket.io',
       transports: ['websocket', 'polling'],
       withCredentials: true,
+      ...(devAuth ? { auth: devAuth } : {}),
       autoConnect: false,
     });
     if (typeof window !== 'undefined') {

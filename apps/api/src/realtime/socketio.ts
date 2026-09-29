@@ -124,6 +124,7 @@ export function createRealtimeRuntime(options: {
   httpServer: HttpServer;
   auth: AuthService;
   cookieName: string;
+  browserTestAuthEnabled?: boolean;
   matchRepository: MatchRepository;
   outbox: OutboxLeaseStore;
   loadCommittedTransitions?: (input: {
@@ -298,6 +299,18 @@ export function createRealtimeRuntime(options: {
 
   io.use(async (socket, next) => {
     try {
+      const devUserKey = (socket.handshake.auth as { devUserKey?: unknown } | undefined)
+        ?.devUserKey;
+      if (
+        options.browserTestAuthEnabled &&
+        typeof devUserKey === 'string' &&
+        devUserKey.length > 0
+      ) {
+        const result = await options.auth.developmentUser(devUserKey);
+        (socket.data as SocketData).userId = result.user.id;
+        next();
+        return;
+      }
       const cookies = parseCookies(socket.handshake.headers.cookie);
       const token = cookies[options.cookieName];
       const result = await options.auth.me(token);

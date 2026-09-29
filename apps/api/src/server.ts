@@ -111,6 +111,9 @@ const realtime = createRealtimeRuntime({
   httpServer: app.server,
   auth: authService,
   cookieName: env.auth.cookie.name,
+  browserTestAuthEnabled:
+    env.auth.mode === 'development' ||
+    (env.auth.mode === 'telegram' && env.auth.browserTestUsers !== undefined),
   matchRepository,
   outbox: createPostgresOutboxLeaseStore(dependencies.prisma),
   commandProcessor,
