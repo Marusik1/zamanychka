@@ -81,10 +81,7 @@ export function acceptCommittedTransition(
     };
   }
 
-  if (
-    transition.watermark.lastSequence <= state.presentationWatermark.lastSequence ||
-    transition.stateVersion <= state.presentationWatermark.stateVersion
-  ) {
+  if (transition.watermark.lastSequence <= state.presentationWatermark.lastSequence) {
     return { kind: 'duplicate_ignored', state };
   }
 

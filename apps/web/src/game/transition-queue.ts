@@ -70,10 +70,7 @@ export function hasTransition(
   transition: PresentationTransition,
 ): boolean {
   const identity = getTransitionIdentity(transition);
-  if (
-    transition.watermark.lastSequence <= queue.reconciledWatermark.lastSequence ||
-    transition.stateVersion <= queue.reconciledWatermark.stateVersion
-  ) {
+  if (transition.watermark.lastSequence <= queue.reconciledWatermark.lastSequence) {
     return true;
   }
 

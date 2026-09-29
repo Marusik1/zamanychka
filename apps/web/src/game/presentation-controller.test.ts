@@ -142,6 +142,20 @@ describe('presentation controller', () => {
     expect(acceptCommittedTransition(controller, fresh).kind).toBe('duplicate_ignored');
   });
 
+  it('accepts a newer sequence even when the stateVersion does not advance', () => {
+    const controller = createPresentationController('match-1', snapshot('match-1', 24, 24));
+    const sameVersionPawnEnter = transition('enter-25', 25, 25, 24);
+
+    const accepted = acceptCommittedTransition(controller, sameVersionPawnEnter);
+
+    expect(accepted.kind).toBe('queued');
+    expect(accepted.state.authoritativeWatermark).toEqual({
+      stateVersion: 24,
+      lastSequence: 25,
+    });
+    expect(accepted.state.queue.active).toBe(sameVersionPawnEnter);
+  });
+
   it('delegates gaps and unsafe overlaps to recovery without advancing presentation', () => {
     const controller = createPresentationController('match-1', snapshot());
     const gap = transition('t4', 4, 4, 4);
