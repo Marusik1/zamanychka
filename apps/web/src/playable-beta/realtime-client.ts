@@ -51,9 +51,24 @@ export class RealtimeClientError extends Error {
   }
 }
 
-function ackPromise<T>(emit: (ack: (value: unknown) => void) => void, parser: (value: unknown) => T) {
+const ACK_TIMEOUT_MS = 8_000;
+
+function ackPromise<T>(
+  emit: (ack: (value: unknown) => void) => void,
+  parser: (value: unknown) => T,
+  timeoutMs = ACK_TIMEOUT_MS,
+) {
   return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const timeout = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(new RealtimeClientError('ACK_TIMEOUT', 'Realtime command acknowledgement timed out', true));
+    }, timeoutMs);
     emit((value) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeout);
       try {
         resolve(parser(value));
       } catch (error) {

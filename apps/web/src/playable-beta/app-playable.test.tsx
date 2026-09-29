@@ -2139,6 +2139,61 @@ describe('playable beta room flow', () => {
     });
   });
 
+  it('allows surrender while another gameplay command is pending', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const api = createRoomApi({
+      getRoom: vi.fn().mockResolvedValue(activeRoom()),
+      reconnect: vi.fn().mockResolvedValue(activeRoom()),
+    });
+    const realtime = createRealtimeClient({
+      sync: vi.fn().mockResolvedValue({
+        mode: 'snapshot',
+        snapshot: activeSnapshot(),
+        watermark: { stateVersion: 0, lastSequence: 0 },
+      }),
+      sendCommand: vi
+        .fn()
+        .mockImplementationOnce(
+          () =>
+            new Promise(() => {
+              // Lost ACK: the user must still be able to surrender.
+            }),
+        )
+        .mockResolvedValueOnce({
+          ok: true,
+          matchId: 'match-1',
+          actionId: 'surrender-action-1',
+          stateVersion: 1,
+          lastSequence: 1,
+          snapshot: activeSnapshot({
+            status: 'FINISHED',
+            stateVersion: 1,
+            lastSequence: 1,
+            winnerPlayerId: 'user-2',
+            finishedAt: '2026-09-01T10:02:00.000Z',
+          }),
+          events: [],
+        }),
+    });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
+
+    fireEvent.click(await screen.findByRole('button', { name: /Бросить кубик/ }));
+    await waitFor(() => expect(realtime.sendCommand).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole('button', { name: /Сдаться/ }));
+
+    await waitFor(() => expect(realtime.sendCommand).toHaveBeenCalledTimes(2));
+    expect(realtime.sendCommand).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        type: 'SURRENDER',
+        matchId: 'match-1',
+      }),
+    );
+    expect(confirmSpy).toHaveBeenCalled();
+  });
+
   it('applies successful command ACK events without waiting for a socket echo', async () => {
     const api = createRoomApi({
       getRoom: vi.fn().mockResolvedValue(activeRoom()),

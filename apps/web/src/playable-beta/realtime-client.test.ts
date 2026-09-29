@@ -6,6 +6,7 @@ const socketHandlers = new Map<string, Handler[]>();
 const managerHandlers = new Map<string, Handler[]>();
 const emitCalls: unknown[][] = [];
 const ioCalls: unknown[] = [];
+const suppressAckEvents = new Set<string>();
 
 function addHandler(store: Map<string, Handler[]>, event: string, handler: Handler) {
   store.set(event, [...(store.get(event) ?? []), handler]);
@@ -39,6 +40,7 @@ vi.mock('socket.io-client', () => ({
     disconnect: vi.fn(),
     emit: vi.fn((...args: unknown[]) => {
       emitCalls.push(args);
+      if (typeof args[0] === 'string' && suppressAckEvents.has(args[0])) return;
       const ack = args.at(-1);
       if (typeof ack === 'function') {
         ack({ ok: true });
@@ -54,7 +56,9 @@ describe('RealtimeClient', () => {
     managerHandlers.clear();
     emitCalls.length = 0;
     ioCalls.length = 0;
+    suppressAckEvents.clear();
     localStorage.clear();
+    vi.useRealTimers();
   });
 
   it('allows polling fallback when production websocket transport is unavailable', async () => {
@@ -89,5 +93,26 @@ describe('RealtimeClient', () => {
         expect.any(Function),
       ],
     ]);
+  });
+
+  it('times out a gameplay command when the socket ACK is lost', async () => {
+    vi.useFakeTimers();
+    suppressAckEvents.add('game:command');
+    const { createRealtimeClient, RealtimeClientError } = await import('./realtime-client.js');
+    const client = createRealtimeClient();
+
+    const result = expect(client.sendCommand({
+      type: 'ROLL_DICE',
+      matchId: 'match-1',
+      actionId: 'lost-ack',
+      expectedStateVersion: 0,
+    })).rejects.toMatchObject({
+      name: RealtimeClientError.name,
+      code: 'ACK_TIMEOUT',
+      retryable: true,
+    });
+
+    await vi.advanceTimersByTimeAsync(8_000);
+    await result;
   });
 });

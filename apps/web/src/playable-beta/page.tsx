@@ -2125,7 +2125,6 @@ export function PlayableBetaPage({
                 type="button"
                 role="menuitem"
                 className="beta-room-page__mobile-more-danger"
-                disabled={match.status === 'ready' && match.pending}
                 onClick={() => { setMobileMoreOpen(false); void submitAction(surrenderAction); }}
               >
                 Сдаться
@@ -2525,10 +2524,10 @@ export function PlayableBetaPage({
 
   async function submitAction(action: LegalAction) {
     const initialMatch = matchRef.current;
-    if (initialMatch.status !== 'ready' || initialMatch.pending) {
+    if (initialMatch.status !== 'ready' || (initialMatch.pending && action.type !== 'SURRENDER')) {
       if (action.type === 'SURRENDER') {
         recordGameplayTelemetry('SURRENDER_BLOCKED', {
-          reason: initialMatch.status !== 'ready' ? initialMatch.status : 'pending',
+          reason: initialMatch.status,
         });
       }
       return;
@@ -2551,9 +2550,9 @@ export function PlayableBetaPage({
 
     if (action.type === 'SURRENDER') {
       const confirmedMatch = matchRef.current;
-      if (confirmedMatch.status !== 'ready' || confirmedMatch.pending) {
+      if (confirmedMatch.status !== 'ready') {
         recordGameplayTelemetry('SURRENDER_BLOCKED', {
-          reason: confirmedMatch.status !== 'ready' ? confirmedMatch.status : 'pending-after-confirm',
+          reason: confirmedMatch.status,
         });
         return;
       }
@@ -2577,14 +2576,29 @@ export function PlayableBetaPage({
     const actionKey = actionLockKey(action);
     const existingCommand = commandInFlightRef.current;
     if (existingCommand?.matchId === command.matchId) {
-      recordGameplayTelemetry('COMMAND_DUPLICATE_BLOCKED', {
-        matchId: command.matchId,
-        existingActionId: existingCommand.actionId,
-        existingActionKey: existingCommand.actionKey,
-        blockedActionKey: actionKey,
-        stateVersion: command.expectedStateVersion,
-      });
-      return;
+      if (action.type === 'SURRENDER') {
+        cancelOptimisticPresentation(
+          existingCommand.matchId,
+          existingCommand.actionId,
+          'surrender-overrides-pending-command',
+        );
+        recordGameplayTelemetry('SURRENDER_OVERRIDES_PENDING_COMMAND', {
+          matchId: command.matchId,
+          existingActionId: existingCommand.actionId,
+          existingActionKey: existingCommand.actionKey,
+          surrenderActionId: command.actionId,
+          stateVersion: command.expectedStateVersion,
+        });
+      } else {
+        recordGameplayTelemetry('COMMAND_DUPLICATE_BLOCKED', {
+          matchId: command.matchId,
+          existingActionId: existingCommand.actionId,
+          existingActionKey: existingCommand.actionKey,
+          blockedActionKey: actionKey,
+          stateVersion: command.expectedStateVersion,
+        });
+        return;
+      }
     }
     commandInFlightRef.current = {
       matchId: command.matchId,
