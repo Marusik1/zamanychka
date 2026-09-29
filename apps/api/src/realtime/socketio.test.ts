@@ -445,7 +445,7 @@ describe('Socket.IO realtime publication and subscriptions', () => {
       stateVersion: 1,
       events: [expect.objectContaining({ type: 'diceRolled' })],
     });
-    expect(outbox.claim).toHaveBeenCalledTimes(1);
+    expect(outbox.claim).toHaveBeenCalledTimes(2);
     expect(outbox.markPublished).toHaveBeenCalledWith({
       outboxId: 'outbox-1',
       leaseToken: expect.stringMatching(/^socketio-/),
@@ -635,6 +635,107 @@ describe('Socket.IO realtime publication and subscriptions', () => {
     }
 
     sockets.forEach((socket) => socket.disconnect());
+  }, 10_000);
+
+  it('drains consecutive committed dice and pawn rows to subscribers in one dispatch pass', async () => {
+    const rows = [
+      {
+        id: 'outbox-dice',
+        matchId: 'match-1',
+        resultingStateVersion: 1,
+        createdAt: new Date('2026-09-20T12:00:00.000Z'),
+        claimedAt: new Date('2026-09-20T12:00:00.125Z'),
+        payload: {
+          matchId: 'match-1',
+          transitionId: 'roll-1',
+          actionId: 'roll-1',
+          stateVersion: 1,
+          fromSequence: 1,
+          toSequence: 1,
+          events: [
+            {
+              matchId: 'match-1',
+              eventId: 'match-1:1',
+              sequence: 1,
+              stateVersion: 1,
+              type: 'diceRolled',
+              payload: { playerId: 'user-a', diceValue: 4 },
+              createdAt: '2026-08-25T00:00:00.000Z',
+            },
+          ],
+        },
+      },
+      {
+        id: 'outbox-move',
+        matchId: 'match-1',
+        resultingStateVersion: 1,
+        createdAt: new Date('2026-09-20T12:00:01.000Z'),
+        claimedAt: new Date('2026-09-20T12:00:01.125Z'),
+        payload: {
+          matchId: 'match-1',
+          transitionId: 'move-1',
+          actionId: 'move-1',
+          stateVersion: 1,
+          fromSequence: 2,
+          toSequence: 2,
+          events: [
+            {
+              matchId: 'match-1',
+              eventId: 'match-1:2',
+              sequence: 2,
+              stateVersion: 1,
+              type: 'pawnMoved',
+              payload: {
+                pawnId: 'user-a-pawn-1',
+                playerId: 'user-a',
+                fromCoord: { row: 0, col: 0 },
+                toCoord: { row: 0, col: 4 },
+                physicalPath: [
+                  { row: 0, col: 1 },
+                  { row: 0, col: 2 },
+                  { row: 0, col: 3 },
+                  { row: 0, col: 4 },
+                ],
+                capture: null,
+              },
+              createdAt: '2026-08-25T00:00:01.000Z',
+            },
+          ],
+        },
+      },
+    ];
+    const outbox = {
+      claim: vi.fn(async () => rows.shift() ?? null),
+      markPublished: vi.fn(async () => true),
+      release: vi.fn(async () => undefined),
+    };
+    const server = await startRuntime({ outbox });
+    servers.push(server);
+    const socket = connectClient(server.url, sessionHeader('session-a').cookie);
+    await waitForEvent(socket, 'connect');
+    await new Promise((resolve) => socket.emit('match:join', { matchId: 'match-1' }, resolve));
+
+    const deliveries = new Promise<TransitionEnvelope[]>((resolve) => {
+      const received: TransitionEnvelope[] = [];
+      socket.on('game:event', (event: TransitionEnvelope) => {
+        received.push(event);
+        if (received.length === 2) resolve(received);
+      });
+    });
+    await server.runtime.dispatchOutboxOnce();
+    const received = await deliveries;
+
+    expect(received.map((event) => event.transitionId)).toEqual(['roll-1', 'move-1']);
+    expect(outbox.markPublished).toHaveBeenCalledWith({
+      outboxId: 'outbox-dice',
+      leaseToken: expect.any(String),
+    });
+    expect(outbox.markPublished).toHaveBeenCalledWith({
+      outboxId: 'outbox-move',
+      leaseToken: expect.any(String),
+    });
+
+    socket.disconnect();
   }, 10_000);
 
   it('fans out a committed transition across instances through the Redis adapter', async () => {

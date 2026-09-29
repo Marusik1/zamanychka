@@ -945,6 +945,100 @@ describe('playable beta room flow', () => {
     });
   });
 
+  it('applies a remote pawn move to the board without requiring a refresh', async () => {
+    const initialSnapshot = activeSnapshot({
+      stateVersion: 1,
+      lastSequence: 1,
+      turnPhase: 'WAITING_FOR_ACTION',
+      currentPlayerId: 'user-2',
+      diceValue: 4,
+      pawns: activeSnapshot().pawns.map((pawn) =>
+        pawn.pawnId === 'user-2-pawn-1'
+          ? { ...pawn, position: { zone: 'PERIMETER', progress: 0 } }
+          : pawn,
+      ),
+    });
+    const api = createRoomApi({
+      getRoom: vi.fn().mockResolvedValue(activeRoom({ currentMatchId: 'match-remote-move' })),
+      reconnect: vi.fn().mockResolvedValue(activeRoom({ currentMatchId: 'match-remote-move' })),
+    });
+    const realtime = createRealtimeClient({
+      sync: vi.fn().mockResolvedValue({
+        mode: 'snapshot',
+        snapshot: initialSnapshot,
+        watermark: { stateVersion: 1, lastSequence: 1 },
+      }),
+    });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
+
+    expect(await screen.findByRole('heading', { name: /Матч/ })).toBeVisible();
+
+    await waitFor(() => {
+      const pawnSlot = document.querySelector<HTMLElement>('[data-board-pawn="user-2-pawn-1"]');
+      expect(pawnSlot).not.toBeNull();
+      expect(pawnSlot?.style.left).toBe('93.75%');
+      expect(pawnSlot?.style.top).toBe('93.75%');
+    });
+
+    realtime.__emitTransition?.(
+      transitionEnvelope({
+        matchId: 'match-remote-move',
+        transitionId: 'remote-move-1',
+        stateVersion: 1,
+        fromSequence: 2,
+        toSequence: 2,
+        events: [
+          {
+            matchId: 'match-remote-move',
+            eventId: 'remote-move-event-1',
+            sequence: 2,
+            stateVersion: 2,
+            type: 'pawnMoved',
+            payload: {
+              pawnId: 'user-2-pawn-1',
+              playerId: 'user-2',
+              fromCoord: { row: 7, col: 7 },
+              toCoord: { row: 7, col: 3 },
+              physicalPath: [
+                { row: 7, col: 6 },
+                { row: 7, col: 5 },
+                { row: 7, col: 4 },
+                { row: 7, col: 3 },
+              ],
+              capture: null,
+            },
+            createdAt: '2026-09-01T10:00:02.000Z',
+          },
+        ],
+        watermark: { stateVersion: 2, lastSequence: 2 },
+        snapshot: {
+          ...initialSnapshot,
+          stateVersion: 2,
+          lastSequence: 2,
+          turnPhase: 'WAITING_FOR_ROLL',
+          diceValue: null,
+          currentPlayerId: 'user-1',
+          pawns: initialSnapshot.pawns.map((pawn) =>
+            pawn.pawnId === 'user-2-pawn-1'
+              ? { ...pawn, position: { zone: 'PERIMETER', progress: 4 } }
+              : pawn,
+          ),
+        },
+      }),
+    );
+
+    await waitFor(
+      () => {
+        const pawnSlot = document.querySelector<HTMLElement>('[data-board-pawn="user-2-pawn-1"]');
+        expect(pawnSlot).not.toBeNull();
+        expect(pawnSlot?.style.left).toBe('43.75%');
+        expect(pawnSlot?.style.top).toBe('93.75%');
+      },
+      { timeout: 3_000 },
+    );
+  });
+
   it('keeps the active GameBoard, dice and presentation controller mounted through a realtime dice roll', async () => {
     enableGameplayTelemetry();
     const api = createRoomApi({
@@ -1117,10 +1211,10 @@ describe('playable beta room flow', () => {
             createdAt: '2026-09-01T10:00:02.000Z',
           },
         ],
-        watermark: { stateVersion: 2, lastSequence: 2 },
+        watermark: { stateVersion: 1, lastSequence: 2 },
         snapshot: {
           ...initialSnapshot,
-          stateVersion: 2,
+          stateVersion: 1,
           lastSequence: 2,
           turnPhase: 'WAITING_FOR_ROLL',
           diceValue: null,

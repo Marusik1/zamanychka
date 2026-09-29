@@ -250,7 +250,7 @@ export function createRealtimeRuntime(options: {
         if (!latest.dispatched && latest.reason === 'MARK_FAILED') {
           logTelemetry('OUTBOX_MARK_FAILED', { source, activeDispatchers: activeOutboxDispatches });
         }
-      } while (outboxWakeRequested);
+      } while (latest.dispatched || outboxWakeRequested);
       return latest;
     })().then((result) => {
       logTelemetry(source === 'immediate' ? 'immediate-dispatch' : 'fallback-dispatch', {
