@@ -2490,6 +2490,105 @@ describe('playable beta room flow', () => {
     });
   });
 
+  it('keeps gameplay controls available when background sync only returns duplicate events', async () => {
+    const api = createRoomApi({
+      getRoom: vi.fn().mockResolvedValue(activeRoom()),
+      reconnect: vi.fn().mockResolvedValue(activeRoom()),
+    });
+    const duplicateRoll = transitionEnvelope({
+      transitionId: 'duplicate-roll-1',
+      actionId: 'roll-1',
+      stateVersion: 1,
+      fromSequence: 1,
+      toSequence: 1,
+      watermark: { stateVersion: 1, lastSequence: 1 },
+      events: [
+        {
+          matchId: 'match-1',
+          eventId: 'roll-event-1',
+          sequence: 1,
+          stateVersion: 1,
+          type: 'diceRolled',
+          payload: { playerId: 'user-2', diceValue: 2 },
+          createdAt: '2026-09-01T10:00:01.000Z',
+        },
+      ],
+      snapshot: activeSnapshot({
+        stateVersion: 1,
+        lastSequence: 1,
+        currentPlayerId: 'user-1',
+        turnPhase: 'WAITING_FOR_ROLL',
+        diceValue: null,
+      }),
+    });
+    const realtime = createRealtimeClient({
+      sync: vi
+        .fn()
+        .mockResolvedValueOnce({
+          mode: 'snapshot',
+          snapshot: activeSnapshot({
+            stateVersion: 1,
+            lastSequence: 1,
+            currentPlayerId: 'user-1',
+            turnPhase: 'WAITING_FOR_ROLL',
+            diceValue: null,
+          }),
+          watermark: { stateVersion: 1, lastSequence: 1 },
+        })
+        .mockResolvedValueOnce({
+          mode: 'events',
+          transitions: [duplicateRoll],
+          watermark: { stateVersion: 1, lastSequence: 1 },
+        }),
+      sendCommand: vi.fn().mockResolvedValue({
+        ok: true,
+        matchId: 'match-1',
+        actionId: 'roll-after-background-sync',
+        stateVersion: 2,
+        lastSequence: 2,
+        snapshot: activeSnapshot({
+          stateVersion: 2,
+          lastSequence: 2,
+          currentPlayerId: 'user-1',
+          turnPhase: 'WAITING_FOR_ACTION',
+          diceValue: 6,
+        }),
+        events: [
+          {
+            matchId: 'match-1',
+            eventId: 'roll-after-background-sync-event',
+            sequence: 2,
+            stateVersion: 2,
+            type: 'diceRolled',
+            payload: { playerId: 'user-1', diceValue: 6 },
+            createdAt: '2026-09-01T10:00:02.000Z',
+          },
+        ],
+        ack: { actionId: 'roll-after-background-sync', stateVersion: 2, lastSequence: 2 },
+      }),
+    });
+
+    renderAuthenticated('#/rooms/room-1', { roomApi: api, realtime });
+
+    await waitFor(() => expect(realtime.sync).toHaveBeenCalledTimes(1));
+    realtime.__emitTransition?.(
+      transitionEnvelope({
+        transitionId: 'gap-3',
+        actionId: 'gap-3',
+        stateVersion: 3,
+        fromSequence: 3,
+        toSequence: 3,
+        watermark: { stateVersion: 3, lastSequence: 3 },
+        snapshot: activeSnapshot({ stateVersion: 3, lastSequence: 3 }),
+      }),
+    );
+    await waitFor(() => expect(realtime.sync).toHaveBeenCalledTimes(2));
+
+    fireEvent.click(await screen.findByRole('button', { name: /Бросить кубик/ }));
+
+    await waitFor(() => expect(realtime.sendCommand).toHaveBeenCalledTimes(1));
+  });
+
   it('shows the finished match state with a return-to-room action instead of gameplay controls', async () => {
     const api = createRoomApi({
       getRoom: vi

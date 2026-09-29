@@ -1291,7 +1291,9 @@ export function PlayableBetaPage({
       }
       setMatch((current) =>
         current.status === 'ready'
-          ? { ...current, pending: true, error: null }
+          ? isInitialHydration
+            ? { ...current, pending: true, error: null }
+            : { ...current, error: null }
           : { status: 'loading' },
       );
 
@@ -1454,6 +1456,11 @@ export function PlayableBetaPage({
               for (const transition of transitions) {
                 ingestCommittedTransition(transition, 'sync-recovery');
               }
+              setMatch((current) =>
+                current.status === 'ready' && current.matchId === matchId
+                  ? { ...current, pending: false, error: null }
+                  : current,
+              );
               return;
             }
 
