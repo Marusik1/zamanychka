@@ -197,6 +197,25 @@ describe('parseEnv dev users', () => {
     expect(() => parseEnv(dev(JSON.stringify(many)))).toThrow();
     expect(() => parseEnv(dev('{'))).toThrow(/DEV_AUTH_USERS_JSON/);
   });
+
+  it('accepts Amvera-safe DEV_AUTH_USERS without JSON quotes', () => {
+    const result = parseEnv(
+      env({
+        NODE_ENV: 'production',
+        DEV_AUTH_ENABLED: 'false',
+        ENABLE_BROWSER_TEST_AUTH: 'true',
+        DEV_AUTH_USERS: 'player1:Player One,player2:Player Two',
+        TELEGRAM_BOT_TOKEN: 'token-placeholder',
+        APP_ORIGINS: 'https://zamanushka.example',
+      }),
+    );
+
+    expect(result.auth.mode).toBe('telegram');
+    expect(result.auth.mode === 'telegram' && result.auth.browserTestUsers).toEqual([
+      { devUserKey: 'player1', displayName: 'Player One' },
+      { devUserKey: 'player2', displayName: 'Player Two' },
+    ]);
+  });
 });
 
 describe('parseEnv origins', () => {

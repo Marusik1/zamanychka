@@ -147,17 +147,33 @@ function parseOrigins(
 }
 
 function parseDevUsers(input: Record<string, string | undefined>): DevUserConfig[] {
-  const raw = required(input, 'DEV_AUTH_USERS_JSON');
-  if (Buffer.byteLength(raw, 'utf8') > 8_192) throw new Error('DEV_AUTH_USERS_JSON is too large');
-  let json: unknown;
-  try {
-    json = JSON.parse(raw);
-  } catch {
-    throw new Error('DEV_AUTH_USERS_JSON must be valid JSON');
+  const simple = input.DEV_AUTH_USERS?.trim();
+  const jsonRaw = input.DEV_AUTH_USERS_JSON?.trim();
+  if (!simple && !jsonRaw) throw new Error('DEV_AUTH_USERS_JSON or DEV_AUTH_USERS is required');
+
+  let rawUsers: unknown;
+  if (simple) {
+    if (Buffer.byteLength(simple, 'utf8') > 8_192) throw new Error('DEV_AUTH_USERS is too large');
+    rawUsers = simple.split(',').map((entry) => {
+      const separator = entry.indexOf(':');
+      if (separator <= 0) throw new Error('DEV_AUTH_USERS must use key:Display Name entries');
+      return {
+        devUserKey: entry.slice(0, separator).trim(),
+        displayName: entry.slice(separator + 1).trim(),
+      };
+    });
+  } else {
+    const raw = jsonRaw ?? required(input, 'DEV_AUTH_USERS_JSON');
+    if (Buffer.byteLength(raw, 'utf8') > 8_192) throw new Error('DEV_AUTH_USERS_JSON is too large');
+    try {
+      rawUsers = JSON.parse(raw);
+    } catch {
+      throw new Error('DEV_AUTH_USERS_JSON must be valid JSON');
+    }
   }
-  const users = z.array(devUserSchema).min(2).max(16).parse(json);
+  const users = z.array(devUserSchema).min(2).max(16).parse(rawUsers);
   if (new Set(users.map((user) => user.devUserKey)).size !== users.length)
-    throw new Error('DEV_AUTH_USERS_JSON must contain distinct devUserKey values');
+    throw new Error('DEV_AUTH_USERS must contain distinct devUserKey values');
   return users;
 }
 
