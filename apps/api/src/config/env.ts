@@ -39,6 +39,7 @@ export type AuthRuntimeConfig =
       initDataMaxBytes: number;
       initDataMaxAgeSeconds: number;
       initDataFutureSkewSeconds: number;
+      browserTestUsers?: DevUserConfig[];
     }
   | {
       mode: 'development';
@@ -96,6 +97,13 @@ function parseSoloGameDebugFlag(
     throw new Error('ENABLE_SOLO_GAME_DEBUG must be true or false');
   if (nodeEnv === 'production' && raw === 'true')
     throw new Error('ENABLE_SOLO_GAME_DEBUG=true is forbidden in production');
+  return raw === 'true';
+}
+
+function parseBrowserTestAuthFlag(input: Record<string, string | undefined>): boolean {
+  const raw = input.ENABLE_BROWSER_TEST_AUTH;
+  if (raw !== undefined && raw !== 'true' && raw !== 'false')
+    throw new Error('ENABLE_BROWSER_TEST_AUTH must be true or false');
   return raw === 'true';
 }
 
@@ -157,6 +165,7 @@ export function parseEnv(input: Record<string, string | undefined>): AppEnv {
   const infrastructure = infrastructureSchema.parse(input);
   const apiPort = infrastructure.PORT ?? infrastructure.API_PORT;
   const devAuthEnabled = parseFlag(input, infrastructure.NODE_ENV);
+  const browserTestAuthEnabled = parseBrowserTestAuthFlag(input);
   const enableSoloGameDebug = parseSoloGameDebugFlag(input, infrastructure.NODE_ENV);
   const allowedOrigins = parseOrigins(input, infrastructure.NODE_ENV);
   const sessionTtlSeconds = boundedInteger(
@@ -188,6 +197,7 @@ export function parseEnv(input: Record<string, string | undefined>): AppEnv {
         allowedOrigins,
         cookie,
         sessionTtlSeconds,
+        ...(browserTestAuthEnabled ? { browserTestUsers: parseDevUsers(input) } : {}),
         initDataMaxBytes: boundedInteger(
           input,
           'TELEGRAM_INIT_DATA_MAX_BYTES',

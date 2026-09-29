@@ -16,6 +16,7 @@ import { isAllowedOrigin } from './origin-guard.js';
 export interface AuthRoutesOptions {
   service: AuthService;
   mode: 'telegram' | 'development';
+  developmentAuthEnabled?: boolean;
   allowedOrigins: string[];
   cookie: CookiePolicy;
   sessionTtlSeconds: number;
@@ -75,7 +76,7 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOpti
     reply.header('Cache-Control', 'no-store');
   });
   app.get('/api/auth/dev', async () =>
-    options.mode === 'development'
+    options.mode === 'development' || options.developmentAuthEnabled === true
       ? options.service.capability()
       : { enabled: false as const, users: [] },
   );
@@ -112,8 +113,9 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOpti
         return map(reply, thrown);
       }
     };
-  if (options.mode === 'development') app.post('/api/auth/dev', login('development'));
-  else app.post('/api/auth/telegram', login('telegram'));
+  if (options.mode === 'development' || options.developmentAuthEnabled === true)
+    app.post('/api/auth/dev', login('development'));
+  if (options.mode === 'telegram') app.post('/api/auth/telegram', login('telegram'));
   app.get('/api/me', async (request, reply) => {
     try {
       return await options.service.me(request.cookies[options.cookie.name]);

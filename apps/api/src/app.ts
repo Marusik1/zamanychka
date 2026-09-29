@@ -114,6 +114,9 @@ export function buildApp({
       registerAuthRoutes(scope, {
         service: auth.service,
         mode: auth.config.mode,
+        developmentAuthEnabled:
+          auth.config.mode === 'development' ||
+          (auth.config.mode === 'telegram' && auth.config.browserTestUsers !== undefined),
         allowedOrigins: auth.config.allowedOrigins,
         cookie: auth.config.cookie,
         sessionTtlSeconds: auth.config.sessionTtlSeconds,

@@ -82,6 +82,28 @@ describe('parseEnv auth matrix', () => {
     } else expect(result.auth.users).toHaveLength(2);
   });
 
+  it('allows explicitly gated browser test users alongside production Telegram auth', () => {
+    const result = parseEnv(
+      env({
+        NODE_ENV: 'production',
+        DEV_AUTH_ENABLED: 'false',
+        ENABLE_BROWSER_TEST_AUTH: 'true',
+        DEV_AUTH_USERS_JSON: users,
+        TELEGRAM_BOT_TOKEN: 'token-placeholder',
+        APP_ORIGINS: 'https://zamanushka.example',
+      }),
+    );
+
+    expect(result.auth.mode).toBe('telegram');
+    expect(result.auth).toMatchObject({
+      botToken: 'token-placeholder',
+      browserTestUsers: [
+        { devUserKey: 'player-1', displayName: 'Player One' },
+        { devUserKey: 'player-2', displayName: 'Player Two' },
+      ],
+    });
+  });
+
   it('prefers platform PORT over API_PORT when provided', () => {
     const result = parseEnv(
       env({

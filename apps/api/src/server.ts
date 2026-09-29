@@ -63,6 +63,7 @@ function createConfiguredAuthService() {
   return createAuthService({
     repository,
     sessionTtlSeconds: telegramAuth.sessionTtlSeconds,
+    ...(telegramAuth.browserTestUsers ? { devUsers: telegramAuth.browserTestUsers } : {}),
     verifyTelegram: (raw) =>
       verifyTelegramInitData(raw, {
         botToken: telegramAuth.botToken,

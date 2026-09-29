@@ -20,6 +20,7 @@ export async function bootstrapAuth(
   initData?: string,
   signal?: AbortSignal,
   transition?: (state: AuthState) => void,
+  browserTestDevUserKey?: string,
 ): Promise<AuthState> {
   try {
     const me = await api.me(signal);
@@ -48,7 +49,22 @@ export async function bootstrapAuth(
     }
     const capability = await api.developmentCapability(signal);
     signal?.throwIfAborted();
-    if (capability.enabled) return { status: 'DEV_AUTH_REQUIRED', users: capability.users };
+    if (capability.enabled) {
+      const browserTestUser = browserTestDevUserKey
+        ? capability.users.find((user) => user.devUserKey === browserTestDevUserKey)
+        : undefined;
+      if (browserTestUser) {
+        transition?.({ status: 'AUTHENTICATING' });
+        const result = await api.loginDevelopment(browserTestUser.devUserKey, signal);
+        signal?.throwIfAborted();
+        return {
+          status: 'AUTHENTICATED',
+          user: result.user,
+          rulesOnboardingSeenAt: result.rulesOnboardingSeenAt,
+        };
+      }
+      return { status: 'DEV_AUTH_REQUIRED', users: capability.users };
+    }
     return {
       status: 'ERROR',
       message: 'Вход доступен только внутри Telegram.',

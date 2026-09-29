@@ -409,6 +409,29 @@ describe('EPIC-01 app lifecycle', () => {
     expect(screen.getByRole('button', { name: 'Два' })).toBeVisible();
   });
 
+  it('uses devUser query parameter as a production browser test login key', async () => {
+    window.history.replaceState({}, '', '/?devUser=player1#/rooms');
+    const api = authenticatedApi(vi.fn().mockRejectedValue(new AuthApiError(401)));
+    vi.mocked(api.developmentCapability).mockResolvedValue({
+      enabled: true,
+      users: [
+        { devUserKey: 'player1', displayName: 'Player One' },
+        { devUserKey: 'player2', displayName: 'Player Two' },
+      ],
+    });
+    vi.mocked(api.loginDevelopment).mockResolvedValue({
+      user: { id: 'player1', displayName: 'Player One', authProvider: 'DEVELOPMENT' },
+      session: { expiresAt: '2026-09-20T00:00:00.000Z' },
+      rulesOnboardingSeenAt: seenAt,
+    });
+
+    render(<App createAdapter={adapter} api={api} />);
+
+    await screen.findByText('Player One');
+    expect(api.loginDevelopment).toHaveBeenCalledWith('player1', expect.any(AbortSignal));
+    expect(screen.queryByRole('button', { name: 'Player One' })).not.toBeInTheDocument();
+  });
+
   it('does not let a stale retry overwrite the latest bootstrap result', async () => {
     window.location.hash = '#/rooms';
     const retries: ReturnType<typeof deferred<Awaited<ReturnType<AuthApi['me']>>>>[] = [];

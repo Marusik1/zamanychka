@@ -126,6 +126,11 @@ function renderAvatar(displayName: string) {
     .slice(0, 2);
 }
 
+function browserTestDevUserKey() {
+  const value = new URLSearchParams(window.location.search).get('devUser');
+  return value && /^[A-Za-z0-9_-]{1,64}$/.test(value) ? value : undefined;
+}
+
 function IntroScrubLayer({
   running,
   onComplete,
@@ -319,8 +324,12 @@ export function App({
       const { controller, epoch } = beginRequest();
       commit(epoch, { status: 'BOOTSTRAPPING' });
       try {
-        const next = await bootstrapAuth(api, initData, controller.signal, (transition) =>
-          commit(epoch, transition),
+        const next = await bootstrapAuth(
+          api,
+          initData,
+          controller.signal,
+          (transition) => commit(epoch, transition),
+          initData ? undefined : browserTestDevUserKey(),
         );
         commit(epoch, next);
       } catch {

@@ -98,6 +98,43 @@ describe('authentication bootstrap', () => {
     expect(fetcher).toHaveBeenNthCalledWith(2, '/api/auth/dev', { credentials: 'include' });
   });
 
+  it('logs in as an allowlisted development user from a browser test link', async () => {
+    const users = [
+      { devUserKey: 'player1', displayName: 'Player One' },
+      { devUserKey: 'player2', displayName: 'Player Two' },
+    ];
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(json(401, { error: { code: 'AUTH_REQUIRED', message: 'Войдите' } }))
+      .mockResolvedValueOnce(json(200, { enabled: true, users }))
+      .mockResolvedValueOnce(
+        json(200, {
+          user: { id: 'player1', displayName: 'Player One', authProvider: 'DEVELOPMENT' },
+          session: { expiresAt: '2026-09-20T00:00:00.000Z' },
+          rulesOnboardingSeenAt: null,
+        }),
+      );
+
+    const state = await bootstrapAuth(createAuthApi(fetcher), undefined, undefined, undefined, 'player1');
+
+    expect(state).toEqual({
+      status: 'AUTHENTICATED',
+      user: { id: 'player1', displayName: 'Player One', authProvider: 'DEVELOPMENT' },
+      rulesOnboardingSeenAt: null,
+    });
+    expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
+      '/api/me',
+      '/api/auth/dev',
+      '/api/auth/dev',
+    ]);
+    expect(fetcher).toHaveBeenNthCalledWith(3, '/api/auth/dev', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ devUserKey: 'player1' }),
+    });
+  });
+
   it('shows a clear unavailable state when browser development auth is disabled', async () => {
     const fetcher = vi
       .fn()

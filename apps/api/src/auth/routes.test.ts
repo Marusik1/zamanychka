@@ -68,6 +68,9 @@ describe('auth routes', () => {
     registerAuthRoutes(instance, {
       service: injected,
       mode: config.mode,
+      developmentAuthEnabled:
+        config.mode === 'development' ||
+        (config.mode === 'telegram' && config.browserTestUsers !== undefined),
       allowedOrigins: config.allowedOrigins,
       cookie: config.cookie,
       sessionTtlSeconds: config.sessionTtlSeconds,
@@ -241,6 +244,56 @@ describe('auth routes', () => {
       expect(telegram.headers['cache-control']).toBe('no-store');
     });
   }
+
+  it('keeps Telegram auth and exposes browser test dev auth when explicitly enabled in production', async () => {
+    const config = parseEnv({
+      NODE_ENV: 'production',
+      DEV_AUTH_ENABLED: 'false',
+      ENABLE_BROWSER_TEST_AUTH: 'true',
+      DATABASE_URL: 'postgresql://u:p@localhost/db',
+      REDIS_URL: 'redis://localhost:6379',
+      APP_ORIGINS: 'https://zamanushka.example',
+      TELEGRAM_BOT_TOKEN: 'token',
+      DEV_AUTH_USERS_JSON: JSON.stringify([
+        { devUserKey: 'player1', displayName: 'Player One' },
+        { devUserKey: 'player2', displayName: 'Player Two' },
+      ]),
+      SESSION_TTL_SECONDS: '600',
+    }).auth;
+    const instance = await appWithConfig(config, {
+      ...service,
+      capability: () => ({
+        enabled: true as const,
+        users: config.mode === 'telegram' ? (config.browserTestUsers ?? []) : config.users,
+      }),
+    });
+    const headers = { origin: 'https://zamanushka.example', 'content-type': 'application/json' };
+
+    const capability = await instance.inject('/api/auth/dev');
+    const dev = await instance.inject({
+      method: 'POST',
+      url: '/api/auth/dev',
+      headers,
+      payload: { devUserKey: 'player1' },
+    });
+    const telegram = await instance.inject({
+      method: 'POST',
+      url: '/api/auth/telegram',
+      headers,
+      payload: { initData: 'signed' },
+    });
+
+    expect(config.mode).toBe('telegram');
+    expect(capability.json()).toEqual({
+      enabled: true,
+      users: [
+        { devUserKey: 'player1', displayName: 'Player One' },
+        { devUserKey: 'player2', displayName: 'Player Two' },
+      ],
+    });
+    expect(dev.statusCode).toBe(200);
+    expect(telegram.statusCode).toBe(200);
+  });
 
   it('uses exact host-only local cookie scope and no-store for me and logout', async () => {
     const instance = await app('development');
