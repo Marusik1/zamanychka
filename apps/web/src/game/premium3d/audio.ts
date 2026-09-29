@@ -30,6 +30,16 @@ const VOLUMES: Record<PremiumSfxName, number> = {
   'pawn-home': 0.22, victory: 0.34, defeat: 0.24,
 };
 
+const MIN_REPLAY_INTERVAL_MS: Record<PremiumSfxName, number> = {
+  'dice-roll': 120,
+  'pawn-step': 55,
+  'pawn-enter': 220,
+  'pawn-capture': 260,
+  'pawn-home': 260,
+  victory: 1_000,
+  defeat: 1_000,
+};
+
 function recordAudioDiagnostic(entry: Omit<AudioDiagnosticEvent, 'at'>) {
   if (typeof window === 'undefined') return;
   window.__zGameAudioDiagnostics = [
@@ -40,6 +50,7 @@ function recordAudioDiagnostic(entry: Omit<AudioDiagnosticEvent, 'at'>) {
 
 export class PremiumGameAudio {
   private readonly audio = new Map<PremiumSfxName, HTMLAudioElement>();
+  private readonly lastPlayedAt = new Map<PremiumSfxName, number>();
 
   constructor() {
     if (typeof Audio === 'undefined') return;
@@ -88,6 +99,17 @@ export class PremiumGameAudio {
       recordAudioDiagnostic({ event: 'play-missing-source', name });
       return;
     }
+    const now = performance.now();
+    const lastPlayedAt = this.lastPlayedAt.get(name) ?? Number.NEGATIVE_INFINITY;
+    if (now - lastPlayedAt < MIN_REPLAY_INTERVAL_MS[name]) {
+      recordAudioDiagnostic({ event: 'play-blocked', name, message: 'dedupe-window' });
+      return;
+    }
+    if (source.paused === false && source.ended === false) {
+      recordAudioDiagnostic({ event: 'play-blocked', name, message: 'already-playing' });
+      return;
+    }
+    this.lastPlayedAt.set(name, now);
     recordAudioDiagnostic({ event: 'play-start', name });
     source.currentTime = 0;
     source.playbackRate = options?.playbackRate ?? 1;

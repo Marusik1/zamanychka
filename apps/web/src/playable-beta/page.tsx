@@ -1100,6 +1100,30 @@ export function PlayableBetaPage({
         stateVersion: transition.stateVersion,
         transitionType: transition.events.map((event) => event.type).join('+'),
       });
+      setPresentationController((current) => {
+        if (current && current.matchId === transition.matchId) {
+          return reconcileAuthoritativeSnapshot(current, transition.matchId, transition.snapshot);
+        }
+        return createPresentationController(transition.matchId, transition.snapshot);
+      });
+      setPresentationRuntime(createIdleAnimationState(transition.snapshot));
+      setMatch((current) => {
+        const next = applyAuthoritativeTransitionToMatch(current, transition);
+        if (next !== current && next.status === 'ready') {
+          recordGameplayTelemetry('CLIENT_STATE_APPLIED', {
+            source,
+            matchId: transition.matchId,
+            actionId: transition.actionId,
+            transitionId: transition.transitionId,
+            stateVersion: next.snapshot.stateVersion,
+            lastSequence: next.lastSequence,
+            pending: next.pending,
+            replaySkipped: true,
+          });
+        }
+        return next;
+      });
+      return;
     }
     setPresentationController((current) => {
       let baseController = current;
