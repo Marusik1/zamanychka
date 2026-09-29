@@ -26,6 +26,7 @@ import { createInMemoryRoomPresenceStore } from './rooms/presence-store.js';
 import { createCommandProcessor } from './realtime/command-processor.js';
 import { createPostgresOutboxLeaseStore } from './realtime/outbox.js';
 import { createRealtimeRuntime } from './realtime/socketio.js';
+import { createGameSyncService } from './realtime/sync.js';
 
 loadEnv({ path: new URL('../../../.env', import.meta.url), quiet: true });
 
@@ -107,6 +108,10 @@ const botRuntime = createBotRuntimeAdapter({
 botRunner = new BotRunner(botRuntime, botLease, {
   onCommittedCommand: ({ matchId }) => dispatchCommittedBotEvents(matchId),
 });
+const gameSyncService = createGameSyncService({
+  repository: matchRepository,
+  prisma: dependencies.prisma,
+});
 const realtime = createRealtimeRuntime({
   httpServer: app.server,
   auth: authService,
@@ -116,6 +121,10 @@ const realtime = createRealtimeRuntime({
     (env.auth.mode === 'telegram' && env.auth.browserTestUsers !== undefined),
   matchRepository,
   outbox: createPostgresOutboxLeaseStore(dependencies.prisma),
+  loadCommittedTransitions: async (input) => {
+    const response = await gameSyncService.sync(input);
+    return response.mode === 'events' ? response.transitions : [];
+  },
   commandProcessor,
   botRunner,
   allowedOrigins: env.auth.allowedOrigins,
