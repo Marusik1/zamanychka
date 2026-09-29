@@ -202,6 +202,28 @@ describe('Socket.IO realtime publication and subscriptions', () => {
     }
   });
 
+  it('fails readiness instead of silently running without the Redis adapter when Redis is unreachable', async () => {
+    const app = Fastify();
+    const runtime = createRealtimeRuntime({
+      httpServer: app.server,
+      auth: createAuthService() as unknown as Parameters<typeof createRealtimeRuntime>[0]['auth'],
+      cookieName: '__Host-zamanushka-session',
+      matchRepository: createMatchRepository() as unknown as Parameters<
+        typeof createRealtimeRuntime
+      >[0]['matchRepository'],
+      outbox: createOutboxStore() as unknown as Parameters<typeof createRealtimeRuntime>[0]['outbox'],
+      commandProcessor: {
+        process: vi.fn(),
+      } as unknown as Parameters<typeof createRealtimeRuntime>[0]['commandProcessor'],
+      allowedOrigins: ['http://127.0.0.1'],
+      redisUrl: 'redis://127.0.0.1:1',
+    });
+
+    await expect(runtime.ready).rejects.toThrow();
+    runtime.io.close();
+    await app.close().catch(() => undefined);
+  }, 10_000);
+
   it('authenticates a participant socket and allows joining the immutable Match room', async () => {
     const server = await startRuntime();
     servers.push(server);

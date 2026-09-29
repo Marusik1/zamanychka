@@ -123,7 +123,7 @@ describe('animation director', () => {
     expect(cornerSettleFrames.some((frame) => frame.durationMs === ANIMATION_TIMINGS.cornerSettleMs)).toBe(false);
   });
 
-  it('uses committed physicalPath destination without visual stops on intermediate cells', async () => {
+  it('plays committed pawn movement through every physicalPath cell', async () => {
     const initial = toSnapshot(1, 1);
     const final = {
       ...toSnapshot(2, 2),
@@ -185,7 +185,7 @@ describe('animation director', () => {
             ? `${visual.anchor.coord.row}:${visual.anchor.coord.col}`
             : visual.anchor.kind,
         ),
-    ).toEqual(['7:0', '5:1']);
+    ).toEqual(['7:0', '6:0', '5:0', '5:1']);
 
     const applied: GameplayAnimationRuntimeState[] = [];
     const run = runGameplayAnimationFrames(frames, {
@@ -196,7 +196,7 @@ describe('animation director', () => {
     await vi.runAllTimersAsync();
     await run;
 
-    expect(collectPawnPositions(applied, 'green-seat-pawn-1')).toEqual(['7:0', '5:1']);
+    expect(collectPawnPositions(applied, 'green-seat-pawn-1')).toEqual(['7:0', '6:0', '5:0', '5:1']);
   });
 
   it('keeps pawnMoved as the only spatial owner when pawnEnteredHome follows in the same transition', () => {

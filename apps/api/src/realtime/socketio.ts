@@ -88,6 +88,24 @@ function logTelemetry(event: string, payload: Record<string, unknown>) {
   );
 }
 
+function withRealtimeStartupTimeout<T>(promise: Promise<T>, timeoutMs = 3_000): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error(`REALTIME_REDIS_ADAPTER_TIMEOUT:${timeoutMs}`));
+    }, timeoutMs);
+    promise.then(
+      (value) => {
+        clearTimeout(timeout);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timeout);
+        reject(error);
+      },
+    );
+  });
+}
+
 async function resolveTransitionEnvelope(
   matchRepository: MatchRepository,
   payload: unknown,
@@ -163,10 +181,8 @@ export function createRealtimeRuntime(options: {
           sub: createRedisClient(options.redisUrl),
         };
   const ready = maybeRedis
-    ? Promise.all([maybeRedis.pub.connect(), maybeRedis.sub.connect()]).then(() => {
+    ? withRealtimeStartupTimeout(Promise.all([maybeRedis.pub.connect(), maybeRedis.sub.connect()])).then(() => {
         io.adapter(createAdapter(maybeRedis.pub, maybeRedis.sub));
-      }).catch((error: unknown) => {
-        console.error('[realtime-redis-adapter] disabled', error);
       })
     : Promise.resolve();
 

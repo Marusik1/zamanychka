@@ -301,8 +301,6 @@ function compressedMoveSegmentMs(pathLength: number): number {
   return Math.round(movementDurationMs(pathLength) / pathLength);
 }
 
-void compressedMoveSegmentMs;
-
 export function isPerimeterCorner(coord: Readonly<{ row: number; col: number }>): boolean {
   return (coord.row === 0 || coord.row === 7) && (coord.col === 0 || coord.col === 7);
 }
@@ -414,21 +412,23 @@ export function buildGameplayAnimationFrames({
           position: pawn.position,
         });
         state = pushFrame(frames, state, reducedMotion ? 0 : ANIMATION_TIMINGS.frameCommitMs);
-        const pathLength = event.payload.physicalPath.length;
-        const destination =
-          event.payload.physicalPath.at(-1) ??
-          (event.payload.toCoord as BoardCoord);
-        state = withPawnVisual(state, {
-          pawnId: pawn.pawnId,
-          playerId: pawn.playerId,
-          color: pawn.color,
-          motion: 'moving',
-          anchor: boardAnchor(destination as BoardCoord),
-          position: pawn.position,
-          transitionMs: reducedMotion ? 70 : movementDurationMs(pathLength),
-          transitionEasing: 'cubic-bezier(0.16, 0.9, 0.18, 1)',
-        });
-        state = pushFrame(frames, state, reducedMotion ? 70 : movementDurationMs(pathLength));
+        const path = event.payload.physicalPath.length > 0
+          ? event.payload.physicalPath
+          : [event.payload.toCoord as BoardCoord];
+        const segmentMs = reducedMotion ? 70 : compressedMoveSegmentMs(path.length);
+        for (const coord of path) {
+          state = withPawnVisual(state, {
+            pawnId: pawn.pawnId,
+            playerId: pawn.playerId,
+            color: pawn.color,
+            motion: 'moving',
+            anchor: boardAnchor(coord as BoardCoord),
+            position: pawn.position,
+            transitionMs: segmentMs,
+            transitionEasing: 'cubic-bezier(0.16, 0.9, 0.18, 1)',
+          });
+          state = pushFrame(frames, state, segmentMs);
+        }
         break;
       }
       case 'pawnCaptured': {
